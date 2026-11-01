@@ -4,21 +4,35 @@ description: >-
   Durable memory shared across agents, tools, and devices. Use this when the
   user states a fact, decision, or preference worth remembering, or when
   starting a task where past context would help — save with state_write and
-  recall with state_search / state_list. Backed by the OneMemory MCP
-  server (tools: state_write, state_read, state_search, state_relevant,
-  state_list, state_delete, memory_since, memory_ack, task_put, task_get,
-  task_list, task_claim, task_approve, runner_status, trust_policy, session_handoff, catch_up, memory_stats, memory_quarantine,
-  memory_consolidation_candidates, memory_consolidate, memory_rebuild_edges, memory_supersede_preview,
-  memory_supersede_confirm, memory_supersede_undo, memory_history, memory_restore_version, memory_history_purge,
-  memory_index, memory_timeline, memory_get, session_list). Works in any MCP-capable agent (Claude Code, Claude Desktop,
-  Cursor, Copilot, Windsurf, Cline, and more) and across web and mobile.
+  recall with state_search / state_list. Backed by the OneMemory MCP server.
+  REGISTERED BY DEFAULT (these ten are always callable): state_write, state_read,
+  state_search, state_relevant, state_list, state_delete, catch_up,
+  memory_supersede_preview, memory_supersede_confirm, memory_supersede_undo.
+  REQUIRE ONEMEMORY_TOOLS=all ON THE SERVER (otherwise not callable, and a call
+  returns "unknown tool"): memory_since, memory_ack, task_put, task_get,
+  task_list, task_claim, task_approve, runner_status, trust_policy,
+  session_handoff, memory_stats, memory_quarantine,
+  memory_consolidation_candidates, memory_consolidate, memory_rebuild_edges,
+  memory_history, memory_restore_version, memory_history_purge,
+  memory_index, memory_timeline, memory_get, session_list.
+  Works in any MCP-capable agent (Claude Code, Claude Desktop,
+  Cursor, Copilot, Windsurf, Cline, and more).
 license: MIT
 ---
 
 # OneMemory
 
-A single shared note store that every one of your AI surfaces can read and
-write — desktop, web, and phone. This skill tells the agent **when** and
+> **Only ten tools are registered by default.** `state_write`, `state_read`,
+> `state_search`, `state_relevant`, `state_list`, `state_delete`, `catch_up`,
+> `memory_supersede_preview`, `memory_supersede_confirm` and
+> `memory_supersede_undo`. The change feed, task board, trust, quarantine,
+> consolidation, history and session-index tools used further down need
+> `ONEMEMORY_TOOLS=all` in the server's environment. If a call returns
+> "unknown tool", that is why — say so to the user rather than retrying.
+
+A single shared note store that every MCP-capable agent on this machine can
+read and write (and, if you expose the HTTP endpoint through your own tunnel,
+from the web or a phone). This skill tells the agent **when** and
 **how** to use it so memory "just works" instead of being driven by hand.
 
 ## When to SAVE (call `state_write`)

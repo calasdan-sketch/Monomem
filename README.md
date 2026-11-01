@@ -1,11 +1,22 @@
-# OneMemory
+<!-- Image URLs are absolute on purpose: GitHub resolves relative paths, npm does not. -->
+![OneMemory — one memory, every assistant](https://raw.githubusercontent.com/calasdan-sketch/onememory/main/docs/brand/onememory-banner.png)
 
-**One memory, every assistant.** A small, self-hosted memory store that Claude, Cursor, Codex, Gemini and anything else speaking MCP or plain REST all read and write — so you tell an AI something once and the rest already know it. Local, no API keys, no hidden model calls; every memory sourced, versioned and undoable, with [benchmarks](#benchmark) to prove it.
+**Auditable shared memory for AI agents.** A small, self-hosted memory store that Claude, Cursor, Codex, Gemini and anything else speaking MCP or plain REST all read and write — so you tell an AI something once and the rest already know it. Local, no API keys, no hidden model calls; **every note carries who wrote it**, is versioned, and is one undo away, with [benchmarks](#benchmark) to prove it.
 
 [![CI](https://github.com/calasdan-sketch/onememory/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/onememory/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/onememory-mcp)](https://www.npmjs.com/package/onememory-mcp)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Node](https://img.shields.io/badge/node-%3E%3D22.5-green)
+![Node](https://img.shields.io/badge/node-%3E%3D22.13-green)
+
+![One writer stores a note; a second, separately authenticated writer reads it back and can show who wrote it](https://raw.githubusercontent.com/calasdan-sketch/onememory/main/docs/onememory-demo.gif)
+
+*Reconstructed from a real two-writer run against one store. The note, the
+server-stamped `written_by`, and the 255 ms read are reproduced exactly from
+[`docs/brand/demo-transcript.txt`](https://github.com/calasdan-sketch/onememory/blob/main/docs/brand/demo-transcript.txt).
+The two sides are two separately authenticated write tokens, not two recorded
+vendor clients; the provenance is real, the client names illustrate the use
+case. Frames are rendered rather than screen-captured so the text is legible
+at this size, and nothing is sped up. Regenerate from a git checkout with `npm run demo-gif` (needs ffmpeg).*
 
 Tell one assistant something; every other assistant already knows it. Write a
 note in Claude Code, read it back in Cursor, Gemini CLI or Codex — one store,
@@ -21,8 +32,8 @@ web access).
 
 ## Quickstart
 
-> **Requires Node.js 22.5 or newer** (22.5+ or 24 LTS). OneMemory uses Node's
-> built-in `node:sqlite`, which arrived in 22.5. Check with `node -v`. Can't
+> **Requires Node.js 22.13 or newer** (22.13+ or 24 LTS). OneMemory uses Node's
+> built-in `node:sqlite`, which arrived in 22.5 but needed a flag until 22.13. Check with `node -v`. Can't
 > upgrade? Use [Docker](#docker) instead.
 
 ### Install in 60 seconds
@@ -119,12 +130,13 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 - **Restore into an empty store.** `POST /import` does not de-duplicate:
   importing a backup into a store that already holds those notes creates
   duplicates.
-- **Backups are snapshots of current notes, not per-edit history.** OneMemory
-  keeps only the latest version of each note (the `rev` counter tracks edits;
-  it is not a snapshot list), so a store with months of edits exports as one
-  entry per note with its latest body — export time and size track your note
-  count, not how often you rewrote them. The change feed's per-edit log is
-  metadata only (titles, no bodies), pruned after 90 days, and is not part of
+- **Exports carry edit history.** Each note exports with its latest body *plus*
+  the earlier versions an edit replaced (`history`), so export size tracks how
+  often you rewrote a note, not just your note count. `?history=0` /
+  `--no-history` leaves them out. **An export with history can hold text
+  someone removed on purpose — treat it like the database** (see
+  [SECURITY.md](./SECURITY.md)). The change feed's per-edit log is separate:
+  metadata only (titles, no bodies), pruned after 90 days, and never part of
   a JSON backup.
 - **Exports stream.** `GET /export` and `onememory export --format json` page
   through the store and write as they go, so peak memory is one page (500
@@ -307,7 +319,7 @@ publish one. Read their own docs and pick on your needs:
   are all worth a look.
 
 What OneMemory itself provides (all of it checkable in this repo): MIT
-license, Node 22.5+ with 2 direct runtime dependencies, one SQLite file,
+license, Node 22.13+ with 2 direct runtime dependencies, one SQLite file,
 MCP over stdio and HTTP plus a REST API, optional semantic search with your
 own embeddings endpoint, a change feed that includes deletes, a write-time
 secret and injection linter, Markdown export and three-way import, scoped
@@ -318,6 +330,14 @@ encryption of note bodies. See [SECURITY.md](./SECURITY.md) for what it does
 ---
 
 ## MCP tools
+
+**Ten of these are registered by default:** `state_write`, `state_read`, `state_search`, `state_relevant`,
+`state_list`, `state_delete`, `catch_up`, `memory_supersede_preview`, `memory_supersede_confirm`,
+`memory_supersede_undo`. Every tool's
+schema is sent to the model on every turn, so the rest are operator tooling you opt into with
+`ONEMEMORY_TOOLS=all`, or by naming them: `ONEMEMORY_TOOLS=memory_index,memory_timeline`. See
+[docs/configuration.md](./docs/configuration.md). The command runner (`task_*`, `runner_status`) is **not
+shipped in the npm package** — build it from the repo.
 
 | Tool | Scope | |
 |---|---|---|
@@ -471,8 +491,9 @@ limits: [SECURITY.md](./SECURITY.md),
 
 **About the retrieval eval.** `evals/cross-device-tasks.json` is 10 tasks over
 10 notes and lexically easy; its perfect score is a regression gate in CI,
-not evidence of retrieval quality. Keyword-only `state_search` scores 0.70
-recall@1 on it. See [docs/encryption-retention.md](./docs/encryption-retention.md#the-evaluation-set).
+not evidence of retrieval quality. Keyword-only `state_search` scores 1.00
+recall@1 on it (0.70 before the 2.0.0 any-word fallback and the 2.1.1
+negation fix). See [docs/encryption-retention.md](./docs/encryption-retention.md#the-evaluation-set).
 
 ## Leaves no trace
 

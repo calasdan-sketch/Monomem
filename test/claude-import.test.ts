@@ -45,9 +45,9 @@ function fixture() {
   w(join(proj, "CLAUDE.md"), "# Project Atlas\n\n## Build\nRun `npm run build`.\n\n```sh\n# not a heading\nnpm test\n```\n\n## Deploy\nDeploys happen on Thursday.\n");
   w(join(proj, ".claude", "CLAUDE.md"), "## Extra\nStuff in the dot folder.\n");
   w(join(proj, "CLAUDE.local.md"), "## Sandbox\nMy sandbox URL is https://sandbox.example.test\n");
-  const mem = join(home, ".claude", "projects", "-home-dan-atlas", "memory");
-  w(join(mem, "MEMORY.md"), "- [Role](user_role.md) - who Dan is\n- [Testing](feedback_testing.md)\n");
-  w(join(mem, "user_role.md"), "---\nname: Dan's role\ndescription: what Dan does\ntype: user\n---\nDan is a founder who prefers short answers.\n");
+  const mem = join(home, ".claude", "projects", "-home-avery-atlas", "memory");
+  w(join(mem, "MEMORY.md"), "- [Role](user_role.md) - who Avery is\n- [Testing](feedback_testing.md)\n");
+  w(join(mem, "user_role.md"), "---\nname: Avery's role\ndescription: what Avery does\ntype: user\n---\nAvery is a founder who prefers short answers.\n");
   w(join(mem, "feedback_testing.md"), "---\nname: Testing feedback\ntype: feedback\n---\nIntegration tests must hit a real database.\n");
   return { root, home, proj, mem, e: { home, env: { HOME: home } as NodeJS.ProcessEnv, cwd: proj }, db: join(root, "db", "state.db"), w };
 }
@@ -174,8 +174,8 @@ describe("import --claude: cutting into notes", () => {
     assert.equal(splitSections("## A\n@docs/git.md\n@~/.claude/mine.md\n", "F").imports, 2);
   });
   test("frontmatter is read for auto-memory files", () => {
-    const f = parseFrontmatter("---\nname: \"Dan's role\"\ntype: user\n---\nbody\n");
-    assert.equal(f.fm.name, "Dan's role");
+    const f = parseFrontmatter("---\nname: \"Avery's role\"\ntype: user\n---\nbody\n");
+    assert.equal(f.fm.name, "Avery's role");
     assert.equal(f.fm.type, "user");
     assert.equal(f.body, "body\n");
     assert.deepEqual(parseFrontmatter("no frontmatter").fm, {});
@@ -190,12 +190,12 @@ describe("import --claude: cutting into notes", () => {
   test("each note is tagged with source kind, project and (auto memory) type", () => {
     const f = fixture();
     const { candidates } = buildCandidates(discoverSources(f.e).files);
-    const role = candidates.find((c) => c.title === "Dan's role")!;
+    const role = candidates.find((c) => c.title === "Avery's role")!;
     assert.ok(role.tags.includes(IMPORT_TAG));
     assert.ok(role.tags.includes("claude-auto-memory"));
     assert.ok(role.tags.includes("memory-type:user"));
-    assert.ok(role.tags.includes("project:-home-dan-atlas"));
-    assert.ok(role.body.startsWith("what Dan does"));
+    assert.ok(role.tags.includes("project:-home-avery-atlas"));
+    assert.ok(role.body.startsWith("what Avery does"));
     const build = candidates.find((c) => c.title === "Project Atlas / Build")!;
     assert.ok(build.tags.includes("claude-md"));
     assert.ok(build.tags.includes("project:my project"));

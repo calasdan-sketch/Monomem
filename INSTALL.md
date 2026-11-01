@@ -4,13 +4,32 @@ OneMemory speaks the standard **MCP** protocol, so it drops into any
 MCP-capable agent. They all launch it the same way — a local command over
 "stdio" — they just keep their config in different places. Pick yours below.
 
-> **One-time setup first** (Node.js 22.5+ or 24 LTS):
+> **One-time setup first** (Node.js 22.13+ or 24 LTS):
 > ```bash
 > npm install -g onememory-mcp
 > ```
 > That puts the `onememory` command on your PATH; every client below runs
 > `onememory mcp`. Your memory lives in `~/.onememory` (override with
 > `ONEMEMORY_HOME`), so it survives upgrades.
+>
+> **Ten tools are registered by default** — enough to write, find, read,
+> forget and safely replace a memory. Every tool's schema is sent to the model
+> on every turn, so the operator tools (change feed, task board, trust,
+> quarantine, consolidation, history, session index) are opt-in. To switch
+> them on, add an `env` block to the client config you are about to edit:
+>
+> ```json
+> {
+>   "command": "onememory",
+>   "args": ["mcp"],
+>   "env": { "ONEMEMORY_TOOLS": "all" }
+> }
+> ```
+>
+> You can name individual tools instead of `all`:
+> `"ONEMEMORY_TOOLS": "memory_index,memory_timeline,memory_get,session_list"`.
+> The default ten are always kept, so a typo cannot leave you unable to read
+> or write. See [docs/configuration.md](./docs/configuration.md).
 >
 > Working from a git clone instead? `npm install && npm run build && npm link`
 > gives you the same `onememory` command.

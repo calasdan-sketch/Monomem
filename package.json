@@ -1,7 +1,7 @@
 {
   "name": "onememory-mcp",
-  "version": "2.1.1",
-  "description": "OneMemory — one self-hosted SQLite memory store that Claude, Cursor, Codex, Gemini and any other MCP or REST client all read and write, so a fact you state once is known everywhere.",
+  "version": "2.1.2",
+  "description": "Auditable shared memory for Claude, Cursor, Codex, Gemini and any MCP client — every note sourced, versioned and undoable. Self-hosted, no API keys.",
   "license": "MIT",
   "author": "Calas Automations Inc.",
   "repository": {
@@ -17,9 +17,13 @@
     "memory",
     "ai-agents",
     "claude",
+    "cursor",
+    "gemini",
     "sqlite",
     "fts5",
     "self-hosted",
+    "local-first",
+    "provenance",
     "note-store",
     "semantic-search",
     "rest-api"
@@ -29,7 +33,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -42,6 +46,7 @@
     "cli": "node dist/src/cli.js",
     "test": "npm run build && node --test --import ./dist/test/setup-env.js \"dist/test/*.test.js\"",
     "prepublishOnly": "npm run build",
+    "demo-gif": "node scripts/make-demo-gif.mjs",
     "runner": "node dist/src/runner-start.js",
     "runner:sign": "node dist/src/runner-sign-start.js"
   },

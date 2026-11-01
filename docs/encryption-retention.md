@@ -179,7 +179,7 @@ limitation stays visible instead of papered over:
 
 ```
 [eval] cross-device retrieval over 10 tasks (best of keyword+relevant): recall@1=1.000 recall@5=1.000 mrr=1.000
-[eval] keyword-only (state_search, AND) recall@1=0.700
+[eval] keyword-only (state_search, AND) recall@1=1.000
 ```
 
 **Read this score honestly.** The set is 10 tasks over a 10-note corpus,

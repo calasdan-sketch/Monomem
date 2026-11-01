@@ -146,11 +146,18 @@ prompt-injection / "memory poisoning"** channel. Layers:
 
 - Single-user, single-node SQLite. No clustering, no multi-tenant isolation
   beyond namespaces on one process.
-- Only the latest revision of each note is kept; there is no edit history to
-  roll back to. Backups are snapshots.
+- Note history is bounded, not unlimited: `ONEMEMORY_HISTORY_VERSIONS` earlier
+  versions per note (default 20, at most 500; **`0` keeps none at all, the
+  original included**) and `ONEMEMORY_HISTORY_MAX_BYTES` of earlier text per
+  note (default 2,000,000; 10,000 to 50,000,000). While history is on,
+  pruning never drops the oldest kept version. Older versions beyond those
+  limits are gone and cannot be restored, and an explicit purge
+  (`onememory history purge`, `memory_history_purge`,
+  `DELETE /notes/:id/history`) deletes **every** kept version, original
+  included.
 - The similarity-edge graph rebuild is O(n^2); large imports defer it.
 - Keyword extraction for recall is English-oriented.
-- Requires Node.js 24+ (built-in `node:sqlite`).
+- Requires Node.js 22.13+ (built-in `node:sqlite`; added in 22.5.0 but behind `--experimental-sqlite` until 22.13.0).
 - **Restore into an empty store.** `POST /import` does not de-duplicate:
   importing a backup into a store that already holds those notes creates
   duplicates.

@@ -17,7 +17,8 @@ function usage(): void {
       "onememory <command>",
       "",
       "  start     Start the API + dashboard AND MCP-over-HTTP (default).",
-      "            When: always-on, so your phone and claude.ai web reach the same memory.",
+      "            When: always-on. Local by default (127.0.0.1); to reach it from a phone or claude.ai,",
+      "            put your own authenticated tunnel in front of it (see INFRA.md).",
       "  mcp       Start the MCP server over stdio.",
       "            When: wiring a local agent (Claude Code / Cursor / Copilot). See: onememory init",
       "  --version, -v   Print the installed version.",
@@ -2125,7 +2126,7 @@ async function main(): Promise<void> {
     if (!nodeIsOk(process.versions.node)) {
       console.error(
         `OneMemory needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${process.versions.node}.\n` +
-          "  Fix: install Node 22.5+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n" +
+          "  Fix: install Node 22.13+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n" +
           "  Nothing was changed. (Can't upgrade Node? Docker works too: see INSTALL.md.)"
       );
       process.exit(1);

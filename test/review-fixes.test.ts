@@ -46,8 +46,8 @@ describe("review: old Node gets a plain message, not a stack trace", () => {
     writeFileSync(shim, `Object.defineProperty(process.versions, "node", { value: "22.1.0" });\nawait import(${JSON.stringify("file://" + CLI.replace(/\\/g, "/"))});\n`);
     const r = spawnSync(process.execPath, [shim, "setup", "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: root, USERPROFILE: root, ONEMEMORY_HOME: join(root, "om") } });
     assert.equal(r.status, 1);
-    // 22.1.0 has no `node:sqlite`, so it is still refused; the floor is 22.5.0.
-    assert.match(r.stderr, /needs Node\.js 22\.5\.0 or newer.*Node 22\.1\.0/s);
+    // 22.1.0 has no `node:sqlite` at all, so it is refused; the floor is 22.13.0.
+    assert.match(r.stderr, /needs Node\.js 22\.13\.0 or newer.*Node 22\.1\.0/s);
     assert.doesNotMatch(r.stderr, /node:sqlite|at .*\.js:\d+/);
     assert.ok(!existsSync(join(root, "om")), "nothing created");
   });

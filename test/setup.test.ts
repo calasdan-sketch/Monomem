@@ -96,8 +96,8 @@ describe("setup: finding the apps", () => {
     assert.equal(t.find((x) => x.id === "cursor")!.file, join(s.home, ".cursor", "mcp.json"));
   });
   test("Windows: Claude Desktop lives under APPDATA", () => {
-    const s = sandbox({ platform: "win32" }, { APPDATA: "C:/Users/danie/AppData/Roaming" });
-    assert.match(detectClients(s.e).find((x) => x.id === "claude-desktop")!.file.replace(/\\/g, "/"), /C:\/Users\/danie\/AppData\/Roaming\/Claude\/claude_desktop_config\.json$/);
+    const s = sandbox({ platform: "win32" }, { APPDATA: "C:/Users/testuser/AppData/Roaming" });
+    assert.match(detectClients(s.e).find((x) => x.id === "claude-desktop")!.file.replace(/\\/g, "/"), /C:\/Users\/testuser\/AppData\/Roaming\/Claude\/claude_desktop_config\.json$/);
   });
   test("Windows without APPDATA falls back to AppData\\Roaming in the home folder", () => {
     const s = sandbox({ platform: "win32" });
@@ -142,7 +142,7 @@ describe("setup: the entry it writes", () => {
     assert.deepEqual(en.args, ["-y", "onememory-mcp@1.7.0", "mcp"]);
   });
   test("on Windows npx is wrapped in cmd /c", () => {
-    const s = sandbox({ platform: "win32", cliPath: "C:\\Users\\danie\\AppData\\Local\\npm-cache\\_npx\\1\\node_modules\\onememory-mcp\\dist\\src\\cli.js" });
+    const s = sandbox({ platform: "win32", cliPath: "C:\\Users\\testuser\\AppData\\Local\\npm-cache\\_npx\\1\\node_modules\\onememory-mcp\\dist\\src\\cli.js" });
     const en = buildServerEntry(s.e, { command: "auto" });
     assert.equal(en.command, "cmd");
     assert.deepEqual(en.args, ["/c", "npx", "-y", "onememory-mcp@1.7.0", "mcp"]);
@@ -163,8 +163,8 @@ describe("setup: the entry it writes", () => {
     assert.deepEqual(json(file).mcpServers.onememory.args, en.args);
   });
   test("the hook command is shell-safe: bare node, forward slashes, quoted path", () => {
-    const s = sandbox({ platform: "win32", cliPath: "C:\\Users\\Dan Calas\\x\\dist\\src\\cli.js" });
-    assert.equal(buildHookCommand(s.e, { command: "auto" }), 'node "C:/Users/Dan Calas/x/dist/src/cli.js" recall --budget-ms 800');
+    const s = sandbox({ platform: "win32", cliPath: "C:\\Users\\Jane Doe\\x\\dist\\src\\cli.js" });
+    assert.equal(buildHookCommand(s.e, { command: "auto" }), 'node "C:/Users/Jane Doe/x/dist/src/cli.js" recall --budget-ms 800');
     assert.match(buildHookCommand(s.e, { command: "auto" }, "D:\\data\\state.db"), /--db "D:\/data\/state\.db"$/);
   });
 });
@@ -172,7 +172,7 @@ describe("setup: the entry it writes", () => {
 describe("setup: recognising the old claude-bridge entry", () => {
   test("by name, by path, and by CLAUDE_BRIDGE_ variables", () => {
     assert.equal(classifyEntry("claude-bridge", { command: "node" }), "legacy");
-    assert.equal(classifyEntry("memory", { command: "node", args: ["C:\\Users\\danie\\my-agent\\claude-bridge\\dist\\src\\mcp-stdio.js"] }), "legacy");
+    assert.equal(classifyEntry("memory", { command: "node", args: ["C:\\Users\\testuser\\my-agent\\claude-bridge\\dist\\src\\mcp-stdio.js"] }), "legacy");
     assert.equal(classifyEntry("m", { command: "node", env: { CLAUDE_BRIDGE_DB_PATH: "x" } }), "legacy");
   });
   test("OneMemory in any name is recognised; other servers are left alone", () => {
@@ -182,12 +182,12 @@ describe("setup: recognising the old claude-bridge entry", () => {
   });
   test("migrating renames CLAUDE_BRIDGE_ variables, keeps the database path and any extra setting", () => {
     const s = sandbox();
-    const m = migrateEntry(s.e, { command: "auto" }, { type: "stdio", command: "node", args: ["x"], env: { CLAUDE_BRIDGE_DB_PATH: "C:\\Users\\danie\\data\\state.db", FOO: "1" }, timeout: 5000 }, true);
-    assert.equal(m.entry.env!.ONEMEMORY_DB_PATH, "C:\\Users\\danie\\data\\state.db");
+    const m = migrateEntry(s.e, { command: "auto" }, { type: "stdio", command: "node", args: ["x"], env: { CLAUDE_BRIDGE_DB_PATH: "C:\\Users\\testuser\\data\\state.db", FOO: "1" }, timeout: 5000 }, true);
+    assert.equal(m.entry.env!.ONEMEMORY_DB_PATH, "C:\\Users\\testuser\\data\\state.db");
     assert.equal(m.entry.env!.FOO, "1");
     assert.equal(m.entry.env!.CLAUDE_BRIDGE_DB_PATH, undefined);
     assert.equal(m.entry.timeout, 5000);
-    assert.equal(m.db, "C:\\Users\\danie\\data\\state.db");
+    assert.equal(m.db, "C:\\Users\\testuser\\data\\state.db");
   });
   test("with no database named it looks beside the old install, and says so", () => {
     const s = sandbox();
@@ -247,13 +247,13 @@ describe("setup: looking before changing", () => {
     assert.equal(readFileSync(ccFile(s.home), "utf8"), REAL_CLAUDE_JSON);
   });
   test("a Node that is too old gets a clear message and nothing is touched", async () => {
-    // 22.4.0 is the last Node with no `node:sqlite` at all. (This used to say
-    // 22.11.0, which 2.1.0 supports -- the floor is 22.5.0, not 24.)
+    // 22.4.0 has no `node:sqlite` at all. (22.5-22.12 are refused too, but for
+    // a different reason: there the module needs --experimental-sqlite.)
     const s = sandbox({ nodeVersion: "22.4.0" });
     write(ccFile(s.home), REAL_CLAUDE_JSON);
     const io = makeIO();
     assert.equal(await runSetup(s.e, io, opts({ yes: true })), 1);
-    assert.match(io.all(), /needs Node\.js 22\.5\.0 or newer, and this computer has Node 22\.4\.0/);
+    assert.match(io.all(), /needs Node.js 22.13.0 or newer, and this computer has Node 22\.4\.0/);
     assert.match(io.all(), /node -v/);
     assert.equal(readFileSync(ccFile(s.home), "utf8"), REAL_CLAUDE_JSON);
   });

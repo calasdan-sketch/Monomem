@@ -245,6 +245,11 @@ export const DEFAULT_TOOLS: readonly string[] = [
   "catch_up",
   "memory_supersede_preview",
   "memory_supersede_confirm",
+  // The undo belongs with the confirm. Without it, a default install performs
+  // the destructive half of supersede while both the pre-confirm warning and
+  // the confirm response tell the user it can be undone -- by a tool the agent
+  // was never given. Same mistake already caught for memory_quarantine above.
+  "memory_supersede_undo",
 ];
 
 /**

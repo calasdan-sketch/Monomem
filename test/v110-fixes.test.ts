@@ -408,17 +408,17 @@ describe("6: namespace paths are case-insensitive on win32/darwin", () => {
     const saved = process.env.ONEMEMORY_SPACE;
     delete process.env.ONEMEMORY_SPACE;
     try {
-      const c = cfg({ "c:/users/dan/work": "work" });
-      assert.equal(resolveNamespace("C:\\Users\\Dan\\Work\\proj", c, { platform: "win32" }), "work");
-      assert.equal(resolveNamespace("C:\\Users\\Dan\\Work", c, { platform: "win32" }), "work");
-      assert.equal(resolveNamespace("C:\\Users\\Dan\\Workshop", c, { platform: "win32" }), "default");
+      const c = cfg({ "c:/users/avery/work": "work" });
+      assert.equal(resolveNamespace("C:\\Users\\Avery\\Work\\proj", c, { platform: "win32" }), "work");
+      assert.equal(resolveNamespace("C:\\Users\\Avery\\Work", c, { platform: "win32" }), "work");
+      assert.equal(resolveNamespace("C:\\Users\\Avery\\Workshop", c, { platform: "win32" }), "default");
       assert.equal(
-        resolveNamespace("/Users/Dan/Work/x", cfg({ "/users/dan/work": "work" }), { platform: "darwin" }),
+        resolveNamespace("/Users/Avery/Work/x", cfg({ "/users/avery/work": "work" }), { platform: "darwin" }),
         "work"
       );
       // Linux filesystems are case-sensitive: no folding there.
       assert.equal(
-        resolveNamespace("/home/Dan/work", cfg({ "/home/dan/work": "work" }), { platform: "linux" }),
+        resolveNamespace("/home/Avery/work", cfg({ "/home/avery/work": "work" }), { platform: "linux" }),
         "default"
       );
     } finally {

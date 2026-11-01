@@ -4,6 +4,69 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-11-01
+
+**2.1.1 published the wrong Node floor and would crash for part of the line it claimed to support.**
+
+### The Node floor is 22.13.0, not 22.5.0
+
+2.1.1's headline change was dropping the Node 24 requirement. It went one step too far. Two versions
+matter and only the later one is the floor:
+
+- **22.5.0** — `node:sqlite` was *added*, but only behind `--experimental-sqlite`
+- **22.13.0** — the flag requirement was *removed*, so a plain import works
+
+`src/config.ts` imports `node:sqlite` at the top level, so on **Node 22.5 through 22.12** the process
+died at module load with `ERR_UNKNOWN_BUILTIN_MODULE` before any OneMemory code ran. `engines` only
+warns, so those users installed cleanly and then hit a stack trace on their first command — the exact
+failure the 2.1.1 version gate was written to prevent.
+
+- `engines` is now `>=22.13.0`, `MIN_NODE_TEXT` is `22.13.0`, and every doc says 22.13.
+- The test suite had been asserting the wrong floor (`nodeIsOk("22.5.0") === true`), so it was green on
+  a broken invariant. It now asserts that 22.5 through 22.12 are **refused**.
+- CI pins a `22.13.0` matrix entry. `node: ["22"]` resolves to the newest 22.x, so the claimed floor was
+  never actually executed; 2.1.1's "the supported floor is tested" was not true.
+
+### `memory_supersede_undo` is registered by default
+
+Cutting the default surface to nine tools in 2.1.1 kept `memory_supersede_confirm` — the destructive
+half — but dropped `memory_supersede_undo`. Both the pre-confirm warning and the confirm response tell
+the user the change can be undone, naming a tool a default install never gave the assistant. The
+default set is now ten.
+
+### Claims corrected
+
+Each of these was published and wrong:
+
+- **`SECURITY.md` denied the flagship feature.** It said "there is no edit history to roll back to".
+  OneMemory keeps up to 20 versions per note with restore. It now also states what the bounds really
+  are, that `ONEMEMORY_HISTORY_VERSIONS=0` keeps nothing at all, and that an explicit purge removes
+  every version including the original.
+- **README said exports cannot contain replaced text. They can** — an export carries each note's
+  `history`, so it can hold text someone deliberately removed. Now documented with the warning, and
+  with `?history=0` / `--no-history` as the way to leave it out.
+- **The published recall figure was stale and understated.** README said keyword-only `state_search`
+  scored 0.70 recall@1; it measures **1.00**.
+- **"2.0.0 never reached npm" was false.** 2.0.0 is published, so anyone on it loses 23 tools from the
+  default surface on upgrade and should set `ONEMEMORY_TOOLS=all` to keep them.
+- **`skills/onememory-mem/SKILL.md` was dead on a default install** — all four tools it calls are
+  opt-in. Both skills now declare the requirement, and `INSTALL.md` shows the `env` block to add.
+- **`SKILL.md` advertised all 32 tools** without saying which were callable. It now separates them.
+- The shipped CLI help, `SKILL.md` and the session-start index all promised phone/web reach or named
+  `memory_get` unconditionally. The server binds `127.0.0.1` and ships no tunnel; the session index now
+  names whichever read tool is actually registered.
+- `docs/architecture.md` said twenty-eight tools (there are 32); `docs/provenance.md` named
+  `memory_changes`, which does not exist (it is `memory_since`); `CONTRIBUTING.md` still said Node 24.
+
+### Brand and demo
+
+- A README banner and a generated demo GIF, both referenced by absolute URLs (npm does not resolve
+  relative image paths). The GIF replaces a 1.7 MB orphan that nothing linked to and that had no
+  generator; it is built by `scripts/make-demo-gif.mjs` from ground truth recorded in
+  `docs/brand/demo-transcript.txt`, and it loops twice rather than forever (WCAG 2.2.2).
+- Owner identity removed from tracked source: a real name in a test path, a personal username across
+  nine lines, and a comment that compiled into the published tarball.
+
 ## [2.1.1] - 2026-11-01
 
 `v2.1.0` was tagged but never published: its release run failed on Windows when a test deleted its own
@@ -15,9 +78,9 @@ published name and version can never be reused and moving one is not worth the r
 **Installs on the Node you already have, and costs about 8,900 fewer tokens per turn.**
 
 Note on versioning: cutting the default tool set from 32 to 9 removes behaviour, which is strictly a
-major change. It ships as a minor because `ONEMEMORY_TOOLS=all` restores every tool, and 2.0.x never
-reached npm. 2.0.1 was published to the staging registry only and is folded into this release, so the
-upgrade path is 2.0.0 -> 2.1.0.
+major change. It ships as a minor because `ONEMEMORY_TOOLS=all` restores every tool. 2.0.0 **is** on npm,
+so anyone already on it loses 23 tools from the default surface on upgrade and should set
+`ONEMEMORY_TOOLS=all` to keep them; 2.0.1 reached the staging registry only. The upgrade path is 2.0.0 -> 2.1.1.
 
 ### Node 22 is supported (this was the biggest install barrier)
 
@@ -80,7 +143,7 @@ command queueing and runner status — when the command runner is not even shipp
 
 ## [2.0.1] - 2026-10-31
 
-Release-only: 2.0.0 never reached npm (trusted publishing was refused). Same code as 2.0.0; releases are now staged on npm and approved by the owner.
+Release-only: published to the staging registry only, never to the public npm registry. Same code as 2.0.0; releases are now staged on npm and approved by the owner.
 
 ## [2.0.0] - 2026-10-31
 

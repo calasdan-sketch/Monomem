@@ -1500,7 +1500,7 @@ export class Store {
   /**
    * 1.4.2: writer labels are compared in their cleaned form (NFKC, invisible format characters removed, see cleanWriter).
    * Rows written by 1.4.1 and earlier still hold the raw spelling, so a rule typed in the cleaned form would no longer
-   * match them (a fail-open of the distrust list for labels such as an emoji with a zero-width joiner, or "Dan(tm) bot").
+   * match them (a fail-open of the distrust list for labels such as an emoji with a zero-width joiner, or "Acme(tm) bot").
    * This one-time, idempotent pass re-writes every stored label whose cleaned form differs, merges rules that become
    * identical, and records `labels_clean_v1` in _meta. Only rows that actually change are touched; a read-only database
    * skips it and a writer does it at its next open.

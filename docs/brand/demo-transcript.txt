@@ -1,0 +1,84 @@
+OneMemory README demo — ground truth
+====================================
+
+Everything shown in docs/onememory-demo.gif is reproduced from this file.
+The GIF's frames are rendered (not screen-captured) so the text is legible at
+850px wide, but the note, its provenance and the measured latency below are
+real output from a real OneMemory server. Nothing is sped up.
+
+Captured:      2026-11-01
+Version:       onememory-mcp 2.1.1
+Platform:      Windows 11, Node v24.18.0
+Server:        local, bound 127.0.0.1, isolated store (empty at start)
+
+How two distinct writers were produced
+--------------------------------------
+`written_by` is stamped by the SERVER from the authenticated token's label and
+is never taken from the request body (see src/actor.ts, currentWriter()).
+Two labelled write-scope tokens were configured, sharing one namespace:
+
+  [
+    { "token": "<redacted>", "scope": "write", "label": "claude-code" },
+    { "token": "<redacted>", "scope": "write", "label": "gemini-cli"  }
+  ]
+
+So the two sides of the demo are genuinely two different authenticated
+writers against one shared store, which is the claim the GIF makes.
+
+
+1. WRITE — authenticated as `claude-code`
+-----------------------------------------
+POST /notes
+  {"title":"deploy target","body":"We deploy on Fly.io, not Render."}
+
+Response (fields shown in the GIF):
+  id:          1
+  title:       deploy target
+  body:        We deploy on Fly.io, not Render.
+  rev:         1
+  written_by:  claude-code     <- server-stamped, not client-claimed
+  created_by:  claude-code
+  created_at:  2026-11-01T19:11:34.115Z
+
+Measured: 255 ms round trip.
+
+
+2. READ — authenticated as `gemini-cli`, a different writer
+-----------------------------------------------------------
+POST /relevant
+  {"message":"where do we deploy?"}
+
+Response:
+  keywords: ["deploy"]
+  results[0]:
+    id:          1
+    title:       deploy target
+    body:        We deploy on Fly.io, not Render.
+    rev:         1
+    written_by:  claude-code
+    created_at:  2026-11-01T19:11:34.115Z
+
+Measured: 255 ms, 245 ms, 285 ms over three runs (median 255 ms).
+
+
+Honesty notes
+-------------
+* These timings are wall-clock round trips measured with `curl`, so each
+  includes curl's own process startup. Real in-process server time is lower.
+  The GIF holds the read gap for the full measured 255 ms rather than
+  shortening it.
+* The natural-language question goes through `/relevant` (the path an agent
+  actually calls, which extracts keywords first). The keyword-only `/search`
+  endpoint with the raw string `where do we deploy` returns no results,
+  because it searches the words as given. This is why the GIF shows the
+  agent path and not `state_search`.
+* The GIF labels its two panes `Writer A - token "claude-code"` and
+  `Writer B - token "gemini-cli"`, which is exactly what the captured run
+  produced: two separately authenticated write tokens against one store. It
+  does NOT claim that the Claude Code or Gemini CLI clients were recorded,
+  because they were not. The cross-writer provenance is real; the token
+  labels illustrate the intended use case.
+* No third-party logos or vendor company names appear in the GIF.
+* The GIF loops twice and then rests on its final frame, rather than looping
+  forever: a permanently repeating typing animation beside body text is a
+  WCAG 2.2.2 (Pause, Stop, Hide) failure.

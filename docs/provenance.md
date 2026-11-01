@@ -20,7 +20,7 @@ whole truth: who sets each, when it changes, and whether a distrust rule or `not
 | `source` | what the client says it is | the client (free text) | any edit | no (a claim) |
 | `imported_unverified` | did this note arrive **without** a verified attestation? (`true` or absent) | an import whose attestation was missing or failed (1.4.2) | never | no (a display flag; the claimed names are in the taint set) |
 
-**Change-feed names.** The feed (`/changes`, `memory_changes`) reports the writer of the *note* next to the
+**Change-feed names.** The feed (`/changes`, `memory_since`) reports the writer of the *note* next to the
 actor of the *change*: `writer_id` is `<server_id>/<label>` of the entry's own writer, `note_written_by` is
 the note's current `written_by` as of that entry, and `note_writer_id` is `<server_id>/<note_written_by>`.
 The filters `written_by` / `not_written_by` and `note_written_by` / `not_note_written_by` read those

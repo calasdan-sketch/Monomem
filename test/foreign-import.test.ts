@@ -138,15 +138,15 @@ describe("import --from mem0", () => {
       p,
       JSON.stringify({
         results: [
-          { id: "a1", memory: "Prefers dark mode", user_id: "dan", created_at: "2025-01-02T03:04:05Z", metadata: { categories: ["preferences"] } },
-          { id: "a2", memory: "Allergic to peanuts", user_id: "dan", categories: ["health"] },
+          { id: "a1", memory: "Prefers dark mode", user_id: "avery", created_at: "2025-01-02T03:04:05Z", metadata: { categories: ["preferences"] } },
+          { id: "a2", memory: "Allergic to peanuts", user_id: "avery", categories: ["health"] },
           { id: "a3", text: "" },
         ],
       })
     );
     const items = readMem0(p);
     assert.equal(items.length, 2);
-    assert.deepEqual(items[0].tags, ["category:preferences", "mem0-user:dan"]);
+    assert.deepEqual(items[0].tags, ["category:preferences", "mem0-user:avery"]);
     assert.equal(await runForeignImport(e, io(), o(db, { from: "mem0", path: p, namespace: "mem" })), 0);
     const s = new Store(db);
     try {

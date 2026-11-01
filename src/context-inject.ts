@@ -22,6 +22,20 @@ import { rrfScores, rankHits } from "./search-service.js";
 import { buildSummary } from "./recall.js";
 import { TASK_TAG, HANDOFF_TAG, listTasks } from "./tasks.js";
 import { NEVER_SHOW_TAG, isModelWritten } from "./reserved-tags.js";
+import { enabledToolNames } from "./mcp-server-core.js";
+
+/**
+ * The tool this text tells the model to open a memory with.
+ *
+ * It must be one the model was actually given. `memory_get` is not in the
+ * default ten-tool surface, so naming it unconditionally asked the assistant
+ * to call a tool it did not have -- the same mistake already caught for
+ * memory_quarantine. `state_read` is always registered.
+ */
+function openToolName(): string {
+  const on = enabledToolNames();
+  return on === null || on.has("memory_get") ? "memory_get" : "state_read";
+}
 import { meterAdd } from "./meter.js";
 
 export const DEFAULT_RECALL_TOKENS = 1500;
@@ -246,7 +260,7 @@ export async function injectContext(store: Store, opts: InjectOptions = {}): Pro
     shown.push(...notes);
   }
   const lines: string[] = [];
-  const header = "Memory index (most relevant first; open with memory_get):";
+  const header = `Memory index (most relevant first; open with ${openToolName()}):`;
   for (const n of ranked) {
     if (shown.some((s) => s.id === n.id)) continue;
     const line = indexLine(n, tagOf(n));
@@ -272,7 +286,7 @@ export async function injectContext(store: Store, opts: InjectOptions = {}): Pro
   const ids = shown.slice(0, 20).map((n) => n.id);
   const footer =
     `Showing ${shown.length} of ${Math.max(total, shown.length)} memories (~${Math.ceil(body.length / CHARS_PER_TOKEN)} tokens) standing in for ` +
-    `~${Math.ceil(fullChars / CHARS_PER_TOKEN)} tokens of captured work. Open any with memory_get ids=[${ids.join(",")}]`;
+    `~${Math.ceil(fullChars / CHARS_PER_TOKEN)} tokens of captured work. Open any with ${openToolName()} ids=[${ids.join(",")}]`;
   const out = `${body}\n\n${footer}`;
   if (opts.sessionId) {
     const injected = Math.ceil(out.length / CHARS_PER_TOKEN);

@@ -5,7 +5,7 @@ How to connect OneMemory to Claude Code (and Claude Desktop, and Cursor) with `o
 
 ## 1. Connect it
 
-You need Node.js 22.5 or newer (`node -v`). Close Claude Code and Claude Desktop first: Claude Code rewrites its settings file while it
+You need Node.js 22.13 or newer (`node -v`). Close Claude Code and Claude Desktop first: Claude Code rewrites its settings file while it
 runs.
 
 ```text
@@ -72,7 +72,7 @@ When you are happy, `onememory backup --prune-premigration` removes the safety c
 |---|---|
 | `/mcp` shows onememory as failed | Run the command from the entry yourself: `node "<path to cli.js>" mcp`. It should sit silently waiting (press Ctrl+C). An error there is the real problem. `onememory doctor` checks Node, the database and the token. |
 | onememory is not in `/mcp` at all | Claude Code was still running and rewrote its file. Close it completely, run `onememory setup` again, then open Claude Code. In a project, a `.mcp.json` server must be approved the first time Claude Code asks. |
-| "needs Node.js 22.5.0 or newer" | Install Node 22.5+ or 24 LTS from nodejs.org, open a **new** terminal, check `node -v`, run setup again. |
+| "needs Node.js 22.13.0 or newer" | Install Node 22.13+ or 24 LTS from nodejs.org, open a **new** terminal, check `node -v`, run setup again. |
 | Windows: a server started through `npx` fails | On native Windows, `npx` is a `.cmd` script, and wrapping it as `cmd /c npx ...` is commonly needed; the Claude Code MCP docs do not say so (checked), so this is not confirmed there. Setup writes that form when it is run through npx; check with `/mcp`. |
 | Windows: path with spaces or a short `PROGRA~1` name | Setup stores the path exactly as it found it and Claude Code starts the program without a shell, so spaces are safe. In a hook, the path is quoted. |
 | "the database is at schema v15 ... newer" | The database came from a newer OneMemory. Install the newest `onememory-mcp`. |

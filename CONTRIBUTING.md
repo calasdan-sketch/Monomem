@@ -15,7 +15,9 @@ Thanks for your interest — small, focused contributions are very welcome.
 
 ## Getting set up
 
-Requires Node.js **>= 24** (for the built-in `node:sqlite`).
+Requires Node.js **>= 22.13.0** (`node:sqlite` was added in 22.5.0 but needed
+`--experimental-sqlite` until 22.13.0). CI runs the suite on Node 22.13.0, 22
+and 24, so the supported floor is actually executed.
 
 ```bash
 npm install

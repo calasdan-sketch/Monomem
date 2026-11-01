@@ -275,14 +275,17 @@ export interface SetupPlan {
 }
 
 // The floor is set by `node:sqlite`, which is how notes are stored.
-// It landed in Node 22.5.0 and is importable with no flag from then on, so
-// 22.5.0 is the real minimum. (It asked for 24 until 2.1.0, which refused to
-// run on the whole current Node 22 LTS line for no technical reason -- by far
-// the biggest install barrier this package had.) The minor number matters:
-// Node 22.4 has no `node:sqlite` at all, so a major-only test would let it
-// through and the first database call would crash.
+//
+// Two different versions matter and only the later one is the floor:
+//   22.5.0  -- `node:sqlite` was ADDED, but only behind `--experimental-sqlite`
+//   22.13.0 -- the flag requirement was REMOVED, so a plain import works
+// src/config.ts has a static top-level `import { DatabaseSync } from "node:sqlite"`,
+// so on 22.5-22.12 the process dies at module load with ERR_UNKNOWN_BUILTIN_MODULE
+// before any of our code runs. 2.1.1 shipped 22.5.0 as the floor and was wrong:
+// `engines` only warns, so those users installed cleanly and crashed on first use.
+// The minor number matters, which is why this is not a major-only check.
 const MIN_NODE_MAJOR = 22;
-const MIN_NODE_MINOR = 5;
+const MIN_NODE_MINOR = 13;
 export const MIN_NODE_TEXT = `${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.0`;
 
 export function nodeIsOk(v: string): boolean {
@@ -901,7 +904,7 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
   if (!nodeIsOk(e.nodeVersion)) {
     io.err(
       `OneMemory needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${e.nodeVersion}.\n` +
-        `  Fix: install Node 22.5+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n` +
+        `  Fix: install Node 22.13+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n` +
         "  Then run this again. Nothing was changed. (Can't upgrade Node? Docker works too: see INSTALL.md.)"
     );
     return 1;

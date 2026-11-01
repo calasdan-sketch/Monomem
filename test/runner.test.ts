@@ -1,6 +1,6 @@
 // Runner tests. The three security gates (signature, freshness, allowlist)
 // get adversarial cases, not just happy paths -- this is the component that
-// turns a note from the public internet into a process on Dan's PC.
+// turns a note from the public internet into a process on the operator's PC.
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";

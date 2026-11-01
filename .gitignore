@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+build/
 
 # Runtime data (SQLite store + bearer token file)
 data/*

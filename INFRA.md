@@ -582,7 +582,7 @@ Steps marked (verified) were run end to end against this build on Linux, Node
 or a service manager and were not run.
 
 ```bash
-node -v                                  # (verified) must print v24 or newer
+node -v                                  # (verified) must print v22.13 or newer
 npm install -g onememory-mcp                 # (not verified here: needs the npm registry)
 onememory start                          # (verified) creates ~/.onememory/.token and state.db, API :8790, MCP :8791
 curl localhost:8790/health               # (verified) {"status":"ok"}

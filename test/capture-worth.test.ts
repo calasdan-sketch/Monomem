@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 
 import { observe, summarize } from "../src/extract.js";
 
-const CWD = "C:/Users/danie/new-repos/onememory";
+const CWD = "C:/Users/testuser/new-repos/onememory";
 
 let seq = 0;
 const ev = (o: Partial<{ event: string; tool: string; input: string; output: string; ok: boolean }>) => ({
@@ -38,7 +38,7 @@ describe("tool noise never becomes a memory", () => {
   test("edits confined to temp and cache folders produce no note", () => {
     const obs = observe(
       [
-        ev({ tool: "Edit", input: JSON.stringify({ file_path: "C:/Users/danie/AppData/Local/Temp/claude/x/scratch.py" }) }),
+        ev({ tool: "Edit", input: JSON.stringify({ file_path: "C:/Users/testuser/AppData/Local/Temp/claude/x/scratch.py" }) }),
         ev({ tool: "Write", input: JSON.stringify({ file_path: "/tmp/om-test-1/state.json" }) }),
         ev({ tool: "Edit", input: JSON.stringify({ file_path: `${CWD}/node_modules/foo/index.js` }) }),
       ],
@@ -80,7 +80,7 @@ describe("tool noise never becomes a memory", () => {
     const obs = observe(
       [
         ev({ tool: "Edit", input: JSON.stringify({ file_path: `${CWD}/src/lint.ts` }) }),
-        ev({ tool: "Edit", input: JSON.stringify({ file_path: "C:/Users/danie/AppData/Local/Temp/t/a.js" }) }),
+        ev({ tool: "Edit", input: JSON.stringify({ file_path: "C:/Users/testuser/AppData/Local/Temp/t/a.js" }) }),
       ],
       CWD
     );

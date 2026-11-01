@@ -23,9 +23,9 @@ const tmp = (): string => {
 
 describe("legacy environment names", () => {
   test("CLAUDE_BRIDGE_X is read as ONEMEMORY_X", () => {
-    const env: NodeJS.ProcessEnv = { CLAUDE_BRIDGE_DB_PATH: "C:\\Users\\danie\\data\\state.db", CLAUDE_BRIDGE_PORT: "9000" };
+    const env: NodeJS.ProcessEnv = { CLAUDE_BRIDGE_DB_PATH: "C:\\Users\\testuser\\data\\state.db", CLAUDE_BRIDGE_PORT: "9000" };
     assert.deepEqual(applyLegacyEnv(env).sort(), ["CLAUDE_BRIDGE_DB_PATH", "CLAUDE_BRIDGE_PORT"]);
-    assert.equal(env.ONEMEMORY_DB_PATH, "C:\\Users\\danie\\data\\state.db");
+    assert.equal(env.ONEMEMORY_DB_PATH, "C:\\Users\\testuser\\data\\state.db");
     assert.equal(env.ONEMEMORY_PORT, "9000");
   });
   test("the new name always wins when both are set", () => {

@@ -112,12 +112,12 @@ describe("F2/F4: label cleaning is idempotent and applies to rows stored by 1.4.
 
   test("a rule on 'e + zero-width + combining accent' matches the label however it is typed; emoji ZWJ and the trademark sign too", () => {
     const s = new Store(":memory:");
-    for (const label of ["e\u200b\u0301vil", "\u{1F468}\u200d\u{1F4BB} dev", "Dan\u2122 bot"]) {
+    for (const label of ["e\u200b\u0301vil", "\u{1F468}\u200d\u{1F4BB} dev", "Acme\u2122 bot"]) {
       as(label, () => s.create({ title: `by ${label}`, body: "x" }));
     }
     as("good", () => s.create({ title: "plain", body: "x" }));
     assert.equal(s.list().notes.length, 4);
-    for (const rule of ["e\u200b\u0301vil", "\u00e9vil", "\u{1F468}\u200d\u{1F4BB} dev", "\u{1F468}\u{1F4BB} dev", "Dan\u2122 bot", "DanTM bot"]) s.distrustAdd("*", rule);
+    for (const rule of ["e\u200b\u0301vil", "\u00e9vil", "\u{1F468}\u200d\u{1F4BB} dev", "\u{1F468}\u{1F4BB} dev", "Acme\u2122 bot", "AcmeTM bot"]) s.distrustAdd("*", rule);
     assert.deepEqual(s.list().notes.map((n) => n.title), ["plain"]);
     s.close();
   });
@@ -131,10 +131,10 @@ describe("F2/F4: label cleaning is idempotent and applies to rows stored by 1.4.
       const bad = as("seed", () => s.create({ title: "old evil", body: "x" }));
       s.close();
       const d = new DatabaseSync(path);
-      const raw = "Dan\u2122 bot";
+      const raw = "Acme\u2122 bot";
       d.prepare("UPDATE notes SET written_by = ?, created_by = ?, imported_written_by = ?, merged_from_writers = ? WHERE id = ?").run(raw, raw, "e\u200b\u0301vil", JSON.stringify([raw, "ok"]), bad.id);
       d.prepare("UPDATE change_log SET written_by = ?, note_written_by = ? WHERE note_id = ?").run(raw, raw, bad.id);
-      for (const w of [raw, "DanTM bot"]) d.prepare("INSERT INTO trust_distrust (namespace, writer, added_at, added_by) VALUES ('*', ?, 'now', 'x')").run(w);
+      for (const w of [raw, "AcmeTM bot"]) d.prepare("INSERT INTO trust_distrust (namespace, writer, added_at, added_by) VALUES ('*', ?, 'now', 'x')").run(w);
       d.exec("DELETE FROM _meta WHERE key = 'labels_clean_v1'");
       d.close();
 
@@ -144,11 +144,11 @@ describe("F2/F4: label cleaning is idempotent and applies to rows stored by 1.4.
       s.close();
       const v = new DatabaseSync(path, { readOnly: true });
       const row = v.prepare("SELECT written_by, created_by, imported_written_by, merged_from_writers FROM notes WHERE id = ?").get(bad.id) as Record<string, string>;
-      assert.equal(row.written_by, "DanTM bot");
-      assert.equal(row.created_by, "DanTM bot");
+      assert.equal(row.written_by, "AcmeTM bot");
+      assert.equal(row.created_by, "AcmeTM bot");
       assert.equal(row.imported_written_by, "\u00e9vil");
-      assert.deepEqual(JSON.parse(row.merged_from_writers), ["DanTM bot", "ok"]);
-      assert.equal((v.prepare("SELECT written_by AS w FROM change_log WHERE note_id = ? AND written_by <> '' LIMIT 1").get(bad.id) as { w: string }).w, "DanTM bot");
+      assert.deepEqual(JSON.parse(row.merged_from_writers), ["AcmeTM bot", "ok"]);
+      assert.equal((v.prepare("SELECT written_by AS w FROM change_log WHERE note_id = ? AND written_by <> '' LIMIT 1").get(bad.id) as { w: string }).w, "AcmeTM bot");
       assert.equal(Number((v.prepare("SELECT COUNT(*) AS c FROM trust_distrust").get() as { c: number }).c), 1, "the two spellings of one rule became one");
       assert.equal((v.prepare("SELECT value AS c FROM _meta WHERE key = 'labels_clean_v1'").get() as { c: string }).c, "1");
       v.close();

@@ -1077,7 +1077,7 @@ export async function pollOnce(deps: RunnerDeps): Promise<number> {
       handled++;
     } catch (e) {
       // One bad note must never kill the loop -- that would silently end
-      // remote control until Dan next looks at the PC.
+      // remote control until the operator next looks at the PC.
       console.error(`[onememory:runner] note ${note.id} failed:`, e);
     }
   }
