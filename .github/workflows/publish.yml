@@ -31,31 +31,18 @@ permissions:
   id-token: write
 
 jobs:
-  # The same matrix CI runs on a push. A tag that is pushed before (or without) a green CI run must not
-  # reach npm, so publishing waits for build + test on every platform.
+  # Literally the CI workflow, called -- not a second copy of its matrix.
+  #
+  # This used to be a duplicate job whose comment claimed it was "the same
+  # matrix CI runs". Nothing enforced that, and it drifted: ci.yml pinned the
+  # 22.16.0 floor and this file still said ["22", "24"], so the gate guarding
+  # npm was the only one that never executed the floor the release was about.
+  # A tag pushed before (or without) a green CI run must not reach npm, and
+  # reuse is what makes that true instead of asserted.
   verify:
-    name: build & test (Node ${{ matrix.node }} / ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      # fail-fast cancelled the other platforms as soon as one failed, so a
-      # single Windows flake hid whether the release was actually broken
-      # everywhere or just on one runner. Let all three report.
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node: ["22", "24"]
+    uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          # The matrix value, not a hard-coded 24: the supported floor is
-          # 22.16, so a release must be proved on 22 as well as 24.
-          node-version: ${{ matrix.node }}
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
 
   publish:
     needs: [verify]

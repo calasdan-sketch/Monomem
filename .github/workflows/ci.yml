@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # publish.yml calls this instead of keeping its own copy of the matrix.
+  # The two had drifted: CI pinned the 22.16.0 floor and the release gate did
+  # not, so the one workflow guarding npm was the one that never ran the floor
+  # the release was about. One matrix, one source, enforced by reuse rather
+  # than by a comment asking the two files to agree.
+  workflow_call:
 
 jobs:
   test:

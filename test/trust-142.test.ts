@@ -889,9 +889,29 @@ describe("docs and CI stay in step with the code", () => {
 
   test("publish.yml waits for the full CI matrix (ubuntu, windows, macos) before publishing", () => {
     const y = read(".github", "workflows", "publish.yml");
-    assert.match(y, /windows-latest/);
-    assert.match(y, /macos-latest/);
-    assert.match(y, /needs:\s*\[?\s*verify/);
+    // publish.yml used to keep its own copy of the matrix, with a comment
+    // claiming it was "the same matrix CI runs on a push". Nothing enforced
+    // that and it drifted: ci.yml pinned the 22.16.0 Node floor and publish.yml
+    // did not, so the one gate guarding npm was the only one that never ran the
+    // floor. It now CALLS ci.yml, which is what makes "the same matrix" true
+    // rather than asserted. Assert the reuse, not a duplicated platform list.
+    assert.match(y, /uses:\s*\.\/\.github\/workflows\/ci\.yml/, "publish must reuse ci.yml, not copy its matrix");
+    assert.match(y, /needs:\s*\[?\s*verify/, "the publish job must wait for it");
+    const ci = read(".github", "workflows", "ci.yml");
+    assert.match(ci, /workflow_call:/, "ci.yml must be callable for that reuse to work");
+    for (const os of ["ubuntu-latest", "windows-latest", "macos-latest"]) {
+      assert.ok(ci.includes(os), `the shared matrix must still cover ${os}`);
+    }
+  });
+
+  test("the shared matrix executes the Node floor the package claims", () => {
+    // The defect that shipped three times: the floor was asserted in a unit
+    // test and never actually run. Pinning it in the matrix is what caught the
+    // missing FTS5 in 22.13-22.15.
+    const ci = read(".github", "workflows", "ci.yml");
+    const pkg = JSON.parse(read("package.json")) as { engines: { node: string } };
+    const floor = pkg.engines.node.replace(/^>=/, "").trim();
+    assert.ok(ci.includes(`"${floor}"`), `ci.yml must pin ${floor} so the claimed floor is executed, not assumed`);
   });
 
   test("every glossary field name of the feed exists in the code", () => {
