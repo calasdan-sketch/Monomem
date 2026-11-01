@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { applyOps, getMember, getPath, JsonEditError, opsAreApplied, parseDoc, parseJsonc, type Op } from "./jsonc-edit.js";
 import { applyTomlOps, hasServer, tomlOpsApplied } from "./toml-table.js";
 
@@ -274,25 +275,69 @@ export interface SetupPlan {
   conflicts: string[];
 }
 
-// The floor is set by `node:sqlite`, which is how notes are stored.
+// Which Node can actually run OneMemory. Two separate capabilities are needed,
+// and they arrived at different times, so a single ">= x.y" rule is wrong:
 //
-// Two different versions matter and only the later one is the floor:
-//   22.5.0  -- `node:sqlite` was ADDED, but only behind `--experimental-sqlite`
-//   22.13.0 -- the flag requirement was REMOVED, so a plain import works
-// src/config.ts has a static top-level `import { DatabaseSync } from "node:sqlite"`,
-// so on 22.5-22.12 the process dies at module load with ERR_UNKNOWN_BUILTIN_MODULE
-// before any of our code runs. 2.1.1 shipped 22.5.0 as the floor and was wrong:
-// `engines` only warns, so those users installed cleanly and crashed on first use.
-// The minor number matters, which is why this is not a major-only check.
+//   1. `node:sqlite` importable with no flag -- notes are stored through it
+//      (src/config.ts imports it at the top level, so a miss is a load-time crash)
+//   2. SQLite built WITH FTS5 -- every search goes through an FTS5 table, so a
+//      miss is `ERR_SQLITE_ERROR: no such module: fts5` on the first query
+//
+// Measured on official nodejs.org builds, not inferred from release notes:
+//
+//   22.5.0 - 22.12.x   node:sqlite behind --experimental-sqlite  -> refuse
+//   22.13.0 - 22.15.x  node:sqlite unflagged, but NO FTS5        -> refuse
+//   22.16.0+           both                                       -> ACCEPT
+//   23.x (all of it)   no FTS5 even in 23.11.1, the last release -> refuse
+//   24.0.0+            both                                       -> ACCEPT
+//
+// The whole Node 23 line is unusable, which is why this cannot be a simple
+// "newer is fine" comparison: 23 is newer than 22.16 and still broken. 23 was
+// never an LTS line and is end-of-life, so excluding it costs nothing.
+//
+// History of this gate getting it wrong: it demanded 24 (locking out all of
+// LTS 22), then 2.1.1 said 22.5.0 (load-time crash on 22.5-22.12), then 22.13.0
+// (FTS5 crash on 22.13-22.15, caught only once CI pinned the floor and ran it).
 const MIN_NODE_MAJOR = 22;
-const MIN_NODE_MINOR = 13;
+const MIN_NODE_MINOR = 16;
+const BROKEN_MAJOR = 23; // no FTS5 anywhere in the line
 export const MIN_NODE_TEXT = `${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.0`;
+
+/**
+ * Ask this Node whether its SQLite actually has FTS5, instead of inferring it
+ * from a version number.
+ *
+ * nodeIsOk() is a version heuristic built from the official nodejs.org builds,
+ * and it is right for those. It cannot be right for a distro or custom build
+ * that compiled SQLite with different flags at any version. Every OneMemory
+ * search goes through an FTS5 table, so "no such module: fts5" is fatal, and a
+ * capability probe costs one in-memory statement.
+ */
+export function sqliteHasFts5(): boolean {
+  try {
+    // Loaded lazily through createRequire: this package is ESM, so a bare
+    // `require` is not defined (that bug made the probe return false on a Node
+    // that does have FTS5). Lazy, not a static import, so a Node without
+    // node:sqlite reports false here instead of dying at module load.
+    const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+    const db = new DatabaseSync(":memory:");
+    try {
+      db.exec("CREATE VIRTUAL TABLE __fts5_probe USING fts5(x)");
+      return true;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return false;
+  }
+}
 
 export function nodeIsOk(v: string): boolean {
   const m = /^v?(\d+)\.(\d+)\./.exec(v.trim());
   if (!m) return false; // unparseable: refuse rather than assume it is new enough
   const major = Number(m[1]);
   const minor = Number(m[2]);
+  if (major === BROKEN_MAJOR) return false; // 23.x ships SQLite without FTS5
   if (major > MIN_NODE_MAJOR) return true;
   if (major < MIN_NODE_MAJOR) return false;
   return minor >= MIN_NODE_MINOR;
@@ -904,7 +949,7 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
   if (!nodeIsOk(e.nodeVersion)) {
     io.err(
       `OneMemory needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${e.nodeVersion}.\n` +
-        `  Fix: install Node 22.13+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n` +
+        `  Fix: install Node 22.16+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n` +
         "  Then run this again. Nothing was changed. (Can't upgrade Node? Docker works too: see INSTALL.md.)"
     );
     return 1;

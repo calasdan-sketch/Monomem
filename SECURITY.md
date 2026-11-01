@@ -157,7 +157,7 @@ prompt-injection / "memory poisoning"** channel. Layers:
   included.
 - The similarity-edge graph rebuild is O(n^2); large imports defer it.
 - Keyword extraction for recall is English-oriented.
-- Requires Node.js 22.13+ (built-in `node:sqlite`; added in 22.5.0 but behind `--experimental-sqlite` until 22.13.0).
+- Requires Node.js 22.16+ (built-in `node:sqlite`; added in 22.5.0 but behind `--experimental-sqlite` until 22.16.0).
 - **Restore into an empty store.** `POST /import` does not de-duplicate:
   importing a backup into a store that already holds those notes creates
   duplicates.

@@ -4,7 +4,7 @@ OneMemory speaks the standard **MCP** protocol, so it drops into any
 MCP-capable agent. They all launch it the same way — a local command over
 "stdio" — they just keep their config in different places. Pick yours below.
 
-> **One-time setup first** (Node.js 22.13+ or 24 LTS):
+> **One-time setup first** (Node.js 22.16+ or 24 LTS):
 > ```bash
 > npm install -g onememory-mcp
 > ```

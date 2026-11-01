@@ -253,7 +253,7 @@ describe("setup: looking before changing", () => {
     write(ccFile(s.home), REAL_CLAUDE_JSON);
     const io = makeIO();
     assert.equal(await runSetup(s.e, io, opts({ yes: true })), 1);
-    assert.match(io.all(), /needs Node.js 22.13.0 or newer, and this computer has Node 22\.4\.0/);
+    assert.match(io.all(), /needs Node.js 22.16.0 or newer, and this computer has Node 22\.4\.0/);
     assert.match(io.all(), /node -v/);
     assert.equal(readFileSync(ccFile(s.home), "utf8"), REAL_CLAUDE_JSON);
   });

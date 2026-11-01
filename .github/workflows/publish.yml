@@ -51,7 +51,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           # The matrix value, not a hard-coded 24: the supported floor is
-          # 22.13, so a release must be proved on 22 as well as 24.
+          # 22.16, so a release must be proved on 22 as well as 24.
           node-version: ${{ matrix.node }}
       - run: npm ci
       - run: npm run build

@@ -6,7 +6,7 @@
 [![CI](https://github.com/calasdan-sketch/onememory/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/onememory/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/onememory-mcp)](https://www.npmjs.com/package/onememory-mcp)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Node](https://img.shields.io/badge/node-%3E%3D22.13-green)
+![Node](https://img.shields.io/badge/node-%3E%3D22.16-green)
 
 ![One writer stores a note; a second, separately authenticated writer reads it back and can show who wrote it](https://raw.githubusercontent.com/calasdan-sketch/onememory/main/docs/onememory-demo.gif)
 
@@ -32,8 +32,8 @@ web access).
 
 ## Quickstart
 
-> **Requires Node.js 22.13 or newer** (22.13+ or 24 LTS). OneMemory uses Node's
-> built-in `node:sqlite`, which arrived in 22.5 but needed a flag until 22.13. Check with `node -v`. Can't
+> **Requires Node.js 22.16 or newer** (22.16+ or 24 LTS). OneMemory uses Node's
+> built-in `node:sqlite`, which arrived in 22.5 but needed a flag until 22.16. Check with `node -v`. Can't
 > upgrade? Use [Docker](#docker) instead.
 
 ### Install in 60 seconds
@@ -319,7 +319,7 @@ publish one. Read their own docs and pick on your needs:
   are all worth a look.
 
 What OneMemory itself provides (all of it checkable in this repo): MIT
-license, Node 22.13+ with 2 direct runtime dependencies, one SQLite file,
+license, Node 22.16+ with 2 direct runtime dependencies, one SQLite file,
 MCP over stdio and HTTP plus a REST API, optional semantic search with your
 own embeddings endpoint, a change feed that includes deletes, a write-time
 secret and injection linter, Markdown export and three-way import, scoped

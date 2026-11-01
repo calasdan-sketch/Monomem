@@ -194,11 +194,18 @@ async function doctor(): Promise<void> {
   const warn = (m: string) => console.log("  [warn] " + m);
   console.log("onememory doctor\n");
 
-  const { nodeIsOk, MIN_NODE_TEXT } = await import("./setup.js");
+  const { nodeIsOk, MIN_NODE_TEXT, sqliteHasFts5 } = await import("./setup.js");
   if (nodeIsOk(process.versions.node)) {
     ok("Node " + process.versions.node);
   } else {
-    warn("Node " + process.versions.node + ` — need >= ${MIN_NODE_TEXT} (for the built-in SQLite)`);
+    warn("Node " + process.versions.node + ` — need >= ${MIN_NODE_TEXT} (for the built-in SQLite). Node 23.x is not supported at any version: it has no FTS5.`);
+  }
+  // Asked, not inferred: a distro or custom build can lack FTS5 at any version,
+  // and every search needs it. This is the check that cannot be wrong.
+  if (sqliteHasFts5()) {
+    ok("SQLite has FTS5 (search works)");
+  } else {
+    warn("SQLite has NO FTS5 — every search will fail with \"no such module: fts5\". Install Node 22.16+ or 24 LTS from nodejs.org.");
   }
 
   const why =
@@ -2126,7 +2133,7 @@ async function main(): Promise<void> {
     if (!nodeIsOk(process.versions.node)) {
       console.error(
         `OneMemory needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${process.versions.node}.\n` +
-          "  Fix: install Node 22.13+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n" +
+          "  Fix: install Node 22.16+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n" +
           "  Nothing was changed. (Can't upgrade Node? Docker works too: see INSTALL.md.)"
       );
       process.exit(1);

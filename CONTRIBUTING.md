@@ -15,9 +15,11 @@ Thanks for your interest — small, focused contributions are very welcome.
 
 ## Getting set up
 
-Requires Node.js **>= 22.13.0** (`node:sqlite` was added in 22.5.0 but needed
-`--experimental-sqlite` until 22.13.0). CI runs the suite on Node 22.13.0, 22
-and 24, so the supported floor is actually executed.
+Requires Node.js **>= 22.16.0**. Two things are needed and they landed at
+different times: `node:sqlite` was unflagged in 22.13.0, and SQLite was built
+with FTS5 (which every search uses) from 22.16.0. The whole Node 23 line lacks
+FTS5 and is refused. CI runs the suite on Node 22.16.0, 22 and 24, so the
+supported floor is actually executed.
 
 ```bash
 npm install

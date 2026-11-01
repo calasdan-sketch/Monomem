@@ -8,24 +8,38 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **2.1.1 published the wrong Node floor and would crash for part of the line it claimed to support.**
 
-### The Node floor is 22.13.0, not 22.5.0
+### The Node floor is 22.16.0, and the whole Node 23 line is refused
 
-2.1.1's headline change was dropping the Node 24 requirement. It went one step too far. Two versions
-matter and only the later one is the floor:
+2.1.1's headline change was dropping the Node 24 requirement. It went too far, in two ways.
 
-- **22.5.0** — `node:sqlite` was *added*, but only behind `--experimental-sqlite`
-- **22.13.0** — the flag requirement was *removed*, so a plain import works
+**Two separate capabilities are needed, and they arrived at different times**, so no single
+">= x.y" rule is correct:
 
-`src/config.ts` imports `node:sqlite` at the top level, so on **Node 22.5 through 22.12** the process
-died at module load with `ERR_UNKNOWN_BUILTIN_MODULE` before any OneMemory code ran. `engines` only
-warns, so those users installed cleanly and then hit a stack trace on their first command — the exact
-failure the 2.1.1 version gate was written to prevent.
+1. `node:sqlite` importable with no flag — notes are stored through it, and `src/config.ts` imports it
+   at the top level, so a miss is a load-time crash before any OneMemory code runs.
+2. SQLite built **with FTS5** — every search goes through an FTS5 table, so a miss is
+   `ERR_SQLITE_ERROR: no such module: fts5` on the first query.
 
-- `engines` is now `>=22.13.0`, `MIN_NODE_TEXT` is `22.13.0`, and every doc says 22.13.
+Measured on official nodejs.org builds rather than inferred from release notes:
+
+| Node | `node:sqlite` | FTS5 | Verdict |
+|---|---|---|---|
+| 22.5.0 – 22.12.x | behind `--experimental-sqlite` | — | refused |
+| 22.13.0 – 22.15.x | yes | **no** | refused |
+| **22.16.0+** | yes | yes | **accepted** |
+| 23.x, including 23.11.1 | yes | **no** | refused |
+| 24.0.0+ | yes | yes | accepted |
+
+**Node 23 is why this cannot be a "newer is fine" comparison.** 23.11.1 is newer than 22.16.0 and still
+cannot run a single search. The gate now excludes the line outright; 23 was never LTS and is
+end-of-life, so this costs nobody anything.
+
+- `engines` is now `>=22.16.0` and `MIN_NODE_TEXT` is `22.16.0`.
 - The test suite had been asserting the wrong floor (`nodeIsOk("22.5.0") === true`), so it was green on
-  a broken invariant. It now asserts that 22.5 through 22.12 are **refused**.
-- CI pins a `22.13.0` matrix entry. `node: ["22"]` resolves to the newest 22.x, so the claimed floor was
-  never actually executed; 2.1.1's "the supported floor is tested" was not true.
+  a broken invariant. It now requires 22.5–22.15 and all of 23.x to be **refused**.
+- CI pins a `22.16.0` matrix entry. `node: ["22"]` resolves to the newest 22.x, so the claimed floor was
+  never executed and 2.1.1's "the supported floor is tested" was not true. Pinning it is what exposed
+  the FTS5 gap within minutes.
 
 ### `memory_supersede_undo` is registered by default
 

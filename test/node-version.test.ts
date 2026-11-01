@@ -1,45 +1,63 @@
 // Which Node versions OneMemory accepts.
 //
-// OneMemory stores notes in SQLite through Node's built-in `node:sqlite`.
-// TWO versions matter, and only the later one is the floor:
+// TWO capabilities are needed and they arrived at different times, so a single
+// ">= x.y" rule is wrong:
 //
-//   22.5.0   `node:sqlite` was ADDED -- but only behind `--experimental-sqlite`
-//   22.13.0  the flag requirement was REMOVED, so a plain import works
+//   1. `node:sqlite` importable with no flag -- notes are stored through it.
+//      src/config.ts imports it at the top level, so a miss is a load-time
+//      crash: ERR_UNKNOWN_BUILTIN_MODULE, before any OneMemory code runs.
+//   2. SQLite built WITH FTS5 -- every search goes through an FTS5 table, so a
+//      miss is ERR_SQLITE_ERROR "no such module: fts5" on the first query.
 //
-// src/config.ts imports `node:sqlite` at the top level, so on 22.5-22.12 the
-// process dies at load with ERR_UNKNOWN_BUILTIN_MODULE before any of our code
-// runs. 2.1.1 shipped 22.5.0 as the floor and this suite asserted it, so the
-// tests were green on the wrong invariant: `engines` only warns, which meant
-// a user on 22.5-22.12 installed cleanly and then crashed on the first command.
+// Measured on official nodejs.org builds, not inferred from release notes:
 //
-// The check has to read the MINOR version: a major-only comparison would wave
-// through every one of those broken 22.x releases.
+//   22.5.0 - 22.12.x    node:sqlite behind --experimental-sqlite  -> refuse
+//   22.13.0 - 22.15.x   node:sqlite unflagged, but NO FTS5        -> refuse
+//   22.16.0+            both                                      -> accept
+//   23.x (all of it)    no FTS5 even in 23.11.1, the last release -> refuse
+//   24.0.0+             both                                      -> accept
+//
+// Node 23 is the reason this cannot be "newer is fine": 23.11.1 is newer than
+// 22.16.0 and still cannot run a single search. 23 was never LTS and is EOL.
+//
+// This gate has been wrong three times. It demanded 24 (locking out all of LTS
+// 22); then 2.1.1 said 22.5.0 (load-time crash on 22.5-22.12) and this suite
+// asserted exactly that, so it was green on a bug; then 22.13.0 (FTS5 crash on
+// 22.13-22.15), caught only once CI pinned the floor and actually ran it.
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import { nodeIsOk, MIN_NODE_TEXT } from "../src/setup.js";
 
-describe("the Node version floor is 22.13.0", () => {
-  test("every Node that can import node:sqlite unflagged is accepted", () => {
-    for (const v of ["22.13.0", "22.14.0", "22.23.1", "23.0.0", "23.11.0", "24.0.0", "24.18.0", "25.1.0"]) {
-      assert.equal(nodeIsOk(v), true, `${v} imports node:sqlite with no flag and must be accepted`);
+describe("the Node version floor is 22.16.0, and Node 23 is excluded outright", () => {
+  test("every Node with both node:sqlite and FTS5 is accepted", () => {
+    for (const v of ["22.16.0", "22.17.0", "22.20.0", "22.23.1", "24.0.0", "24.18.0", "25.1.0", "26.0.0"]) {
+      assert.equal(nodeIsOk(v), true, `${v} has node:sqlite with FTS5 and must be accepted`);
     }
   });
 
-  test("22.5 through 22.12 are refused: node:sqlite exists but needs --experimental-sqlite", () => {
+  test("22.13 through 22.15 are refused: node:sqlite imports, but SQLite has no FTS5", () => {
+    for (const v of ["22.13.0", "22.14.0", "22.15.0", "22.15.9"]) {
+      assert.equal(nodeIsOk(v), false, `${v} has no FTS5, so every search would fail: it must be refused`);
+    }
+  });
+
+  test("22.5 through 22.12 are refused: node:sqlite needs --experimental-sqlite", () => {
     for (const v of ["22.5.0", "22.6.0", "22.9.0", "22.11.0", "22.12.0", "22.12.9"]) {
-      assert.equal(
-        nodeIsOk(v),
-        false,
-        `${v} needs --experimental-sqlite, so a plain import throws ERR_UNKNOWN_BUILTIN_MODULE: it must be refused`,
-      );
+      assert.equal(nodeIsOk(v), false, `${v} throws ERR_UNKNOWN_BUILTIN_MODULE at load: it must be refused`);
     }
   });
 
   test("Node 22 before 22.5.0 is refused: node:sqlite does not exist at all", () => {
     for (const v of ["22.0.0", "22.1.0", "22.4.0", "22.4.9"]) {
       assert.equal(nodeIsOk(v), false, `${v} has no node:sqlite and must be refused`);
+    }
+  });
+
+  test("the whole Node 23 line is refused, including its last release", () => {
+    for (const v of ["23.0.0", "23.5.0", "23.10.0", "23.11.0", "23.11.1"]) {
+      assert.equal(nodeIsOk(v), false, `${v} ships SQLite without FTS5, so no search works: it must be refused`);
     }
   });
 
@@ -50,10 +68,10 @@ describe("the Node version floor is 22.13.0", () => {
   });
 
   test("a version string with a prerelease or v prefix still parses", () => {
-    assert.equal(nodeIsOk("v22.13.0"), true);
+    assert.equal(nodeIsOk("v22.16.0"), true);
     assert.equal(nodeIsOk("24.0.0-nightly20240101"), true);
-    assert.equal(nodeIsOk("v22.12.0"), false);
-    assert.equal(nodeIsOk("v22.4.0"), false);
+    assert.equal(nodeIsOk("v22.15.0"), false);
+    assert.equal(nodeIsOk("v23.11.1"), false);
   });
 
   test("junk is refused rather than treated as new enough", () => {
@@ -63,8 +81,6 @@ describe("the Node version floor is 22.13.0", () => {
   });
 
   test("the message users see names the real floor", () => {
-    // Printed by setup and by the CLI guard. Must say 22.13.0: not 24 (which
-    // locked out the whole 22 line) and not 22.5.0 (which lets a crash in).
-    assert.match(MIN_NODE_TEXT, /^22\.13\.0$/);
+    assert.match(MIN_NODE_TEXT, /^22\.16\.0$/);
   });
 });
