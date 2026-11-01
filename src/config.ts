@@ -108,18 +108,33 @@ export const PRIVATE_FILES = ["state.db", "state.db-wal", "state.db-shm", "audit
  */
 function withLockFile<T>(lock: string, fn: () => T): T {
   const deadline = Date.now() + 30_000;
+  let lastCode: string | undefined;
   for (;;) {
     try {
       closeSync(openSync(lock, "wx", 0o600));
       break;
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      // Contention does not always surface as EEXIST. On Windows a file another
+      // process has just rmSync'd stays in DELETE_PENDING until its last handle
+      // closes, and opening it returns EPERM -- occasionally EBUSY or EACCES
+      // when an AV scanner holds it. Rethrowing those aborted the migration
+      // mid-way with a raw stack, which is exactly the "8 processes migrate +
+      // write at once" failure that has been re-run away as a CI flake for
+      // three releases. It is a real bug: several assistants starting together
+      // on Windows IS the 8-process case, against the one-time legacy
+      // migration. Treat all four as "someone else holds it, wait".
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST" && code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") throw e;
+      lastCode = code;
       try {
         if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { force: true });
       } catch {
         /* holder just released it: retry */
       }
-      if (Date.now() > deadline) throw new Error(`another process is still migrating (lock file ${lock})`);
+      // The 30 s deadline still terminates a genuinely unwritable directory;
+      // naming the errno keeps that case diagnosable instead of looking like
+      // ordinary contention.
+      if (Date.now() > deadline) throw new Error(`another process is still migrating (lock file ${lock}, last error ${lastCode})`);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
     }
   }

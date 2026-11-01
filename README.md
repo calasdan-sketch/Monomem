@@ -1,7 +1,11 @@
 <!-- Image URLs are absolute on purpose: GitHub resolves relative paths, npm does not. -->
 ![OneMemory — one memory, every assistant](https://raw.githubusercontent.com/calasdan-sketch/onememory/main/docs/brand/onememory-banner.png)
 
-**Auditable shared memory for AI agents.** A small, self-hosted memory store that Claude, Cursor, Codex, Gemini and anything else speaking MCP or plain REST all read and write — so you tell an AI something once and the rest already know it. Local, no API keys, no hidden model calls; **every note carries who wrote it**, is versioned, and is one undo away, with [benchmarks](#benchmark) to prove it.
+**Auditable shared memory for AI coding agents.** Tell Claude, Cursor, Codex or
+Gemini something once and the rest already know it — one self-hosted SQLite
+file, over MCP or plain REST. No API keys, no cloud, no hidden model calls.
+**Every note records who wrote it, is versioned, and is one undo away**, with
+[benchmarks](#benchmark) to prove it.
 
 [![CI](https://github.com/calasdan-sketch/onememory/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/onememory/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/onememory-mcp)](https://www.npmjs.com/package/onememory-mcp)

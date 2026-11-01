@@ -1,7 +1,7 @@
 {
   "name": "onememory-mcp",
   "version": "2.1.2",
-  "description": "Auditable shared memory for Claude, Cursor, Codex, Gemini and any MCP client — every note sourced, versioned and undoable. Self-hosted, no API keys.",
+  "description": "Auditable shared memory for AI coding agents. Provenance on every note, injection-linted writes, one-command undo. Self-hosted, MIT.",
   "license": "MIT",
   "author": "Calas Automations Inc.",
   "repository": {
