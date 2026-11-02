@@ -497,7 +497,12 @@ export const HOOK_MARKER = "recall --budget-ms";
  * and bolt a second, duplicate one in beside it.
  */
 const TOOL_NAMES = "(?:monomem|onememory|claude-bridge)";
-const HOOK_DETECT = new RegExp(`recall --budget-ms|${TOOL_NAMES}[^\\n]{0,120}\\b(?:recall|hook session-start)\\b`);
+// Case-insensitive: these names are matched against an installed PATH, and a
+// path's casing is the user's, not ours. A checkout at D:\a\Monomem\Monomem
+// or ~/Projects/OneMemory is the same tool. Matching case-sensitively made
+// setup miss its own hook and plan a duplicate -- found by CI, whose checkout
+// directory is capitalised, on a machine where the local one is not.
+const HOOK_DETECT = new RegExp(`recall --budget-ms|${TOOL_NAMES}[^\\n]{0,120}\\b(?:recall|hook session-start)\\b`, "i");
 
 /**
  * Automatic memory: the Claude Code events the capture hooks run on, the `monomem hook <event>` each runs, and whether
@@ -628,7 +633,7 @@ export function planHooks(e: SetupEnv, opts: SetupOptions, dbForHook: string | u
       // Ours: a command line naming this tool (the package or its cli.js path) with `hook <event>`; another tool's
       // hook is not. The retired names count: the command line lives in the USER's settings file and still holds
       // whatever path was installed then, so matching only the current name would add a duplicate hook on upgrade.
-      if (has(h.on, new RegExp(`${TOOL_NAMES}[^\\n]{0,160}\\bhook ${h.event}(?![\\w-])`))) continue;
+      if (has(h.on, new RegExp(`${TOOL_NAMES}[^\\n]{0,160}\\bhook ${h.event}(?![\\w-])`, "i"))) continue;
       const hook = { type: "command", command: buildCaptureCommand(e, opts, h.event, dbForHook), ...(h.async ? { async: true } : {}) };
       ops.push({ op: "append", path: ["hooks"], key: h.on, value: h.matcher ? { matcher: h.matcher, hooks: [hook] } : { hooks: [hook] } });
       inverse.unshift({ op: "unappend", path: ["hooks"], key: h.on, marker: `hook ${h.event}` });

@@ -36,6 +36,33 @@ const USER_HOOKS = JSON.stringify({ theme: "dark", hooks: { PostToolUse: [{ matc
 const read = (p: string): any => JSON.parse(readFileSync(p, "utf8"));
 
 describe("setup: automatic memory hooks", () => {
+  test("an existing hook is recognised whatever the install path's name and casing", () => {
+    // The hook line lives in the USER's settings file and holds whatever path
+    // was installed then: an older name from before a rename, and any casing
+    // the user's filesystem happens to use. Failing to recognise it means
+    // setup bolts a SECOND copy in beside the one they already have.
+    //
+    // Both halves of this were real. Matching only the current name broke every
+    // upgrade from OneMemory; matching case-sensitively then broke CI, whose
+    // checkout is at D:\a\Monomem\Monomem while the author's is lowercase.
+    for (const dir of ["monomem", "Monomem", "onememory", "OneMemory", "claude-bridge"]) {
+      const s = sandbox();
+      const cli = `C:/work/${dir}/dist/src/cli.js`;
+      writeFileSync(
+        s.settings,
+        JSON.stringify({
+          hooks: {
+            SessionStart: [{ hooks: [{ type: "command", command: `node "${cli}" hook session-start` }] }],
+            UserPromptSubmit: [{ hooks: [{ type: "command", command: `node "${cli}" hook user-prompt` }] }],
+          },
+        }),
+      );
+      const r = planHooks(s.e, opts(), undefined, { recall: true, capture: false });
+      assert.equal(r.change, null, `a hook at .../${dir}/... is ours and must not be duplicated`);
+      assert.equal(r.already, true, `.../${dir}/... should report already-installed`);
+    }
+  });
+
   test("planHooks appends one entry per event next to the user's hooks; async for the background ones", () => {
     const s = sandbox();
     writeFileSync(s.settings, USER_HOOKS);
