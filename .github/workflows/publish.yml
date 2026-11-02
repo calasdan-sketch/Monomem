@@ -7,9 +7,19 @@ name: Publish to npm
 # THINGS TO VERIFY ON npmjs.com (cannot be checked from this repo):
 #   Package monomem -> Settings -> Trusted Publisher -> GitHub Actions
 #     Owner / user:  calasdan-sketch
-#     Repository:    monomem
+#     Repository:    Monomem           (capital M - that is the real repo name;
+#                                       npm's fields are case-sensitive, and
+#                                       package.json's repository.url must
+#                                       match the GitHub repo exactly)
 #     Workflow file: publish.yml      (file name only, no path, case-sensitive)
 #     Environment:   (leave BLANK - this job declares no `environment:`)
+#
+#   monomem has never been published, so the npm package page does not exist
+#   yet and there is nowhere to add the trusted publisher. npm's docs do not
+#   state whether a config can be created ahead of the first publish; if the
+#   Settings page is unreachable, version 1.0.0 needs one manual
+#   `npm publish` from a logged-in machine, after which this workflow takes
+#   over for every later release.
 #   If any value differs, npm's OIDC exchange fails and the publish can end in
 #   a misleading E404 or ENEEDAUTH. Unverified: whether npm lets you configure
 #   a trusted publisher before the package exists; if not, the first version

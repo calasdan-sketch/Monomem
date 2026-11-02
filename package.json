@@ -6,12 +6,12 @@
   "author": "Calas Automations Inc.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/calasdan-sketch/monomem.git"
+    "url": "git+https://github.com/calasdan-sketch/Monomem.git"
   },
   "bugs": {
-    "url": "https://github.com/calasdan-sketch/monomem/issues"
+    "url": "https://github.com/calasdan-sketch/Monomem/issues"
   },
-  "homepage": "https://github.com/calasdan-sketch/monomem#readme",
+  "homepage": "https://github.com/calasdan-sketch/Monomem#readme",
   "keywords": [
     "mcp",
     "memory",
