@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-11-02
+
+Packaging only. No source, no behaviour and no dependency changed; the published
+files are identical to 1.0.0 apart from the metadata below.
+
+### Fixed
+
+- `repository`, `bugs` and `homepage` named `github.com/calasdan-sketch/Monomem`;
+  the repository has since been renamed to all-lower-case `monomem`. GitHub
+  resolves either casing, so no link was broken, but npm's trusted publishing
+  requires `repository.url` to match the GitHub repository exactly and treats
+  its configuration fields as case-sensitive. A mismatch there surfaces as a
+  misleading `E404` or `ENEEDAUTH` at publish time.
+- The demo GIF in `docs/` still rendered `npx onememory-mcp setup` and labelled
+  its panes `onememory - state_write`. The rename in 1.0.0 renamed the file
+  without re-running its generator. Rebuilt with `npm run demo-gif`; the
+  generator itself was already correct.
+
+### Note
+
+This is also the first release published by GitHub Actions rather than by hand,
+which is what validates the repository's trusted-publishing configuration on npm.
+
 ## [1.0.0] - 2026-11-02 — OneMemory is now **Monomem**
 
 Same product, same code, new name. The version restarts at 1.0.0 because this is a new package on npm;

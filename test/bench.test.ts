@@ -721,10 +721,16 @@ describe("the command line", () => {
 });
 
 describe("shipping and docs", () => {
-  test("the package is 1.0.0 and ships the scenarios and the new docs", () => {
+  // Asserts the invariant, not the number. This used to hardcode the current
+  // version on both sides, which made it a chore to edit on every release and
+  // tested nothing a release could get wrong: what actually matters is that
+  // PACKAGE_VERSION (what the binary reports) never drifts from package.json
+  // (what npm installs). Hardcoding both meant a bump that updated only one of
+  // them still failed on the literal, hiding which one was really out of step.
+  test("the reported version matches package.json, and the scenarios and docs ship", () => {
     const pkg = JSON.parse(read("package.json")) as { version: string; files: string[]; scripts: Record<string, string> };
-    assert.equal(pkg.version, "1.0.0");
-    assert.equal(PACKAGE_VERSION, "1.0.0");
+    assert.match(pkg.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "package.json version is semver");
+    assert.equal(PACKAGE_VERSION, pkg.version, "the version the CLI reports must be the version npm ships");
     assert.ok(pkg.files.includes("bench/scenarios/*.json"));
     assert.ok(pkg.files.includes("docs/*.md"));
     assert.match(pkg.scripts.bench, /bench/);
