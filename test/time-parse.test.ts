@@ -211,7 +211,8 @@ describe("parseTimePhrase: robustness", () => {
     // v1.1: unset MONOMEM_TIMEZONE means the host's timezone, not UTC.
     assert.equal(
       resolveTimeZone(undefined),
-      process.env.MONOMEM_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone
+      // `|| "UTC"`: some Windows Node builds report no host timezone at all; the code falls back to UTC.
+      process.env.MONOMEM_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
     );
   });
 

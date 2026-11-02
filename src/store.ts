@@ -1366,6 +1366,8 @@ export class Store {
       this.db.exec(`PRAGMA busy_timeout = ${Math.floor(opts.busyTimeoutMs ?? Store.BUSY_TIMEOUT_MS)};`);
       this.db.exec("PRAGMA journal_mode = WAL;");
       this.db.exec("PRAGMA foreign_keys = ON;");
+      // Zero freed pages: without this a deleted note's text stays readable in the file until reused.
+      this.db.exec("PRAGMA secure_delete = ON;");
       // Load the at-rest key before migrations so a v10 upgrade on an encrypted
       // store can read existing rows. loadKey throws on a corrupt key file
       // rather than silently degrading -- see crypto.ts.
@@ -1377,6 +1379,7 @@ export class Store {
       this.installActorStamp();
       this.serverIdValue = this.storeId();
       this.upgradeV1Envelopes();
+      this.enableFtsSecureDelete();
     } catch (e) {
       // A constructor that throws never hands the caller a Store to close();
       // release the file handle here (Windows cannot delete an open database).
@@ -4005,6 +4008,22 @@ export class Store {
    * database skips a step instead of failing the enable. Returns whether the
    * file was vacuumed.
    */
+  /**
+   * An external-content FTS5 'delete' only writes a tombstone, so a deleted note's words stay in
+   * the index segments (lower-cased) until a merge. FTS5 'secure-delete' removes them at delete
+   * time. Persistent in notes_fts_config, so it is only written once. Best effort: a read-only
+   * store skips it.
+   */
+  private enableFtsSecureDelete(): void {
+    try {
+      const row = this.db.prepare("SELECT v FROM notes_fts_config WHERE k = 'secure-delete'").get() as { v: unknown } | undefined;
+      if (Number(row?.v) === 1) return;
+      this.db.exec("INSERT INTO notes_fts(notes_fts, rank) VALUES('secure-delete', 1)");
+    } catch {
+      /* read-only mount or busy: deletes still work, the index just keeps tombstoned words until a merge */
+    }
+  }
+
   scrubPlaintext(opts: { maxVacuumBytes?: number } = {}): { vacuumed: boolean } {
     const limit = opts.maxVacuumBytes ?? 512 * 1024 * 1024;
     this.db.exec("PRAGMA secure_delete = ON");

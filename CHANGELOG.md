@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Deleting a note left its text in the database file.** Every table forgot the note, but the
+  bytes did not: SQLite only marks freed pages as reusable, and the search index's delete writes a
+  tombstone while keeping the words (lower-cased) in its segments. Create, edit and delete a note,
+  then search the `.db` file for a word from it, and it was there. Two settings fix it: SQLite's
+  `secure_delete` (freed pages are zeroed) and the FTS5 index's own `secure-delete` (words are
+  removed at delete time). `test/delete-scrubs-disk.test.ts` scans the files on disk, not the
+  tables, and searches case-insensitively, because a case-sensitive scan misses the index copy.
+- Notes deleted **before** this release can still have words in the index or free pages. Running
+  `monomem encrypt enable` scrubs both; a plain way to do it without encrypting is still to come.
+- `test/time-parse.test.ts` failed on machines whose Node reports no host timezone (seen on a
+  Windows install). The code already fell back to UTC; the test's expected value did not.
+
 ## [1.0.2] - 2026-11-02
 
 The rename shipped with the product still calling itself by the old name in
