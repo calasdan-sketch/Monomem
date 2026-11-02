@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The brand images still read **OneMemory**. `docs/brand/monomem-banner.png`
+  (the first thing on the README and on the npm package page) and
+  `docs/brand/social-preview.png` were renamed to `monomem-*` during the 1.0.0
+  rename but never redrawn, so both still carried the old name in 96px type.
+  This is the same mistake as the demo GIF fixed in 1.0.1: renaming a file
+  changes nothing a reader can see. Only the wordmark was repainted — the logo
+  mark, both subtitles, the tagline and the colours are unchanged.
+- Added `scripts/make-brand-wordmark.py`, so the next rename has a generator to
+  run instead of a rename. The font was recovered from the old artwork rather
+  than guessed: Segoe UI Bold pixel-matches the replaced wordmark with 16%
+  edge-only mismatch, against 34% for Arial Bold and 96% for Calibri Bold.
+
+No version bump accompanies this: the README references both images by absolute
+`raw.githubusercontent.com` URL, so the npm page renders whatever is on `main`
+and the published 1.0.1 tarball is unaffected.
+
 ## [1.0.1] - 2026-11-02
 
 Packaging only. No source, no behaviour and no dependency changed; the published
