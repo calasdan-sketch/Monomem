@@ -55,7 +55,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 <body>
 <div id="app" style="display:none">
 <header>
-  <h1>one<span>memory</span></h1>
+  <h1>mono<span>mem</span></h1>
   <input id="q" class="grow" placeholder="Search notes...">
   <input id="ns" placeholder="namespace" style="width:130px">
   <button class="ghost" onclick="toggleNew()">+ New</button>
@@ -93,7 +93,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 </div>
 
 <div id="gate" class="gate">
-  <h1>one<span style="color:var(--accent)">memory</span></h1>
+  <h1>mono<span style="color:var(--accent)">mem</span></h1>
   <p class="muted">Paste your Monomem token to view the store.</p>
   <input id="tok" type="password" placeholder="MONOMEM_TOKEN" onkeydown="if(event.key==='Enter')saveTok()">
   <button onclick="saveTok()">Open</button>
