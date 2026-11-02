@@ -68,9 +68,19 @@ describe("dashboard review queue", () => {
   test("the script is valid JavaScript", () => {
     assert.doesNotThrow(() => new vm.Script(DASHBOARD_JS));
   });
+  // This test was renamed at 1.0.0 and its assertion was not. It read
+  // `assert.match(DASHBOARD_HTML, /one<span/)` under the title "the page says
+  // Monomem, not the old name", so it did the opposite of what it claimed:
+  // it pinned the old wordmark and would have failed the fix. The wordmark is
+  // split across a tag, which is also why every grep for "onememory" missed
+  // it, so assert on the split form -- a plain /monomem/ check would pass on
+  // the <title> while the header still said something else.
   test("the page says Monomem, not the old name", () => {
     assert.ok(!/claude<span/.test(DASHBOARD_HTML));
-    assert.match(DASHBOARD_HTML, /one<span/);
+    assert.ok(!/one<span/.test(DASHBOARD_HTML), "dashboard still renders the onememory wordmark");
+    assert.match(DASHBOARD_HTML, /mono<span/);
+    // Both places it appears: the header and the token gate.
+    assert.equal((DASHBOARD_HTML.match(/mono<span/g) || []).length, 2);
   });
   test("queue = agent-written notes that are not yet reviewed; your own and imported notes are not queued", () => {
     const { ctx } = page([]);
