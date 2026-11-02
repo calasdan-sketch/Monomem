@@ -7,7 +7,9 @@ The GIF's frames are rendered (not screen-captured) so the text is legible at
 real output from a real Monomem server. Nothing is sped up.
 
 Captured:      2026-11-01
-Version:       monomem 2.1.1
+Version:       the codebase now released as monomem 1.0.0; the run was
+               captured while it was still numbered onememory-mcp 2.1.1,
+               before the rename. No behaviour in this transcript changed.
 Platform:      Windows 11, Node v24.18.0
 Server:        local, bound 127.0.0.1, isolated store (empty at start)
 
