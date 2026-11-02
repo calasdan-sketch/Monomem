@@ -48,20 +48,20 @@ async function mcp(store: Store, scope: "read" | "write" | "admin", conn: any = 
   return client;
 }
 function cli(home: string, args: string[], env: Record<string, string> = {}) {
-  return spawnSync(process.execPath, [CLI, ...args], { env: { ...process.env, ONEMEMORY_HOME: home, ONEMEMORY_TOKEN: "t".repeat(40), ...env }, encoding: "utf8" });
+  return spawnSync(process.execPath, [CLI, ...args], { env: { ...process.env, MONOMEM_HOME: home, MONOMEM_TOKEN: "t".repeat(40), ...env }, encoding: "utf8" });
 }
 
 describe("the harness is hermetic", () => {
-  test("no ONEMEMORY_* variable from the developer's shell reaches the suite (npm test preloads dist/test/setup-env.js)", () => {
-    // ONEMEMORY_HOME and ONEMEMORY_TOOLS are set BY setup-env.js on purpose
+  test("no MONOMEM_* variable from the developer's shell reaches the suite (npm test preloads dist/test/setup-env.js)", () => {
+    // MONOMEM_HOME and MONOMEM_TOOLS are set BY setup-env.js on purpose
     // (a throwaway data directory, and the full tool surface so the suite can
     // exercise the operator tools a plain install no longer registers). Any
-    // other ONEMEMORY_* variable means the developer's shell leaked in.
-    const deliberate = new Set(["ONEMEMORY_HOME", "ONEMEMORY_TOOLS"]);
-    const left = Object.keys(process.env).filter((k) => k.startsWith("ONEMEMORY_") && !deliberate.has(k));
+    // other MONOMEM_* variable means the developer's shell leaked in.
+    const deliberate = new Set(["MONOMEM_HOME", "MONOMEM_TOOLS"]);
+    const left = Object.keys(process.env).filter((k) => k.startsWith("MONOMEM_") && !deliberate.has(k));
     assert.deepEqual(left, []);
-    assert.equal(process.env.ONEMEMORY_TOOLS, "all", "the suite runs against the full tool surface");
-    assert.ok(process.env.ONEMEMORY_HOME?.includes("onememory-test-home-"), "the data directory is a throwaway one");
+    assert.equal(process.env.MONOMEM_TOOLS, "all", "the suite runs against the full tool surface");
+    assert.ok(process.env.MONOMEM_HOME?.includes("monomem-test-home-"), "the data directory is a throwaway one");
   });
 });
 
@@ -193,7 +193,7 @@ describe("3: notes imported without a verified attestation are flagged, and can 
     a.close();
     b.close();
     rmSync(dir, { recursive: true, force: true });
-    delete process.env.ONEMEMORY_IMPORT_REQUIRE_ATTESTATION;
+    delete process.env.MONOMEM_IMPORT_REQUIRE_ATTESTATION;
   });
 
   test("a hostile file that strips every writer claim imports as imported_unverified, shown in reads and the banner", async () => {
@@ -215,7 +215,7 @@ describe("3: notes imported without a verified attestation are flagged, and can 
     assert.equal(b.read(note.id)!.imported_unverified, true);
   });
 
-  test("--require-attestation / ONEMEMORY_IMPORT_REQUIRE_ATTESTATION rejects them; a verified note is accepted and not flagged; the default stays compatible", async () => {
+  test("--require-attestation / MONOMEM_IMPORT_REQUIRE_ATTESTATION rejects them; a verified note is accepted and not flagged; the default stays compatible", async () => {
     as("alice", () => a.create({ title: "signed", body: "fine" }));
     const id = a.identity();
     const plain = exported(a, false);
@@ -229,7 +229,7 @@ describe("3: notes imported without a verified attestation are flagged, and can 
     assert.equal(r1.created.length, 0);
     assert.match(r1.report.rejected[0].error, /attestation is required/);
     // environment default
-    process.env.ONEMEMORY_IMPORT_REQUIRE_ATTESTATION = "1";
+    process.env.MONOMEM_IMPORT_REQUIRE_ATTESTATION = "1";
     const r2 = await importInto(b, plain);
     assert.equal(r2.created.length, 0);
     // a verified one passes the requirement and carries no flag
@@ -278,8 +278,8 @@ describe("4: key handling", () => {
       /* closed */
     }
     rmSync(dir, { recursive: true, force: true });
-    delete process.env.ONEMEMORY_TRUSTED_ATTESTERS;
-    delete process.env.ONEMEMORY_ATTEST_MIN_VERSION;
+    delete process.env.MONOMEM_TRUSTED_ATTESTERS;
+    delete process.env.MONOMEM_ATTEST_MIN_VERSION;
   });
 
   test("`trust rotate` run from another process takes effect in a running server at its next export", () => {
@@ -323,7 +323,7 @@ describe("4: key handling", () => {
       assert.equal(((await importInto(restored, before)).report.attestations!).verified, 1, "attester-add with this server's own id is accepted");
       restored.attesterRemove(old.key_id);
       assert.equal(((await importInto(restored, before)).report.attestations!).verified, 0);
-      process.env.ONEMEMORY_TRUSTED_ATTESTERS = `${old.server_id}=${old.public_key}`;
+      process.env.MONOMEM_TRUSTED_ATTESTERS = `${old.server_id}=${old.public_key}`;
       assert.equal(((await importInto(restored, before)).report.attestations!).verified, 1, "the environment does the same");
     } finally {
       restored.close();
@@ -370,19 +370,19 @@ describe("4: key handling", () => {
       // the environment cannot resurrect a revoked key either
       b.attesterRevoke(id.key_id);
       b.attesterRemove(id.key_id);
-      process.env.ONEMEMORY_TRUSTED_ATTESTERS = `${id.server_id}=${id.public_key}`;
+      process.env.MONOMEM_TRUSTED_ATTESTERS = `${id.server_id}=${id.public_key}`;
       assert.equal(((await importInto(b, signed)).report.attestations!).verified, 0);
     } finally {
       b.close();
     }
   });
 
-  test("ONEMEMORY_ATTEST_MIN_VERSION refuses older attestation versions", () => {
+  test("MONOMEM_ATTEST_MIN_VERSION refuses older attestation versions", () => {
     const key = loadOrCreateSigningKey(join(dir, "k1"));
     const sid = "22222222-2222-4222-8222-222222222222";
     const rec = { id: 7, namespace: "n", title: "t", body: "b", tags: ["x"], written_by: "w", created_by: "c", updated_at: "2026-01-01T00:00:00.000Z" };
     const hash = contentHash(rec.title, rec.body, rec.tags);
-    const bytes = Buffer.from(JSON.stringify(["onememory-attest-v1", sid, rec.id, rec.namespace, hash, "w", "c", rec.updated_at, "", "", []]));
+    const bytes = Buffer.from(JSON.stringify(["monomem-attest-v1", sid, rec.id, rec.namespace, hash, "w", "c", rec.updated_at, "", "", []]));
     const v1 = { v: 1, server_id: sid, key_id: key.keyId, content_hash: hash, sig: sign(null, bytes, key.privateKey).toString("base64url") };
     const v2 = signRecord(key, sid, rec);
     const trusted = new Map<string, TrustedAttester>([[key.keyId, { public_key: key.publicKey, server_id: sid, label: "x" }]]);
@@ -392,7 +392,7 @@ describe("4: key handling", () => {
     assert.equal(verifyRecord(v2, rec, trusted, null, { minVersion: 2 }).ok, true);
   });
 
-  test("ONEMEMORY_ATTEST_MIN_VERSION=2 applies to imports", async () => {
+  test("MONOMEM_ATTEST_MIN_VERSION=2 applies to imports", async () => {
     // a v1 note is rejected, a current note verified
     as("alice", () => a.create({ title: "n", body: "b" }));
     const id = a.identity();
@@ -401,9 +401,9 @@ describe("4: key handling", () => {
     const b = new Store(":memory:");
     try {
       b.attesterAdd({ public_key: id.public_key, server_id: id.server_id });
-      process.env.ONEMEMORY_ATTEST_MIN_VERSION = "2";
+      process.env.MONOMEM_ATTEST_MIN_VERSION = "2";
       assert.equal(((await importInto(b, notes)).report.attestations!).verified, 1);
-      process.env.ONEMEMORY_ATTEST_MIN_VERSION = "9"; // clamped to the current version
+      process.env.MONOMEM_ATTEST_MIN_VERSION = "9"; // clamped to the current version
       assert.equal(((await importInto(b, notes)).report.attestations!).verified, 1);
       void att;
     } finally {
@@ -808,7 +808,7 @@ describe("doctor and the primary token", () => {
     s.close();
     const only = cli(home, ["doctor"]);
     assert.match(only.stdout, /\[warn\] 1 distrust rule\(s\) exist, but the only token is the primary one/);
-    const scoped = cli(home, ["doctor"], { ONEMEMORY_TOKENS: JSON.stringify([{ token: "w".repeat(40), scope: "write", label: "agent" }]) });
+    const scoped = cli(home, ["doctor"], { MONOMEM_TOKENS: JSON.stringify([{ token: "w".repeat(40), scope: "write", label: "agent" }]) });
     assert.match(scoped.stdout, /\[ok\]\s+1 distrust rule\(s\); 1 non-admin token/);
     rmSync(home, { recursive: true, force: true });
   });
@@ -843,16 +843,16 @@ describe("doctor and the primary token", () => {
 describe("docs and CI stay in step with the code", () => {
   const read = (...p: string[]): string => readFileSync(join(ROOT, ...p), "utf8");
 
-  test("every ONEMEMORY_* variable the code reads is documented in docs/configuration.md exactly once as a table row", () => {
+  test("every MONOMEM_* variable the code reads is documented in docs/configuration.md exactly once as a table row", () => {
     const used = new Set<string>();
     const walk = (dir: string): void => {
       for (const f of readdirSync(join(ROOT, dir))) {
-        if (f.endsWith(".ts")) for (const m of read(dir, f).matchAll(/\bONEMEMORY_[A-Z0-9_]+\b/g)) used.add(m[0]);
+        if (f.endsWith(".ts")) for (const m of read(dir, f).matchAll(/\bMONOMEM_[A-Z0-9_]+\b/g)) used.add(m[0]);
       }
     };
     walk("src");
     const doc = read("docs", "configuration.md");
-    const rows = [...doc.matchAll(/^\|\s*`(ONEMEMORY_[A-Z0-9_]+)`/gm)].map((m) => m[1]);
+    const rows = [...doc.matchAll(/^\|\s*`(MONOMEM_[A-Z0-9_]+)`/gm)].map((m) => m[1]);
     const dupes = rows.filter((r, i) => rows.indexOf(r) !== i);
     assert.deepEqual(dupes, [], "a variable has two rows");
     const missing = [...used].filter((v) => !rows.includes(v)).sort();
@@ -864,8 +864,8 @@ describe("docs and CI stay in step with the code", () => {
   test("the runner id fallback text matches the code", () => {
     const doc = read("docs", "configuration.md");
     const code = read("src", "task-core.ts");
-    assert.match(code, /ONEMEMORY_RUNNER_ID \|\| process\.env\.COMPUTERNAME \|\| process\.env\.HOSTNAME \|\| "default"/);
-    const row = doc.split("\n").find((l) => l.includes("`ONEMEMORY_RUNNER_ID`")) ?? "";
+    assert.match(code, /MONOMEM_RUNNER_ID \|\| process\.env\.COMPUTERNAME \|\| process\.env\.HOSTNAME \|\| "default"/);
+    const row = doc.split("\n").find((l) => l.includes("`MONOMEM_RUNNER_ID`")) ?? "";
     assert.match(row, /COMPUTERNAME/);
     assert.match(row, /HOSTNAME/);
     assert.match(row, /default/);
@@ -875,14 +875,14 @@ describe("docs and CI stay in step with the code", () => {
     const readme = read("README.md");
     for (const m of readme.matchAll(/attester-add [^\n]*/g)) assert.match(m[0], /--server-id|--any-server/, m[0]);
     const trust = read("docs", "trust.md");
-    assert.ok(!trust.includes("onememory sync export"), "docs/trust.md names a command that does not exist");
+    assert.ok(!trust.includes("monomem sync export"), "docs/trust.md names a command that does not exist");
     for (const m of trust.matchAll(/attester-add [^\n`]*/g)) assert.match(m[0], /--server-id|--any-server|<[^>]*server[^>]*>/i, m[0]);
     assert.ok(!/byte for byte/i.test(read("CHANGELOG.md").split("## [1.4.2]")[0].split("## [1.4.1]")[1] ?? "") || true);
   });
 
   test("docs/upgrading.md exists and is linked from the README and the CHANGELOG", () => {
     const up = read("docs", "upgrading.md");
-    for (const must of ["Upgrading from 1.3", "pre-v16-backup", "1.3.4", "roll back", "imported_unverified", "ONEMEMORY_ATTEST_MIN_VERSION", "EXPERIMENTAL"]) assert.ok(up.includes(must) || up.toLowerCase().includes(must.toLowerCase()), `upgrading.md lacks ${must}`);
+    for (const must of ["Upgrading from 1.3", "pre-v16-backup", "1.3.4", "roll back", "imported_unverified", "MONOMEM_ATTEST_MIN_VERSION", "EXPERIMENTAL"]) assert.ok(up.includes(must) || up.toLowerCase().includes(must.toLowerCase()), `upgrading.md lacks ${must}`);
     assert.match(read("README.md"), /docs\/upgrading\.md/);
     assert.match(read("CHANGELOG.md"), /docs\/upgrading\.md/);
   });

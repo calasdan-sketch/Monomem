@@ -332,7 +332,7 @@ describe("5: edge-index memory + access buffering", () => {
   }
 
   test("namespace indexes are released over the note budget (LRU) and edges stay exact", () => {
-    withEnv({ ONEMEMORY_EDGE_INDEX_MAX_NOTES: "4" }, () => {
+    withEnv({ MONOMEM_EDGE_INDEX_MAX_NOTES: "4" }, () => {
       const s = new Store(":memory:");
       for (const ns of ["a", "b", "c"]) {
         for (let i = 0; i < 3; i++) s.create({ namespace: ns, title: `solar panel ${ns}`, body: `maintenance winnipeg ${i}` });
@@ -349,7 +349,7 @@ describe("5: edge-index memory + access buffering", () => {
   });
 
   test("idle namespace indexes are released", () => {
-    withEnv({ ONEMEMORY_EDGE_INDEX_IDLE_MS: "0" }, () => {
+    withEnv({ MONOMEM_EDGE_INDEX_IDLE_MS: "0" }, () => {
       const s = new Store(":memory:");
       s.create({ namespace: "a", title: "alpha beta gamma" });
       s.create({ namespace: "b", title: "alpha beta gamma" });
@@ -404,20 +404,63 @@ describe("5: edge-index memory + access buffering", () => {
 });
 
 describe("6-8: data dir, warnings, first-run output", () => {
-  test("data dir: ONEMEMORY_HOME, then an existing git-checkout ./data, else ~/.onememory", async () => {
+  test("data dir: MONOMEM_HOME, then an existing git-checkout ./data, else ~/.monomem", async () => {
     const { resolveDataDir } = await import("../src/config.js");
-    const { homedir } = await import("node:os");
     const { writeFileSync, mkdirSync } = await import("node:fs");
     const root = tmp();
+    // A fake home, so the result does not depend on whether the developer
+    // running the suite happens to have an old ~/.onememory store. The first
+    // version of this test asserted "home" and failed on any machine that had
+    // one -- a test that measured the author's laptop, not the code.
+    const fakeHome = join(root, "fakehome");
+    mkdirSync(fakeHome, { recursive: true });
+    const realHome = process.env.HOME;
+    const realProfile = process.env.USERPROFILE;
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
     try {
-      assert.deepEqual(resolveDataDir({ ONEMEMORY_HOME: join(root, "h") }, root), { dir: join(root, "h"), why: "env" });
-      assert.deepEqual(resolveDataDir({}, root), { dir: join(homedir(), ".onememory"), why: "home" });
+      assert.deepEqual(resolveDataDir({ MONOMEM_HOME: join(root, "h") }, root), { dir: join(root, "h"), why: "env" });
+      assert.deepEqual(resolveDataDir({ ONEMEMORY_HOME: join(root, "h") }, root), { dir: join(root, "h"), why: "env" }, "the retired name still works");
+      assert.deepEqual(resolveDataDir({}, root), { dir: join(fakeHome, ".monomem"), why: "home" });
       mkdirSync(join(root, ".git"));
       assert.equal(resolveDataDir({}, root).why, "home", "a checkout with no data yet uses the home dir");
       mkdirSync(join(root, "data"));
       writeFileSync(join(root, "data", "state.db"), "");
       assert.deepEqual(resolveDataDir({}, root), { dir: join(root, "data"), why: "checkout" });
     } finally {
+      if (realHome === undefined) delete process.env.HOME; else process.env.HOME = realHome;
+      if (realProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = realProfile;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an existing ~/.onememory store is used rather than silently starting empty", async () => {
+    // The rename must never make someone's notes vanish. Anyone upgrading from
+    // OneMemory has a store at ~/.onememory and nothing at ~/.monomem; starting
+    // them on a new empty database would look exactly like data loss.
+    const { resolveDataDir } = await import("../src/config.js");
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    const root = tmp();
+    const fakeHome = join(root, "fakehome");
+    const realHome = process.env.HOME;
+    const realProfile = process.env.USERPROFILE;
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    try {
+      mkdirSync(join(fakeHome, ".onememory"), { recursive: true });
+      writeFileSync(join(fakeHome, ".onememory", "state.db"), "");
+      assert.deepEqual(
+        resolveDataDir({}, root),
+        { dir: join(fakeHome, ".onememory"), why: "legacy-home" },
+        "an upgrading user keeps their notes",
+      );
+      // Once a new store exists, it wins: the old one is never silently preferred forever.
+      mkdirSync(join(fakeHome, ".monomem"), { recursive: true });
+      writeFileSync(join(fakeHome, ".monomem", "state.db"), "");
+      assert.deepEqual(resolveDataDir({}, root), { dir: join(fakeHome, ".monomem"), why: "home" });
+    } finally {
+      if (realHome === undefined) delete process.env.HOME; else process.env.HOME = realHome;
+      if (realProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = realProfile;
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -427,8 +470,8 @@ describe("6-8: data dir, warnings, first-run output", () => {
     const { writeFileSync, readFileSync, mkdirSync } = await import("node:fs");
     const root = tmp();
     try {
-      const from = join(root, "node_modules", "onememory-mcp", "data");
-      const to = join(root, "home", ".onememory");
+      const from = join(root, "node_modules", "monomem", "data");
+      const to = join(root, "home", ".monomem");
       mkdirSync(from, { recursive: true });
       assert.ok(insideNodeModules(join(from, "state.db")));
       assert.ok(!insideNodeModules(to));
@@ -465,7 +508,7 @@ describe("6-8: data dir, warnings, first-run output", () => {
     });
   }
 
-  test("CLI: no SQLite ExperimentalWarning; init prints `onememory mcp`; doctor flags node_modules data", async () => {
+  test("CLI: no SQLite ExperimentalWarning; init prints `monomem mcp`; doctor flags node_modules data", async () => {
     const dir = tmp();
     try {
       // HOME/USERPROFILE must point at the sandbox too: `doctor` looks for the
@@ -475,8 +518,8 @@ describe("6-8: data dir, warnings, first-run output", () => {
       // and this test failed -- it passed only on a clean CI runner, i.e. it
       // failed precisely on the machines that use the product.
       const env = {
-        ONEMEMORY_HOME: join(dir, "home"),
-        ONEMEMORY_DB_PATH: join(dir, "node_modules", "x", "state.db"),
+        MONOMEM_HOME: join(dir, "home"),
+        MONOMEM_DB_PATH: join(dir, "node_modules", "x", "state.db"),
         HOME: join(dir, "home"),
         USERPROFILE: join(dir, "home"),
       };
@@ -484,11 +527,11 @@ describe("6-8: data dir, warnings, first-run output", () => {
       assert.equal(ch.code, 0, ch.err);
       assert.doesNotMatch(ch.err, /ExperimentalWarning/);
       const init = await cli(["init"], env);
-      assert.match(init.out, /claude mcp add onememory -- onememory mcp/);
+      assert.match(init.out, /claude mcp add monomem -- monomem mcp/);
       assert.doesNotMatch(init.out, /mcp-stdio\.js/);
       const doc = await cli(["doctor"], env);
       assert.match(doc.out, /inside node_modules/);
-      assert.match(doc.out, /https:\/\/github\.com\/calasdan-sketch\/onememory\/blob\/main\/docs\/sessionstart-hook\.md/);
+      assert.match(doc.out, /https:\/\/github\.com\/calasdan-sketch\/monomem\/blob\/main\/docs\/sessionstart-hook\.md/);
       assert.doesNotMatch(doc.err, /ExperimentalWarning/);
     } finally {
       rmSync(dir, { recursive: true, force: true });

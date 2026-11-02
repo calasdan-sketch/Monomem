@@ -2,7 +2,7 @@
 //
 // Every registered tool's name, description and schema is sent to the model on
 // every turn, so an unused tool is a cost paid continuously. Registering all 32
-// meant the first measurable effect of installing OneMemory was a bigger
+// meant the first measurable effect of installing Monomem was a bigger
 // context bill, and it handed the model a 32-item menu to pick the wrong thing
 // from. Several hosts also cap how many tools they accept.
 //
@@ -18,15 +18,15 @@ import { Store } from "../src/store.js";
 import { createMcpServer, enabledToolNames, DEFAULT_TOOLS } from "../src/mcp-server-core.js";
 
 /**
- * Tool names a real client is shown, with ONEMEMORY_TOOLS set to `setting`
+ * Tool names a real client is shown, with MONOMEM_TOOLS set to `setting`
  * (undefined = unset, i.e. a plain install). The suite as a whole runs with
- * ONEMEMORY_TOOLS=all so it can exercise the operator tools, so this file must
+ * MONOMEM_TOOLS=all so it can exercise the operator tools, so this file must
  * set the variable itself rather than inherit it.
  */
 async function toolNames(store: Store, setting?: string): Promise<string[]> {
-  const prior = process.env.ONEMEMORY_TOOLS;
-  if (setting === undefined) delete process.env.ONEMEMORY_TOOLS;
-  else process.env.ONEMEMORY_TOOLS = setting;
+  const prior = process.env.MONOMEM_TOOLS;
+  if (setting === undefined) delete process.env.MONOMEM_TOOLS;
+  else process.env.MONOMEM_TOOLS = setting;
   try {
     const server = createMcpServer(store);
     const [ct, st] = InMemoryTransport.createLinkedPair();
@@ -38,8 +38,8 @@ async function toolNames(store: Store, setting?: string): Promise<string[]> {
       await client.close();
     }
   } finally {
-    if (prior === undefined) delete process.env.ONEMEMORY_TOOLS;
-    else process.env.ONEMEMORY_TOOLS = prior;
+    if (prior === undefined) delete process.env.MONOMEM_TOOLS;
+    else process.env.MONOMEM_TOOLS = prior;
   }
 }
 
@@ -49,11 +49,11 @@ describe("which tools are chosen", () => {
   });
 
   test('"all" means no filtering at all', () => {
-    assert.equal(enabledToolNames({ ONEMEMORY_TOOLS: "all" }), null);
+    assert.equal(enabledToolNames({ MONOMEM_TOOLS: "all" }), null);
   });
 
   test("a comma list is added to the core set, never replaces it", () => {
-    const got = enabledToolNames({ ONEMEMORY_TOOLS: "memory_stats,memory_timeline" })!;
+    const got = enabledToolNames({ MONOMEM_TOOLS: "memory_stats,memory_timeline" })!;
     assert.ok(got.has("memory_stats"));
     assert.ok(got.has("memory_timeline"));
     for (const core of DEFAULT_TOOLS) {
@@ -62,7 +62,7 @@ describe("which tools are chosen", () => {
   });
 
   test("a nonsense value still leaves a working server", () => {
-    const got = enabledToolNames({ ONEMEMORY_TOOLS: "   " })!;
+    const got = enabledToolNames({ MONOMEM_TOOLS: "   " })!;
     assert.ok(got.has("state_write") && got.has("state_search"));
   });
 });
@@ -118,7 +118,7 @@ describe("the default tool surface", () => {
 });
 
 describe("the full surface is still reachable", () => {
-  test("ONEMEMORY_TOOLS=all brings the operator tools back", async () => {
+  test("MONOMEM_TOOLS=all brings the operator tools back", async () => {
     const store = new Store(":memory:");
     try {
       const names = await toolNames(store, "all");

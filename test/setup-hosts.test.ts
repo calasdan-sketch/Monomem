@@ -18,13 +18,13 @@ afterEach(() => {
 });
 
 type Host = { id: string; rel: string; foreign: string; entry: (text: string) => Record<string, unknown> | undefined };
-const json = (key: string) => (t: string) => ((parseJsonc(t) as Record<string, Record<string, Record<string, unknown>>>)[key] ?? {}).onememory;
+const json = (key: string) => (t: string) => ((parseJsonc(t) as Record<string, Record<string, Record<string, unknown>>>)[key] ?? {}).monomem;
 const HOSTS: Host[] = [
   {
     id: "codex",
     rel: ".codex/config.toml",
-    foreign: '# my codex\nmodel = "o5"\n\n[mcp_servers.other]\ncommand = "x"\nargs = ["a"]\n\n# trusted projects\n[projects."/work/onememory"]\ntrust_level = "trusted"\n',
-    entry: (t) => (findTable(t, ["mcp_servers", "onememory"]) ? { command: /command = "([^"]+)"/.exec(t.slice(findTable(t, ["mcp_servers", "onememory"])!.start))![1] } : undefined),
+    foreign: '# my codex\nmodel = "o5"\n\n[mcp_servers.other]\ncommand = "x"\nargs = ["a"]\n\n# trusted projects\n[projects."/work/monomem"]\ntrust_level = "trusted"\n',
+    entry: (t) => (findTable(t, ["mcp_servers", "monomem"]) ? { command: /command = "([^"]+)"/.exec(t.slice(findTable(t, ["mcp_servers", "monomem"])!.start))![1] } : undefined),
   },
   { id: "gemini", rel: ".gemini/settings.json", foreign: '{\n  "theme": "GitHub",\n  "mcpServers": {\n    "other": { "command": "x" }\n  }\n}\n', entry: json("mcpServers") },
   { id: "muse", rel: ".config/muse/settings.json", foreign: '{\n  "schema_version": 1,\n  "mcpServers": {\n    "other": { "transport": "stdio", "command": "x" }\n  }\n}\n', entry: json("mcpServers") },
@@ -40,7 +40,7 @@ function sandbox(): { e: SetupEnv; home: string; db: string } {
   return {
     home,
     db: join(root, "data", "state.db"),
-    e: { home, platform: "linux", env: { HOME: home, ONEMEMORY_HOME: join(root, "om") }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "2.0.0", now: () => new Date("2026-10-31T12:00:00Z") },
+    e: { home, platform: "linux", env: { HOME: home, MONOMEM_HOME: join(root, "om") }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "2.0.0", now: () => new Date("2026-10-31T12:00:00Z") },
   };
 }
 const io = (): SetupIO => ({ interactive: false, out: () => {}, err: () => {}, ask: async () => "" });
@@ -66,12 +66,12 @@ describe("setup: more hosts", () => {
       const file = join(s.home, h.rel);
       assert.equal(await runSetup(s.e, io(), opts(s, { only: [h.id] })), 0);
       const text = readFileSync(file, "utf8");
-      assert.ok(h.entry(text.replace(/"mcp_servers"/, '"mcpServers"')), "onememory entry written");
+      assert.ok(h.entry(text.replace(/"mcp_servers"/, '"mcpServers"')), "monomem entry written");
       if (h.id === "muse") {
-        const v = parseJsonc(text) as { schema_version: number; mcp_servers: { onememory: Record<string, unknown> } };
+        const v = parseJsonc(text) as { schema_version: number; mcp_servers: { monomem: Record<string, unknown> } };
         assert.equal(v.schema_version, 1);
-        assert.equal(v.mcp_servers.onememory.transport, "stdio");
-        assert.equal(v.mcp_servers.onememory.mode, "optional");
+        assert.equal(v.mcp_servers.monomem.transport, "stdio");
+        assert.equal(v.mcp_servers.monomem.mode, "optional");
       }
       if (h.id === "vscode") assert.equal((h.entry(text) as { type: string }).type, "stdio");
       assert.equal(await runSetup(s.e, io(), opts(s, { only: [h.id] })), 0);
@@ -107,10 +107,10 @@ describe("setup: more hosts", () => {
   });
 
   test("toml-table: replace in the middle keeps the comment that leads into the next table", () => {
-    const t = '[mcp_servers.onememory]\ncommand = "old"\n\n# next\n[x]\ny = 1\n';
-    const out = setTable(t, ["mcp_servers", "onememory"], { command: "new", args: ["a b", 'q"'], env: { K: "v" } });
-    assert.equal(out, '[mcp_servers.onememory]\ncommand = "new"\nargs = ["a b", "q\\""]\nenv = { K = "v" }\n\n# next\n[x]\ny = 1\n');
-    assert.equal(removeTable(out, ["mcp_servers", "onememory"]), "\n# next\n[x]\ny = 1\n");
+    const t = '[mcp_servers.monomem]\ncommand = "old"\n\n# next\n[x]\ny = 1\n';
+    const out = setTable(t, ["mcp_servers", "monomem"], { command: "new", args: ["a b", 'q"'], env: { K: "v" } });
+    assert.equal(out, '[mcp_servers.monomem]\ncommand = "new"\nargs = ["a b", "q\\""]\nenv = { K = "v" }\n\n# next\n[x]\ny = 1\n');
+    assert.equal(removeTable(out, ["mcp_servers", "monomem"]), "\n# next\n[x]\ny = 1\n");
   });
 
   test("--capture wires the hooks of Codex, Gemini CLI and Muse; undo takes them out", async () => {
@@ -122,7 +122,7 @@ describe("setup: more hosts", () => {
     const codex = JSON.parse(readFileSync(join(s.home, ".codex/hooks.json"), "utf8"));
     for (const [on, ev] of [["SessionStart", "session-start"], ["UserPromptSubmit", "user-prompt"], ["PostToolUse", "post-tool"], ["Stop", "stop"]]) assert.match(cmds(codex, on), new RegExp(`hook ${ev}`), on);
     const gem = JSON.parse(readFileSync(join(s.home, ".gemini/settings.json"), "utf8"));
-    assert.ok(gem.mcpServers.onememory, "gemini MCP and hooks share settings.json");
+    assert.ok(gem.mcpServers.monomem, "gemini MCP and hooks share settings.json");
     for (const [on, ev] of [["SessionStart", "session-start"], ["BeforeAgent", "user-prompt"], ["AfterTool", "post-tool"], ["AfterAgent", "stop"], ["SessionEnd", "session-end"]]) assert.match(cmds(gem, on), new RegExp(`hook ${ev}`), on);
     assert.equal(gem.hooks.SessionStart[0].matcher, undefined, "lifecycle matchers must match exactly in Gemini: none");
     const m = JSON.parse(readFileSync(muse, "utf8"));

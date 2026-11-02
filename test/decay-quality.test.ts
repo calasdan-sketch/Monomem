@@ -12,8 +12,8 @@ const obs = (s: Store, title: string, days: number, extra: { obsType?: string; t
   s.create({ title, body: `${title} body`, tags: extra.tags, created_at: ago(days) }, { updatedAt: ago(days), kind: "observation", sessionId: "s", obsType: extra.obsType ?? "change" });
 
 afterEach(() => {
-  delete process.env.ONEMEMORY_DECAY_DAYS;
-  delete process.env.ONEMEMORY_DECAY_SUMMARY_DAYS;
+  delete process.env.MONOMEM_DECAY_DAYS;
+  delete process.env.MONOMEM_DECAY_SUMMARY_DAYS;
 });
 
 describe("decay", () => {
@@ -51,13 +51,13 @@ describe("decay", () => {
     assert.equal(s.decayCandidates().length, 1, "listing twice still lists it: nothing was archived");
     assert.equal(s.read(idle.id)!.archived_at, undefined);
     assert.equal(s.read(idle.id)!.rev, rev);
-    process.env.ONEMEMORY_DECAY_DAYS = "0";
+    process.env.MONOMEM_DECAY_DAYS = "0";
     assert.deepEqual(s.decayCandidates(), []);
     assert.equal(s.sweepExpired(), 0);
     assert.equal(s.read(idle.id)!.archived_at, undefined);
-    process.env.ONEMEMORY_DECAY_DAYS = "60";
+    process.env.MONOMEM_DECAY_DAYS = "60";
     assert.equal(s.decayCandidates().length, 0, "the threshold is configurable");
-    delete process.env.ONEMEMORY_DECAY_DAYS;
+    delete process.env.MONOMEM_DECAY_DAYS;
     s.sweepExpired();
     assert.ok(s.read(idle.id)!.archived_at, "the existing sweep path archives it");
     s.close();
@@ -83,11 +83,11 @@ describe("quality view", () => {
     assert.deepEqual(of("duplicate").map((i) => i.ids.slice().sort()), [[d1.id, d2.id]]);
     assert.ok(of("stale_twin").some((i) => i.ids[0] === old.id && i.ids[1] === fresh.id), JSON.stringify(r.issues));
     assert.equal(of("quarantined").length, 1);
-    assert.match(of("quarantined")[0].fix, /^onememory quarantine approve \d+$/);
+    assert.match(of("quarantined")[0].fix, /^monomem quarantine approve \d+$/);
     assert.deepEqual(of("lint").map((i) => i.ids[0]), [linted.id]);
     assert.deepEqual(of("decay").map((i) => i.ids[0]), [idle.id]);
     for (const t of ["duplicate", "stale_twin", "quarantined", "lint", "decay"] as const) assert.ok(r.counts[t] >= 1, t);
-    assert.match(of("duplicate")[0].fix, /^onememory supersede --old \d+ --new-id \d+$/);
+    assert.match(of("duplicate")[0].fix, /^monomem supersede --old \d+ --new-id \d+$/);
     assert.equal(s.read(idle.id)!.archived_at, undefined, "the report archived nothing");
     assert.equal(s.listQuarantine().length, 1);
     s.close();

@@ -14,7 +14,7 @@ flowchart LR
     IDE["Cursor · Copilot · Cline"]
   end
 
-  subgraph bridge["OneMemory — one small Node process"]
+  subgraph bridge["Monomem — one small Node process"]
     direction TB
     STDIO(["MCP · stdio"])
     HTTP(["MCP · HTTP  :8791"])
@@ -54,7 +54,7 @@ flowchart LR
 ```
 
 One store, reached three ways — all pointing at the same
-`ONEMEMORY_DB_PATH`, so a note written through any one of them is
+`MONOMEM_DB_PATH`, so a note written through any one of them is
 immediately visible through the others:
 
 - **`src/store.ts`** — the shared state layer. SQLite via Node's built-in
@@ -63,7 +63,7 @@ immediately visible through the others:
   `rev` for compare-and-swap, a provenance `source`, tags, and namespaces.
 - **`src/api.ts`** — a small HTTP/JSON API + a built-in web dashboard, on
   plain `node:http` (no framework).
-- **`src/mcp-server-core.ts`** — the transport-agnostic MCP server with thirty-two tools, ten of them registered by default (see ONEMEMORY_TOOLS),
+- **`src/mcp-server-core.ts`** — the transport-agnostic MCP server with thirty-two tools, ten of them registered by default (see MONOMEM_TOOLS),
   tools, shared by both MCP transports.
 - **`src/mcp-stdio.ts`** — stdio entry point for local Claude Code / Desktop
   / editors.
@@ -71,7 +71,7 @@ immediately visible through the others:
   tunnel points at. Stateless: one shared store, a fresh server + transport
   per request.
 - **`src/lint.ts`** — the write-time memory linter (secrets + prompt
-  injection) and the `ONEMEMORY_LINT` policy; the store applies it on every
+  injection) and the `MONOMEM_LINT` policy; the store applies it on every
   create/update/import.
 - **`src/changes.ts`** — the change feed service (`since` parsing, the
   per-consumer "last" marker) over `Store.changes()`.
@@ -102,8 +102,8 @@ immediately visible through the others:
 | `task_get` | read | One task in full (notes, command, approval state, result) |
 | `task_list` | read | List tasks (default: all but done), filter by status/owner/parent |
 | `task_claim` | write | Take / heartbeat / release a task with a lease (compare-and-swap) |
-| `task_approve` | admin | Approve (or revoke) a command task for the PC's runner ([RUNNER.md](https://github.com/calasdan-sketch/onememory/blob/main/docs/RUNNER.md)) |
-| `runner_status` | read | Is the PC's runner listening, and how many approved commands are waiting / expiring / expired ([RUNNER.md](https://github.com/calasdan-sketch/onememory/blob/main/docs/RUNNER.md)) |
+| `task_approve` | admin | Approve (or revoke) a command task for the PC's runner ([RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md)) |
+| `runner_status` | read | Is the PC's runner listening, and how many approved commands are waiting / expiring / expired ([RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md)) |
 | `session_handoff` | write | Leave a structured handoff (done / pending / decisions / next step) |
 | `catch_up` | read | One call: changes since this consumer last looked + open tasks (compact) + latest handoffs |
 | `memory_ack` | read | Confirm a manual-ack change-feed page (`ack_token`) |
@@ -178,7 +178,7 @@ ways. The rules, so you can guess the other side:
 `POST /notes/:id/archive` and `POST /notes/:id/restore` soft-forget and bring back a note by id; `POST /sweep-expired` archives every note past its TTL (all three are admin scope; see [encryption-retention.md](./encryption-retention.md)).
 `POST /notes` and `PUT /notes/:id` answer `202 { quarantined: { id, reasons } }`
 when the memory linter holds the write, and add a `warnings` array under
-`ONEMEMORY_LINT=warn`. `POST /import` adds `quarantined` / `rejected` arrays
+`MONOMEM_LINT=warn`. `POST /import` adds `quarantined` / `rejected` arrays
 when non-empty.
 
 ## Schema

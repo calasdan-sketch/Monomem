@@ -1,20 +1,20 @@
-// `onememory supersede` and `onememory history`: the terminal side of replacing a memory (1.6.0).
+// `monomem supersede` and `monomem history`: the terminal side of replacing a memory (1.6.0).
 //
-//   onememory supersede --old 12[,13] --title "..." --body "..." [--tags a,b] [--confidence 0.8]
-//   onememory supersede --old 12 --new-id 40
+//   monomem supersede --old 12[,13] --title "..." --body "..." [--tags a,b] [--confidence 0.8]
+//   monomem supersede --old 12 --new-id 40
 //       Shows the warning ("Are you sure you want to replace this?"). On a terminal it then asks you to TYPE the number of
 //       notes you are replacing (or "yes"); anything else cancels and nothing changes. With no terminal (a script, a pipe)
 //       it only shows the warning and prints a one-time code.
-//   onememory supersede --confirm-token <code> [the same --title/--body/--tags/--confidence] [--acknowledge-risk]
+//   monomem supersede --confirm-token <code> [the same --title/--body/--tags/--confidence] [--acknowledge-risk]
 //       The non-interactive way: only a code from a preview works, once, within minutes.
-//   onememory supersede undo <id>
-//   onememory history <id> [--json] [--include-distrusted]
-//   onememory history restore <id> <version> [--if-rev n]
-//   onememory history purge <id> [--yes]
+//   monomem supersede undo <id>
+//   monomem history <id> [--json] [--include-distrusted]
+//   monomem history restore <id> <version> [--if-rev n]
+//   monomem history purge <id> [--yes]
 //
 // There is deliberately NO --yes for a replacement: a script has to carry a code that was made by looking at a preview.
 //
-// The command line is the machine owner (the same trust as every other `onememory` command), so it runs with the admin scope
+// The command line is the machine owner (the same trust as every other `monomem` command), so it runs with the admin scope
 // under the writer name "cli". Everything goes through supersede.ts, like the REST and MCP surfaces.
 import { readFileSync } from "node:fs";
 import { Store, QuarantinedError, ValidationError } from "./store.js";
@@ -161,7 +161,7 @@ export async function supersedeCli(store: Store, args: string[], io: CliIO, call
   }
 }
 
-/** `onememory history ...` */
+/** `monomem history ...` */
 export async function historyCli(store: Store, args: string[], io: CliIO, caller: Caller = OWNER): Promise<number> {
   try {
     const { flags, rest } = parseArgs(args);
@@ -169,7 +169,7 @@ export async function historyCli(store: Store, args: string[], io: CliIO, caller
     const sub = rest[0] === "restore" || rest[0] === "purge" ? rest[0] : "list";
     const idArg = sub === "list" ? rest[0] : rest[1];
     const id = Number(idArg);
-    if (!Number.isInteger(id) || id < 1) throw new ValidationError("give a note number: onememory history <id> | history restore <id> <version> | history purge <id>");
+    if (!Number.isInteger(id) || id < 1) throw new ValidationError("give a note number: monomem history <id> | history restore <id> <version> | history purge <id>");
     if (sub === "list") {
       const h = noteHistory(store, caller, id, { includeDistrusted: flags["include-distrusted"] === true });
       if (json) {

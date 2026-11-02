@@ -13,7 +13,7 @@ says exactly what each piece does, and what it does not prove.
 
 | Term | Meaning |
 |---|---|
-| **label** | what a token is called (`ONEMEMORY_TOKENS` `label`), or a process marker (`stdio`, `cli`, `server`, `runner`). This is `written_by`. |
+| **label** | what a token is called (`MONOMEM_TOKENS` `label`), or a process marker (`stdio`, `cli`, `server`, `runner`). This is `written_by`. |
 | **server_id** | a random UUID minted once per database (the `store_uuid` row in `_meta`). It never changes, survives restarts, upgrades, backups and restores of the file, and is in every export. |
 | **writer_id** | `<server_id>/<label>`. The same label on two servers is two different writers; the id says which. Returned next to `written_by` on notes, tasks, handoffs and every change-feed entry (`writer_id`, `note_writer_id`). Additive: `written_by` keeps working everywhere. |
 | **distrusted** | a writer an admin has put on a namespace's distrust list. |
@@ -40,9 +40,9 @@ recorded in `trust_log` (who, when, what) and in the audit log. The log is prune
 (the newest 1000 lines of each namespace, and of the global `*` bucket, are kept), so a busy namespace cannot push
 another one's history out. A pinned admin does not see the server-wide `attester-*` and `key-rotate` lines.
 
-**The primary token (`ONEMEMORY_TOKEN`) is always an admin, and is never pinned.** It is the only token that can
+**The primary token (`MONOMEM_TOKEN`) is always an admin, and is never pinned.** It is the only token that can
 set `*` rules and see everything. A deployment that has distrust rules but only that one token gives every
-client admin rights, so `onememory doctor` warns about it: give clients their own `ONEMEMORY_TOKENS` entries.
+client admin rights, so `monomem doctor` warns about it: give clients their own `MONOMEM_TOKENS` entries.
 For a namespace-pinned admin that has `readsFrom` grants, `include_distrusted` is honoured **only for the
 token's own namespace** (pass `namespace=<own>`); asking for it across a granted namespace is refused.
 
@@ -57,7 +57,7 @@ note either, unless it is that note's own writer; otherwise it could re-label no
 |---|---|
 | MCP | `trust_policy` (admin): `action` = `list`, `distrust`, `undistrust`, `add_attester`, `remove_attester`, `revoke_attester`, `unrevoke_attester` |
 | REST | `GET /trust`, `POST /trust/distrust {namespace, writer}`, `DELETE /trust/distrust?namespace=&writer=`, `POST /trust/attesters {public_key, server_id, label?, not_after?, any_server?}`, `DELETE /trust/attesters/<key_id>`, `POST /trust/revoked {key_id, reason?}`, `DELETE /trust/revoked/<key_id>` (all admin, including the GET) |
-| CLI | `onememory trust [list]`, `trust distrust <writer> --namespace <ns\|*>`, `trust undistrust ...`, `trust attester-add <public-key> --server-id <id> [--label text] [--not-after <ISO time>] [--any-server]` (a base64url key can start with `-`: pass it as `--public-key <key>` or after `--`), `trust attester-remove <key-id>`, `trust attester-revoke <key-id> [--reason text]`, `trust attester-unrevoke <key-id>`, `trust identity`, `trust export-key --out <file>`, `trust rotate [--keep-old-private]`, `trust --help`, all with `--json` |
+| CLI | `monomem trust [list]`, `trust distrust <writer> --namespace <ns\|*>`, `trust undistrust ...`, `trust attester-add <public-key> --server-id <id> [--label text] [--not-after <ISO time>] [--any-server]` (a base64url key can start with `-`: pass it as `--public-key <key>` or after `--`), `trust attester-remove <key-id>`, `trust attester-revoke <key-id> [--reason text]`, `trust attester-unrevoke <key-id>`, `trust identity`, `trust export-key --out <file>`, `trust rotate [--keep-old-private]`, `trust --help`, all with `--json` |
 
 At most 50 rules per namespace and 450 across namespaces (the rest is reserved for `*` rules). A writer reference that could never match is refused
 (an empty label, or a bare server id with no label).
@@ -112,7 +112,7 @@ and a hostile note must not be able to talk an agent into asking. The dashboard 
 | Command runner | **a distrusted command task is never run**: it is not in the runner's queue (`queuedCommandTasks`), the shared classifier refuses it on its own (`distrusted`), the legacy note queue skips it, and `runner_status` does not count it as waiting. This also holds for a task approved *before* the writer was distrusted. |
 | MCP | `state_read`, `state_list`, `state_search`, `state_relevant`, `memory_since`, `memory_ack`, `catch_up`, `task_list`, `task_get`, `task_claim`, `task_approve`, `memory_stats`, `memory_consolidation_candidates` |
 | REST | `GET /notes`, `GET /notes/:id` (404 unless opted in), `GET /search`, `POST /relevant`, `GET /changes`, `POST /ack`, `GET /tasks`, `GET /tasks/:id`, `GET /handoffs`, `GET /catch-up`, `GET /stats` |
-| CLI / hook | `onememory recall` (the SessionStart hook), `relevant`, `changes`, `watch` |
+| CLI / hook | `monomem recall` (the SessionStart hook), `relevant`, `changes`, `watch` |
 | Dashboard | hidden by default; a "distrusted" checkbox shows them with a red DISTRUSTED badge |
 
 **One gate.** A note read by id goes through `Store.readVisible` and a set of notes through
@@ -123,7 +123,7 @@ found" to a non-admin for read, update (so a tags-only change cannot echo its bo
 and `task_put`; `client_key` replays and the janitor never touch it; consolidating a mix of hidden and
 visible notes is refused.
 
-**Also honoured since 1.4.1:** the markdown vault export (`onememory export --format md --dir <path>`) leaves hidden notes out
+**Also honoured since 1.4.1:** the markdown vault export (`monomem export --format md --dir <path>`) leaves hidden notes out
 and prunes their earlier files; `--include-distrusted` writes them with `distrusted: true` in the front
 matter. The auto-merge janitor ignores hidden notes.
 
@@ -135,10 +135,10 @@ isolation is unchanged on every path. Anyone who can read the database file is o
 ### Setting it up
 
 ```
-onememory trust distrust phone --namespace work       # one namespace
-onememory trust distrust phone --namespace "*"        # everywhere
-onememory trust list
-onememory trust undistrust phone --namespace work
+monomem trust distrust phone --namespace work       # one namespace
+monomem trust distrust phone --namespace "*"        # everywhere
+monomem trust list
+monomem trust undistrust phone --namespace work
 ```
 
 Take a writer off with `undistrust`; its notes come back at once (nothing was changed or deleted).
@@ -162,11 +162,11 @@ safe, and it loses the information. An attestation brings it back **for servers 
 
 - Each database has one Ed25519 key pair. The private key is the file `.attest-key` beside the
   database (mode 0600, re-tightened at every start, created on first signed export or
-  `onememory trust identity`, written atomically; `ONEMEMORY_ATTEST_KEY_FILE` overrides the path).
-  It is **never** exported or sent anywhere. `onememory trust list` never creates one. A corrupt key
+  `monomem trust identity`, written atomically; `MONOMEM_ATTEST_KEY_FILE` overrides the path).
+  It is **never** exported or sent anywhere. `monomem trust list` never creates one. A corrupt key
   file is an error, never silently replaced by a new identity, and it does not break an import of
   unsigned notes. (Two databases in one directory share a key file; use one directory per database.)
-- `GET /export?attest=1` and `onememory export --format json --attest` write a header
+- `GET /export?attest=1` and `monomem export --format json --attest` write a header
   (`"export": {format, format_version, server_id, key_id, public_key, algorithm}`) and, on every
   note, a detached `attestation`. **The default export is unchanged from 1.3.x**: `{"notes": [...]}`
   with no header and no signatures (1.4.0 added them by default; 1.4.1 puts it back, because a plain
@@ -180,28 +180,28 @@ safe, and it loses the information. An attestation brings it back **for servers 
   time, so a key with a `not_after` rejects them. If the key cannot be created (read-only directory)
   the export is still written, without signatures.
 - On import, each attestation is checked against the **trust list**: public keys an admin added
-  (`trust attester-add`) plus `ONEMEMORY_TRUSTED_ATTESTERS`. **A key is pinned to one `server_id`.**
+  (`trust attester-add`) plus `MONOMEM_TRUSTED_ATTESTERS`. **A key is pinned to one `server_id`.**
   Without the pin a trusted key could claim to be any server (including a peer you pinned another key
   for), so `attester-add` needs `--server-id`, and an unpinned entry needs the explicit `--any-server`
   (it is flagged `unpinned` in every listing and in the audit log). Even an unpinned key cannot claim
   this database's own server id. A server's own key is trusted for its own server id only. An entry (or env
   entry) naming **this** server's id is accepted when it is a *retired own key*; the current key cannot be
-  added, it is already trusted. `ONEMEMORY_TRUSTED_ATTESTERS` and `attester-add` follow the same rules.
+  added, it is already trusted. `MONOMEM_TRUSTED_ATTESTERS` and `attester-add` follow the same rules.
 - **Expiry is not revocation.** `--not-after <ISO time>` ends trust in a key **at that time**. It is judged
   against the **time of verification**, not the date an export claims: once the date has passed, the key is
   not believed for anything, old exports included, so an import done today rejects everything that key signed, whatever date the file claims
   (a v1 attestation has no signed export time, so it is rejected too). But before that date a key whose
   holder has misbehaved is still believed. For a planned rotation do not set `--not-after` on the old key (`trust rotate` keeps it trusted without one). To stop trusting a key **now**, use `trust attester-revoke
   <key-id>` (a list kept in the database that wins over every other source, including
-  `ONEMEMORY_TRUSTED_ATTESTERS`; `attester-unrevoke` lifts it). Notes already imported keep their
+  `MONOMEM_TRUSTED_ATTESTERS`; `attester-unrevoke` lifts it). Notes already imported keep their
   recorded provenance either way.
-- **Minimum version.** `ONEMEMORY_ATTEST_MIN_VERSION=2` refuses version 1 attestations (the 1.4.0 format,
+- **Minimum version.** `MONOMEM_ATTEST_MIN_VERSION=2` refuses version 1 attestations (the 1.4.0 format,
   which does not cover `created_at`, `source`, `expires_at`, `archived_at` or `rev`).
 - **Imported without a verified attestation.** A note that arrived without a verifiable attestation is
   marked `imported_unverified: true` (shown in reads and in the provenance banner an agent sees). The
   default still imports such notes, so backups and plain exports keep working. To refuse them instead, use
-  `onememory import --file x --require-attestation`, `POST /import` with `require_attestation: true`, or
-  `ONEMEMORY_IMPORT_REQUIRE_ATTESTATION=1`; they land in the report's `rejected` list.
+  `monomem import --file x --require-attestation`, `POST /import` with `require_attestation: true`, or
+  `MONOMEM_IMPORT_REQUIRE_ATTESTATION=1`; they land in the report's `rejected` list.
 - **Verified**: the note keeps the original `written_by` in `attested_writer` and the attester's id in
   `attested_by`; the stamped `written_by`/`created_by` is still the importing admin. The attester's own
   earlier hops are kept in the taint set, so distrust follows the content through a chain of servers.
@@ -244,7 +244,7 @@ It does **not** prove:
 
 Anyone who can read the signing key can sign anything as that server: protect `.attest-key` like the
 at-rest encryption key (do not put the data directory in a synced folder). If it leaks, set
-`trust attester-revoke` on its key in every trust list, then `onememory trust rotate`. Rotation takes
+`trust attester-revoke` on its key in every trust list, then `monomem trust rotate`. Rotation takes
 effect **in a running server** (no restart: the key file is re-checked on every use). The old public key
 is recorded as a *retired key of this server*, so notes this server exported earlier still verify when they
 come back; the old private key is not kept unless you pass `--keep-old-private` (then it is written as `.attest-key.<old key id>.old` next to
@@ -254,26 +254,26 @@ the key file, mode 0600). The new key has a new `key_id`, the same `server_id`.
 
 ```
 # on server A
-onememory trust identity                     # prints server_id, key_id, public_key
+monomem trust identity                     # prints server_id, key_id, public_key
 # on server B, once, after checking the key with A's admin
-onememory trust attester-add --public-key <public_key> --server-id <A's server_id> --label "server a"
+monomem trust attester-add --public-key <public_key> --server-id <A's server_id> --label "server a"
 # move notes
-onememory export --format json --attest --out a.json   # on A
-onememory import --file a.json                          # on B  (or POST /import)
+monomem export --format json --attest --out a.json   # on A
+monomem import --file a.json                          # on B  (or POST /import)
 ```
 
-The same pair as an environment variable on B: `ONEMEMORY_TRUSTED_ATTESTERS=<A's server_id>=<public_key>`
+The same pair as an environment variable on B: `MONOMEM_TRUSTED_ATTESTERS=<A's server_id>=<public_key>`
 (a bare key is refused and logged: it would be a key with no pin).
 
 ### Keys, backups and restores
 
-- `onememory backup` leaves `.attest-key` out by default and says so; `--include-attest-key` copies it
+- `monomem backup` leaves `.attest-key` out by default and says so; `--include-attest-key` copies it
   (mode 0600) like `--include-approval-key` does. Guard such a backup like the encryption key.
 - Restoring a database **file** keeps `server_id` but, without the key, the new machine makes a **new**
   key. The warning "restored without its key" is printed only when the database remembers a previous key
   (`_meta.attest_key_id`) that no longer matches: peers must add its public key. To trust your own earlier
   exports again after such a restore, run `trust attester-add --server-id <this server's id> <old public key>`
-  (or put the entry in `ONEMEMORY_TRUSTED_ATTESTERS`). To keep
+  (or put the entry in `MONOMEM_TRUSTED_ATTESTERS`). To keep
   the identity, restore the key too (`trust export-key --out <file>` writes a 0600 copy to keep
   somewhere safe). `export-key` refuses to write through an existing file or a symlink (also a dangling one).
 - A restored database that imports its **own** earlier export verifies it with its own key, for its
@@ -285,22 +285,22 @@ The step-by-step version is [upgrading.md](./upgrading.md). In short:
 
 
 Schema v14 adds columns and three small tables; no note text is touched. The first time a database at
-v1 to v13 is opened by 1.4.x, OneMemory writes a consistent snapshot to
+v1 to v13 is opened by 1.4.x, Monomem writes a consistent snapshot to
 `<database>.pre-v16-backup.<pid><random>.partial`, **checks it** (non-empty, the old schema version, the same
 number of notes as the database, an integrity check) and only then renames it to `<database>.pre-v16-backup`.
 A crash leaves a `.partial` file (swept at the next upgrade), never a half-written backup under the real name.
 A valid copy already there is kept when it holds the same notes, otherwise it is moved to a dated name; an
 empty or garbage one is replaced, and one that merely cannot be read is moved aside, never deleted. The upgrade
 **refuses to run** when the copy cannot be made (for example no room on the disk): it stops with an error and
-the database is untouched; `ONEMEMORY_SKIP_PREMIGRATION_BACKUP=1` upgrades without a copy. The upgrade runs in one transaction. `onememory doctor` lists the copies with size and age. To roll back:
-stop every onememory process, **move** the backup file over the database (remove its `-wal` / `-shm`
+the database is untouched; `MONOMEM_SKIP_PREMIGRATION_BACKUP=1` upgrades without a copy. The upgrade runs in one transaction. `monomem doctor` lists the copies with size and age. To roll back:
+stop every monomem process, **move** the backup file over the database (remove its `-wal` / `-shm`
 files; a copy would leave the original), install the older version. Writes made after the upgrade are
-not in the backup. When you are happy: `onememory backup --prune-premigration`. If you later turn on
-at-rest encryption (`onememory encrypt enable`), those copies are still **plaintext**: it tells you to
-prune them. `onememory recall` never upgrades a database.
+not in the backup. When you are happy: `monomem backup --prune-premigration`. If you later turn on
+at-rest encryption (`monomem encrypt enable`), those copies are still **plaintext**: it tells you to
+prune them. `monomem recall` never upgrades a database.
 
 Runners older than 1.3.4 write a heartbeat with no writer marker, which 1.4.0 no longer believes: see
-[RUNNER.md](https://github.com/calasdan-sketch/onememory/blob/main/docs/RUNNER.md) for the one-step upgrade (or `ONEMEMORY_RUNNER_ACCEPT_LEGACY=1` as a stopgap).
+[RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md) for the one-step upgrade (or `MONOMEM_RUNNER_ACCEPT_LEGACY=1` as a stopgap).
 
 ## Limits
 

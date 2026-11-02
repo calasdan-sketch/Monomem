@@ -1,8 +1,8 @@
-// `onememory uninstall [--purge] [--dry-run] [--yes] [--no-backup]`: take OneMemory out of every app setup wired,
+// `monomem uninstall [--purge] [--dry-run] [--yes] [--no-backup]`: take Monomem out of every app setup wired,
 // and with --purge also delete the data folder (after a final backup).
 //
 // It reuses setup's own undo (setup.ts undoSession): every config file setup changed is put back from its backup when
-// nothing touched it since (byte-identical; a file setup created is deleted), or else only the OneMemory entry is taken
+// nothing touched it since (byte-identical; a file setup created is deleted), or else only the Monomem entry is taken
 // out and the rest of the file is kept. Nothing setup did not record is changed: an entry you added by hand is listed,
 // not removed. Like setup it shows the plan first and writes only after you type y.
 
@@ -46,16 +46,16 @@ export function dirBytes(dir: string): number {
 function describe(c: Change): string {
   if (!existsSync(c.real)) return "already gone, nothing to do";
   if (sha(readFileSync(c.real, "utf8")) === c.afterSha) return c.createdFile ? "delete it (setup created it)" : `put back the original (${c.backup})`;
-  return "take out only the OneMemory part (the file changed since setup; the rest is kept)";
+  return "take out only the Monomem part (the file changed since setup; the rest is kept)";
 }
 
-/** App configs that still mention OneMemory but were not changed by setup: listed, never touched. */
+/** App configs that still mention Monomem but were not changed by setup: listed, never touched. */
 function leftovers(e: SetupEnv, recorded: Set<string>): string[] {
   const files = new Set([...detectClients(e).map((t) => t.file), ...hookHosts(e).map((h) => h.file)]);
   return [...files].filter((f) => {
     if (recorded.has(resolve(f))) return false;
     try {
-      return /"onememory"\s*:|\[mcp_servers\.onememory\]|onememory[^\n]{0,160}\b(?:hook [a-z-]+|recall --budget-ms)/.test(readFileSync(f, "utf8"));
+      return /"monomem"\s*:|\[mcp_servers\.monomem\]|monomem[^\n]{0,160}\b(?:hook [a-z-]+|recall --budget-ms)/.test(readFileSync(f, "utf8"));
     } catch {
       return false;
     }
@@ -84,10 +84,10 @@ export async function runUninstall(e: SetupEnv, io: SetupIO, opts: UninstallOpti
   const sessions = all.filter((s) => !s.undone).reverse(); // newest first: each one's backup is the state the older one left
   const recorded = new Set(sessions.flatMap((s) => s.changes.map((c) => resolve(c.file))));
   const dir = dataHome(e);
-  const backupDir = join(e.home, `onememory-final-backup-${stamp(e.now())}`);
+  const backupDir = join(e.home, `monomem-final-backup-${stamp(e.now())}`);
   const configBackups = opts.purge ? sessions.flatMap((s) => s.changes.flatMap((c) => (c.backup ? [c.backup] : []))) : [];
 
-  io.out("OneMemory uninstall\n");
+  io.out("Monomem uninstall\n");
   io.out("What I will do:");
   let n = 1;
   for (const s of sessions) for (const c of [...s.changes].reverse()) io.out(`  ${n++}. ${c.label}: ${c.file}: ${describe(c)}`);
@@ -99,10 +99,10 @@ export async function runUninstall(e: SetupEnv, io: SetupIO, opts: UninstallOpti
     } else io.out(`  (no data folder at ${dir}; nothing to delete)`);
     for (const b of configBackups) io.out(`  ${n++}. Delete setup's copy ${b}`);
   } else io.out(`  Your notes in ${dir} are kept (add --purge to delete them too).`);
-  const pinned = e.env.ONEMEMORY_DB_PATH?.trim();
-  if (opts.purge && pinned && relative(dir, resolve(pinned)).startsWith("..")) io.out(`  (ONEMEMORY_DB_PATH points at ${pinned}, outside the data folder: it is NOT deleted)`);
+  const pinned = e.env.MONOMEM_DB_PATH?.trim();
+  if (opts.purge && pinned && relative(dir, resolve(pinned)).startsWith("..")) io.out(`  (MONOMEM_DB_PATH points at ${pinned}, outside the data folder: it is NOT deleted)`);
   const left = leftovers(e, recorded);
-  for (const f of left) io.out(`  (left alone) ${f} mentions OneMemory, but setup did not add it; take it out by hand if you want`);
+  for (const f of left) io.out(`  (left alone) ${f} mentions Monomem, but setup did not add it; take it out by hand if you want`);
   io.out("");
 
   const nothing = sessions.length === 0 && !(opts.purge && (existsSync(dir) || configBackups.length));
@@ -152,7 +152,7 @@ export async function runUninstall(e: SetupEnv, io: SetupIO, opts: UninstallOpti
       try {
         rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
       } catch (err) {
-        io.err(`  Could not delete ${dir} (${(err as Error).message}). Close every app using OneMemory and run uninstall --purge again.`);
+        io.err(`  Could not delete ${dir} (${(err as Error).message}). Close every app using Monomem and run uninstall --purge again.`);
         return 1;
       }
       io.out(`  deleted the data folder ${dir}`);
@@ -166,6 +166,6 @@ export async function runUninstall(e: SetupEnv, io: SetupIO, opts: UninstallOpti
       }
     }
   }
-  io.out("\nDone. Restart the apps that had OneMemory so they forget it.");
+  io.out("\nDone. Restart the apps that had Monomem so they forget it.");
   return 0;
 }

@@ -1,7 +1,7 @@
-// `onememory bench`: the provenance benchmark. These tests check the benchmark itself: that the scenario set is
+// `monomem bench`: the provenance benchmark. These tests check the benchmark itself: that the scenario set is
 // well-formed and big enough, that the engine judges honestly (a wrong system FAILS), that a run is repeatable, and
-// that the CLI behaves (exit codes, JSON, no side effects). The scenarios' own verdicts on OneMemory are checked once,
-// in "against OneMemory".
+// that the CLI behaves (exit codes, JSON, no side effects). The scenarios' own verdicts on Monomem are checked once,
+// in "against Monomem".
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import { PROJECT_ROOT, PACKAGE_VERSION } from "../src/config.js";
 import { benchMain, defaultScenarioDir, runBench } from "../src/bench/index.js";
 import { loadKnownGaps, loadScenarios, runScenario, seededWord, validateScenario } from "../src/bench/engine.js";
-import { OneMemoryAdapter, normalizeNote } from "../src/bench/onememory-adapter.js";
+import { MonomemAdapter, normalizeNote } from "../src/bench/monomem-adapter.js";
 import { SUITES, type BenchNote, type Capability, type MemoryAdapter, type OpResult, type Scenario, type SearchOpts, type UpdateInput, type WorldSpec, type WriteInput } from "../src/bench/types.js";
 import type { Report } from "../src/bench/report.js";
 
@@ -28,7 +28,7 @@ const tidy = (p: string): void => {
 
 /**
  * A tiny in-memory memory system, to prove the adapter interface is enough to run the benchmark against something that
- * is not OneMemory, and to prove the benchmark FAILS a system that behaves badly.
+ * is not Monomem, and to prove the benchmark FAILS a system that behaves badly.
  */
 class ToyAdapter implements MemoryAdapter {
   readonly name = "toy";
@@ -332,7 +332,7 @@ describe("the engine judges honestly (toy systems)", () => {
   });
 });
 
-describe("against OneMemory", () => {
+describe("against Monomem", () => {
   let first: Report;
   let second: Report;
   let other: Report;
@@ -412,7 +412,7 @@ describe("against OneMemory", () => {
       for (const c of s.checks) assert.ok(c.expected && c.actual && typeof c.pass === "boolean", `${s.id}: ${c.desc}`);
     }
     assert.ok(first.limits.length >= 4);
-    assert.equal(first.tool, "onememory-bench");
+    assert.equal(first.tool, "monomem-bench");
     assert.equal(first.version, PACKAGE_VERSION);
   });
 
@@ -431,17 +431,17 @@ describe("against OneMemory", () => {
   });
 });
 
-describe("the real scenarios catch a broken OneMemory (mutation checks)", () => {
-  /** OneMemory with its tenant pins removed: every token can see every tenant. */
-  class NoTenants extends OneMemoryAdapter {
+describe("the real scenarios catch a broken Monomem (mutation checks)", () => {
+  /** Monomem with its tenant pins removed: every token can see every tenant. */
+  class NoTenants extends MonomemAdapter {
     override async open(world: WorldSpec): Promise<void> {
       const actors: WorldSpec["actors"] = {};
       for (const [k, a] of Object.entries(world.actors)) actors[k] = { scope: a.scope, writer: a.writer, server: a.server };
       return super.open({ actors, grants: {} });
     }
   }
-  /** OneMemory where every token is an admin: scopes mean nothing. */
-  class AllAdmin extends OneMemoryAdapter {
+  /** Monomem where every token is an admin: scopes mean nothing. */
+  class AllAdmin extends MonomemAdapter {
     override async open(world: WorldSpec): Promise<void> {
       const actors: WorldSpec["actors"] = {};
       for (const [k, a] of Object.entries(world.actors)) actors[k] = { ...a, scope: "admin" };
@@ -465,10 +465,10 @@ describe("the real scenarios catch a broken OneMemory (mutation checks)", () => 
   });
 });
 
-describe("the replace scenarios catch a broken OneMemory (mutation checks)", () => {
-  /** OneMemory whose "preview" quietly does the replacement too: asking 'are you sure?' must never change anything. */
-  class PreviewThatActs extends OneMemoryAdapter {
-    override async supersedePreview(actor: string, input: Parameters<NonNullable<OneMemoryAdapter["supersedePreview"]>>[1]): Promise<OpResult> {
+describe("the replace scenarios catch a broken Monomem (mutation checks)", () => {
+  /** Monomem whose "preview" quietly does the replacement too: asking 'are you sure?' must never change anything. */
+  class PreviewThatActs extends MonomemAdapter {
+    override async supersedePreview(actor: string, input: Parameters<NonNullable<MonomemAdapter["supersedePreview"]>>[1]): Promise<OpResult> {
       const p = await super.supersedePreview(actor, input);
       if (p.outcome === "ok") await super.supersedeConfirm(actor, { token: String(p.data?.token), ...(input.new_note ? { new_note: input.new_note } : {}) });
       return p;
@@ -479,14 +479,14 @@ describe("the replace scenarios catch a broken OneMemory (mutation checks)", () 
     assert.equal(report.scenarios[0].status, "fail");
   });
 
-  /** OneMemory with history switched off underneath: nothing is kept. */
-  class NoHistory extends OneMemoryAdapter {
+  /** Monomem with history switched off underneath: nothing is kept. */
+  class NoHistory extends MonomemAdapter {
     override async open(world: WorldSpec): Promise<void> {
       await super.open(world);
-      process.env.ONEMEMORY_HISTORY_VERSIONS = "0"; // after open: open() clears leftovers first
+      process.env.MONOMEM_HISTORY_VERSIONS = "0"; // after open: open() clears leftovers first
     }
     override async close(): Promise<void> {
-      delete process.env.ONEMEMORY_HISTORY_VERSIONS;
+      delete process.env.MONOMEM_HISTORY_VERSIONS;
       return super.close();
     }
   }
@@ -497,7 +497,7 @@ describe("the replace scenarios catch a broken OneMemory (mutation checks)", () 
   });
 
   test("an adapter without the replace operations has those scenarios SKIPPED, never passed", async () => {
-    class Plain extends OneMemoryAdapter {
+    class Plain extends MonomemAdapter {
       override readonly capabilities: ReadonlySet<Capability> = new Set<Capability>(["read", "list"]);
     }
     const { report } = await runBench({ adapter: new Plain(), only: ["A21", "B25"] });
@@ -547,9 +547,9 @@ describe("scenario validation (more)", () => {
   });
 });
 
-describe("the OneMemory adapter", () => {
+describe("the Monomem adapter", () => {
   test("opens a fresh store, closes it, and leaves nothing behind (safe to close twice)", async () => {
-    const a = new OneMemoryAdapter();
+    const a = new MonomemAdapter();
     await a.open({ actors: { alice: { scope: "write", writer: "alice", server: "main" } }, grants: {} });
     const dir = (a as unknown as { dir: string }).dir;
     assert.ok(existsSync(dir), "the work folder exists while open");
@@ -561,7 +561,7 @@ describe("the OneMemory adapter", () => {
   });
 
   test("a second open starts empty (no state leaks between scenarios)", async () => {
-    const a = new OneMemoryAdapter();
+    const a = new MonomemAdapter();
     const world: WorldSpec = { actors: { alice: { scope: "write", writer: "alice", server: "main" } }, grants: {} };
     await a.open(world);
     await a.write("alice", { title: "kept only in the first store", body: "zzfirstonly" });
@@ -572,7 +572,7 @@ describe("the OneMemory adapter", () => {
   });
 
   test("scope and tenant refusals map to the shared outcome words", async () => {
-    const a = new OneMemoryAdapter();
+    const a = new MonomemAdapter();
     await a.open({
       actors: {
         viewer: { scope: "read", writer: "viewer", server: "main", namespace: "t1" },
@@ -590,7 +590,7 @@ describe("the OneMemory adapter", () => {
   });
 
   test("a note placed in the past reads as stale, and an expired one is swept", async () => {
-    const a = new OneMemoryAdapter();
+    const a = new MonomemAdapter();
     await a.open({ actors: { boss: { scope: "admin", writer: "boss", server: "main" } }, grants: {} });
     const old = await a.write("boss", { title: "old thing", body: "ancient", age_days: 200 });
     assert.equal(old.outcome, "ok");
@@ -604,7 +604,7 @@ describe("the OneMemory adapter", () => {
     await a.close();
   });
 
-  test("normalizeNote maps OneMemory's fields to the benchmark's words", () => {
+  test("normalizeNote maps Monomem's fields to the benchmark's words", () => {
     const n: BenchNote = normalizeNote({
       id: 7, title: "t", body: "b", namespace: "ns", tags: ["x"], source: "s", written_by: "w", created_by: "c", created_at: "2026-01-01T00:00:00.000Z",
       updated_at: "2026-01-02T00:00:00.000Z", expires_at: "2026-02-01T00:00:00.000Z", stale: true, distrusted: true, imported_unverified: true,
@@ -619,17 +619,17 @@ describe("the OneMemory adapter", () => {
 });
 
 describe("bench() entry point", () => {
-  test("hides ONEMEMORY_* settings while it runs and puts them back", async () => {
-    process.env.ONEMEMORY_TOKEN = "must-survive";
-    process.env.ONEMEMORY_RATE_MAX = "1"; // would make the server refuse almost everything if it leaked in
+  test("hides MONOMEM_* settings while it runs and puts them back", async () => {
+    process.env.MONOMEM_TOKEN = "must-survive";
+    process.env.MONOMEM_RATE_MAX = "1"; // would make the server refuse almost everything if it leaked in
     try {
       const { report } = await runBench({ only: ["A01"] });
       assert.equal(report.scenarios[0].status, "pass");
-      assert.equal(process.env.ONEMEMORY_TOKEN, "must-survive");
-      assert.equal(process.env.ONEMEMORY_RATE_MAX, "1");
+      assert.equal(process.env.MONOMEM_TOKEN, "must-survive");
+      assert.equal(process.env.MONOMEM_RATE_MAX, "1");
     } finally {
-      delete process.env.ONEMEMORY_TOKEN;
-      delete process.env.ONEMEMORY_RATE_MAX;
+      delete process.env.MONOMEM_TOKEN;
+      delete process.env.MONOMEM_RATE_MAX;
     }
   });
 
@@ -677,9 +677,9 @@ describe("the command line", () => {
     home = mkdtempSync(join(tmpdir(), "om-benchcli-"));
   });
   after(() => tidy(home));
-  const env = (): NodeJS.ProcessEnv => ({ ...process.env, ONEMEMORY_HOME: home, ONEMEMORY_DB_PATH: join(home, "state.db") });
+  const env = (): NodeJS.ProcessEnv => ({ ...process.env, MONOMEM_HOME: home, MONOMEM_DB_PATH: join(home, "state.db") });
 
-  test("`onememory bench --json` exits 0, prints one JSON document, and never touches the data directory", () => {
+  test("`monomem bench --json` exits 0, prints one JSON document, and never touches the data directory", () => {
     const r = spawnSync(process.execPath, [cli, "bench", "--suite", "isolation", "--json"], { env: env(), encoding: "utf8", timeout: 120000, maxBuffer: 20 * 1024 * 1024 });
     assert.equal(r.status, 0, r.stderr);
     const j = JSON.parse(r.stdout) as Report;
@@ -705,7 +705,7 @@ describe("the command line", () => {
     }
   });
 
-  test("`onememory bench --help` and the main help mention the command", () => {
+  test("`monomem bench --help` and the main help mention the command", () => {
     const h = spawnSync(process.execPath, [cli, "bench", "--help"], { env: env(), encoding: "utf8", timeout: 60000 });
     assert.equal(h.status, 0);
     assert.match(h.stdout, /provenance benchmark/);
@@ -721,10 +721,10 @@ describe("the command line", () => {
 });
 
 describe("shipping and docs", () => {
-  test("the package is 2.1.2 and ships the scenarios and the new docs", () => {
+  test("the package is 1.0.0 and ships the scenarios and the new docs", () => {
     const pkg = JSON.parse(read("package.json")) as { version: string; files: string[]; scripts: Record<string, string> };
-    assert.equal(pkg.version, "2.1.2");
-    assert.equal(PACKAGE_VERSION, "2.1.2");
+    assert.equal(pkg.version, "1.0.0");
+    assert.equal(PACKAGE_VERSION, "1.0.0");
     assert.ok(pkg.files.includes("bench/scenarios/*.json"));
     assert.ok(pkg.files.includes("docs/*.md"));
     assert.match(pkg.scripts.bench, /bench/);

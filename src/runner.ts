@@ -1,4 +1,4 @@
-// OneMemory command runner: the half that makes remote control actually work.
+// Monomem command runner: the half that makes remote control actually work.
 //
 // The note store is a mailbox. On its own, a command note dropped from a
 // phone just sits there. This module is the listener that opens the mail:
@@ -48,17 +48,17 @@ import { envRunnerId, envRunnerTaskNamespace } from "./task-core.js";
 // ---- Tunables (all overridable by env; defaults are the safe end) ----------
 export const RUNNER = {
   /** Namespace watched for inbound command notes. */
-  namespace: process.env.ONEMEMORY_RUNNER_NAMESPACE || "commands",
+  namespace: process.env.MONOMEM_RUNNER_NAMESPACE || "commands",
   /** Namespace results are written to. */
-  resultsNamespace: process.env.ONEMEMORY_RUNNER_RESULTS_NAMESPACE || "results",
+  resultsNamespace: process.env.MONOMEM_RUNNER_RESULTS_NAMESPACE || "results",
   /** Seconds between polls. */
-  pollMs: Number(process.env.ONEMEMORY_RUNNER_POLL_MS || 30_000),
+  pollMs: Number(process.env.MONOMEM_RUNNER_POLL_MS || 30_000),
   /** How old a signed command may be and still run. Replay defense. */
-  freshnessMs: Number(process.env.ONEMEMORY_RUNNER_FRESHNESS_MS || 300_000),
+  freshnessMs: Number(process.env.MONOMEM_RUNNER_FRESHNESS_MS || 300_000),
   /** Hard ceiling on any single command's runtime. */
-  timeoutMs: Number(process.env.ONEMEMORY_RUNNER_TIMEOUT_MS || 120_000),
+  timeoutMs: Number(process.env.MONOMEM_RUNNER_TIMEOUT_MS || 120_000),
   /** Heartbeat note refresh interval. */
-  heartbeatMs: Number(process.env.ONEMEMORY_RUNNER_HEARTBEAT_MS || 180_000),
+  heartbeatMs: Number(process.env.MONOMEM_RUNNER_HEARTBEAT_MS || 180_000),
   /** Max characters of stdout/stderr kept in a result note. */
   outputChars: 20_000,
   /** Max command ids remembered in the replay ledger. */
@@ -70,14 +70,14 @@ export const RUNNER = {
    * a ledger entry and a store write each, so it is bounded; it never counts
    * against the execution budget below.
    */
-  maxRejectsPerPoll: Number(process.env.ONEMEMORY_RUNNER_MAX_REJECTS_PER_POLL || 200),
+  maxRejectsPerPoll: Number(process.env.MONOMEM_RUNNER_MAX_REJECTS_PER_POLL || 200),
   /** Most VERIFIED commands executed in a single poll pass. Overflow waits, not lost. */
-  maxPerPoll: Number(process.env.ONEMEMORY_RUNNER_MAX_PER_POLL || 10),
+  maxPerPoll: Number(process.env.MONOMEM_RUNNER_MAX_PER_POLL || 10),
   /** Flood ceiling: most commands executed per rolling window. */
-  maxPerWindow: Number(process.env.ONEMEMORY_RUNNER_MAX_PER_WINDOW || 60),
-  windowMs: Number(process.env.ONEMEMORY_RUNNER_WINDOW_MS || 600_000),
+  maxPerWindow: Number(process.env.MONOMEM_RUNNER_MAX_PER_WINDOW || 60),
+  windowMs: Number(process.env.MONOMEM_RUNNER_WINDOW_MS || 600_000),
   /** Delete handled commands and results older than this. 0 disables. */
-  retentionDays: Number(process.env.ONEMEMORY_RUNNER_RETENTION_DAYS || 30),
+  retentionDays: Number(process.env.MONOMEM_RUNNER_RETENTION_DAYS || 30),
   /**
    * Namespace whose approved COMMAND TASKS this runner executes (see
    * runner-tasks.ts). Empty = command tasks are off (the default). Must be
@@ -86,7 +86,7 @@ export const RUNNER = {
    */
   taskNamespace: envRunnerTaskNamespace(),
   /** Minimum gap between prune sweeps, regardless of heartbeat rate. */
-  pruneEveryMs: Number(process.env.ONEMEMORY_RUNNER_PRUNE_EVERY_MS || 3_600_000),
+  pruneEveryMs: Number(process.env.MONOMEM_RUNNER_PRUNE_EVERY_MS || 3_600_000),
 };
 
 /** Reserved action name: ask the PC what it is allowed to do. */
@@ -146,8 +146,8 @@ export type Allowlist = Record<string, AllowEntry>;
 /** Command signing format. v1 (k=v&k=v joined text) was ambiguous; gone. */
 export const COMMAND_FORMAT = 2;
 /** Domain-separation prefixes: a result signature can never pass as a command one. */
-export const COMMAND_DOMAIN = "onememory-cmd-v2";
-export const RESULT_DOMAIN = "onememory-result-v1";
+export const COMMAND_DOMAIN = "monomem-cmd-v2";
+export const RESULT_DOMAIN = "monomem-result-v1";
 
 /**
  * Deterministic JSON: object keys sorted, no whitespace, undefined members
@@ -504,7 +504,7 @@ export function resolveAction(
 /** Load the allowlist from env or disk. Missing file = no actions allowed. */
 export function loadAllowlist(): Allowlist {
   const raw =
-    process.env.ONEMEMORY_RUNNER_ALLOW ||
+    process.env.MONOMEM_RUNNER_ALLOW ||
     (() => {
       const p = join(PROJECT_ROOT, "data", "runner-allow.json");
       return existsSync(p) ? readFileSync(p, "utf8") : "";
@@ -514,10 +514,10 @@ export function loadAllowlist(): Allowlist {
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     const { allow, errors } = validateAllowlist(parsed as Record<string, unknown>);
-    for (const err of errors) console.error(`[onememory:runner] allowlist entry refused: ${err}`);
+    for (const err of errors) console.error(`[monomem:runner] allowlist entry refused: ${err}`);
     return allow;
   } catch {
-    console.error("[onememory:runner] ignoring allowlist: not valid JSON");
+    console.error("[monomem:runner] ignoring allowlist: not valid JSON");
     return {};
   }
 }
@@ -673,7 +673,7 @@ export function runCommand(
   // happen to be set on this machine. Narrow beats convenient here.
   const env = { ...process.env };
   for (const k of Object.keys(env)) {
-    if (/(^ONEMEMORY_(TOKEN|TOKENS|RUNNER_SECRET)$)|SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|CREDENTIAL|PRIVATE_?KEY/i.test(k)) {
+    if (/(^MONOMEM_(TOKEN|TOKENS|RUNNER_SECRET)$)|SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|CREDENTIAL|PRIVATE_?KEY/i.test(k)) {
       delete env[k];
     }
   }
@@ -764,7 +764,7 @@ export function writeResult(
       title: `result ${cmdId}`,
       body: signedBody(secret, "result", resultEnvelope(cmdId, payload)),
       tags: [RESULT_TAG, `cmd:${cmdId}`],
-      source: "onememory-runner",
+      source: "monomem-runner",
     });
     return note.id;
   } catch (e) {
@@ -783,11 +783,11 @@ export function writeResult(
           error: `result could not be stored: ${why}`,
         }),
         tags: [RESULT_TAG, `cmd:${cmdId}`],
-        source: "onememory-runner",
+        source: "monomem-runner",
       });
       return note.id;
     } catch {
-      console.error(`[onememory:runner] could not write result for ${cmdId}: ${why}`);
+      console.error(`[monomem:runner] could not write result for ${cmdId}: ${why}`);
       return null;
     }
   }
@@ -1053,7 +1053,7 @@ export async function pollOnce(deps: RunnerDeps): Promise<number> {
       if (!verdict.startsWith("skipped")) handled++;
       else rejects--; // another machine's command is not junk
     } catch (e) {
-      console.error(`[onememory:runner] note ${note.id} failed:`, e);
+      console.error(`[monomem:runner] note ${note.id} failed:`, e);
     }
   }
   runnable.reverse(); // oldest first
@@ -1066,7 +1066,7 @@ export async function pollOnce(deps: RunnerDeps): Promise<number> {
   const room = Math.min(RUNNER.maxPerPoll, windowRoom);
   if (runnable.length > room) {
     console.error(
-      `[onememory:runner] ${runnable.length} commands pending, running ${room} this pass`
+      `[monomem:runner] ${runnable.length} commands pending, running ${room} this pass`
     );
   }
 
@@ -1078,7 +1078,7 @@ export async function pollOnce(deps: RunnerDeps): Promise<number> {
     } catch (e) {
       // One bad note must never kill the loop -- that would silently end
       // remote control until the operator next looks at the PC.
-      console.error(`[onememory:runner] note ${note.id} failed:`, e);
+      console.error(`[monomem:runner] note ${note.id} failed:`, e);
     }
   }
   deps.ledger.flush();
@@ -1128,7 +1128,7 @@ export function beat(store: Store, secret: string, startedAt: string): void {
         title,
         body,
         tags: ["heartbeat"],
-        source: "onememory-runner",
+        source: "monomem-runner",
       }).id;
     }
   } catch {
@@ -1176,7 +1176,7 @@ export function startRunner(deps: RunnerDeps): StartedRunner {
     try {
       pruneOld(deps.store);
     } catch (e) {
-      console.error("[onememory:runner] prune failed:", e);
+      console.error("[monomem:runner] prune failed:", e);
     }
   }, RUNNER.heartbeatMs);
   void tick();
@@ -1192,10 +1192,10 @@ export function startRunner(deps: RunnerDeps): StartedRunner {
 
 /** Entry point for `npm run runner`. */
 export function main(): void {
-  const secret = process.env.ONEMEMORY_RUNNER_SECRET?.trim();
+  const secret = process.env.MONOMEM_RUNNER_SECRET?.trim();
   if (!secret) {
     console.error(
-      "[onememory:runner] refusing to start: ONEMEMORY_RUNNER_SECRET is not set.\n" +
+      "[monomem:runner] refusing to start: MONOMEM_RUNNER_SECRET is not set.\n" +
         "Without it every note in the commands namespace would be unauthenticated input."
     );
     process.exit(1);
@@ -1203,16 +1203,16 @@ export function main(): void {
   const allow = loadAllowlist();
   if (Object.keys(allow).length === 0) {
     console.error(
-      "[onememory:runner] warning: no allowlisted actions. The runner will refuse everything " +
-        "until data/runner-allow.json (or ONEMEMORY_RUNNER_ALLOW) names some."
+      "[monomem:runner] warning: no allowlisted actions. The runner will refuse everything " +
+        "until data/runner-allow.json (or MONOMEM_RUNNER_ALLOW) names some."
     );
   }
   const lockPath = join(PROJECT_ROOT, "data", "runner.lock");
   if (!acquireLock(lockPath)) {
-    console.error("[onememory:runner] another runner is already holding the lock; exiting.");
+    console.error("[monomem:runner] another runner is already holding the lock; exiting.");
     process.exit(1);
   }
-  const dbPath = process.env.ONEMEMORY_DB_PATH || join(PROJECT_ROOT, "data", "state.db");
+  const dbPath = process.env.MONOMEM_DB_PATH || join(PROJECT_ROOT, "data", "state.db");
   const store = new Store(dbPath);
   const ledger = new Ledger(join(PROJECT_ROOT, "data", "runner-seen.json"));
   const handle = startRunner({ store, secret, allow, ledger });
@@ -1227,14 +1227,14 @@ export function main(): void {
   process.on("SIGTERM", shutdown);
 
   console.error(
-    `[onememory:runner] listening on namespace "${RUNNER.namespace}" every ${RUNNER.pollMs}ms ` +
+    `[monomem:runner] listening on namespace "${RUNNER.namespace}" every ${RUNNER.pollMs}ms ` +
       `(${Object.keys(allow).length} allowed action(s))`
   );
   console.error(
     RUNNER.taskNamespace
-      ? `[onememory:runner] command tasks ON: namespace "${RUNNER.taskNamespace}", this runner is "${runnerId()}" ` +
+      ? `[monomem:runner] command tasks ON: namespace "${RUNNER.taskNamespace}", this runner is "${runnerId()}" ` +
           "(only admin-approved tasks addressed to that name run)"
-      : "[onememory:runner] command tasks off (set ONEMEMORY_RUNNER_TASK_NAMESPACE to enable)"
+      : "[monomem:runner] command tasks off (set MONOMEM_RUNNER_TASK_NAMESPACE to enable)"
   );
 }
 

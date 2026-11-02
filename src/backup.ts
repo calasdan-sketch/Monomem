@@ -1,4 +1,4 @@
-// `onememory backup`: a consistent hot copy of the store.
+// `monomem backup`: a consistent hot copy of the store.
 //
 // VACUUM INTO writes a complete, defragmented database file from one read
 // snapshot, so it is safe while the server is running and writing (no
@@ -106,7 +106,7 @@ export function backupStore(
   writeFileSync(
     join(dir, "README.txt"),
     [
-      "OneMemory backup",
+      "Monomem backup",
       `made: ${new Date().toISOString()}`,
       "",
       "state.db  a complete copy of the database (restore: stop the server, put it at <data dir>/state.db,",
@@ -122,7 +122,7 @@ export function backupStore(
       attestKey
         ? ".attest-key INCLUDED (--include-attest-key): the server's signing identity. Guard it like the .key; two live servers must\nnever share it. Restore it beside state.db to keep the same signing identity."
         : hasAttestKey
-          ? "attestation key NOT included (--include-attest-key copies it): a restored copy keeps its server_id but creates a NEW signing\nkey on first use, so peers that trusted the old key must be given the new one (`onememory trust identity`)."
+          ? "attestation key NOT included (--include-attest-key copies it): a restored copy keeps its server_id but creates a NEW signing\nkey on first use, so peers that trusted the old key must be given the new one (`monomem trust identity`)."
           : "(no attestation key yet: none was ever created)",
       "",
     ].join("\n"),

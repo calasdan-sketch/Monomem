@@ -1,6 +1,6 @@
-// `onememory sync --git <repo>`: keep your memory in step across your own computers with a git repository YOU own.
+// `monomem sync --git <repo>`: keep your memory in step across your own computers with a git repository YOU own.
 //
-// There is no OneMemory server in this. It is the existing Markdown export/import (docs/file-sync.md) with git doing the
+// There is no Monomem server in this. It is the existing Markdown export/import (docs/file-sync.md) with git doing the
 // carrying: fetch, merge what other computers pushed, three-way merge the files into the local database, write the
 // result back out, commit, push. Use a PRIVATE repository. With --encrypt every note file is sealed (AES-256-GCM, the
 // same primitives as at-rest encryption) before it is committed, and the repository then holds only opaque names and
@@ -13,8 +13,8 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
 import path, { dirname, join, relative, resolve, sep } from "node:path";
 import { decrypt, encrypt, keyPath } from "./crypto.js";
 
-export const VAULT_PLAIN = "onememory";
-export const VAULT_ENC = "onememory-enc";
+export const VAULT_PLAIN = "monomem";
+export const VAULT_ENC = "monomem-enc";
 const KEY_BYTES = 32;
 
 export interface GitSyncIO {
@@ -76,7 +76,7 @@ function mustGit(repo: string, args: string[], env: NodeJS.ProcessEnv, what: str
 
 export function syncKeyPath(opts: Pick<GitSyncOptions, "keyFile" | "dataDir" | "env">): string {
   if (opts.keyFile) return resolve(opts.keyFile);
-  if (opts.env.ONEMEMORY_SYNC_KEY_FILE?.trim()) return resolve(opts.env.ONEMEMORY_SYNC_KEY_FILE.trim());
+  if (opts.env.MONOMEM_SYNC_KEY_FILE?.trim()) return resolve(opts.env.MONOMEM_SYNC_KEY_FILE.trim());
   // Reuse the at-rest key when that is on, so there is one key to look after; otherwise a key of its own.
   const rest = keyPath(opts.dataDir);
   return existsSync(rest) ? rest : join(opts.dataDir, ".sync-key");
@@ -143,7 +143,7 @@ export function isInside(dir: string, file: string): boolean {
 
 /** The file name is a keyed hash of the note path: without the key it cannot be guessed from known note names. */
 export function blobName(rel: string, key: Buffer): string {
-  return createHmac("sha256", key).update("onememory-git-sync-name|" + rel).digest("hex").slice(0, 32) + ".enc";
+  return createHmac("sha256", key).update("monomem-git-sync-name|" + rel).digest("hex").slice(0, 32) + ".enc";
 }
 
 /** Relative paths we accept from a decrypted blob: plain Markdown inside the vault, no tricks. */
@@ -274,7 +274,7 @@ export async function runGitSync(io: GitSyncIO, o: GitSyncOptions): Promise<numb
       let cleanup: (() => void) | null = null;
       if (o.encrypt) {
         const key = keyFile ? readKey(keyFile) : null;
-        dryDir = mkdtempSync(join(tmpdir(), "onememory-sync-dry-"));
+        dryDir = mkdtempSync(join(tmpdir(), "monomem-sync-dry-"));
         cleanup = () => rmSync(dryDir, { recursive: true, force: true });
         if (key) decryptInto(vault, dryDir, key);
       }
@@ -306,11 +306,11 @@ export async function runGitSync(io: GitSyncIO, o: GitSyncOptions): Promise<numb
 
     for (let round = 1; round <= 2; round++) {
       // 1. Take in what other computers pushed.
-      const ident = git(repo, ["config", "user.email"], o.env).out ? [] : ["-c", "user.name=OneMemory", "-c", "user.email=onememory@localhost"];
+      const ident = git(repo, ["config", "user.email"], o.env).out ? [] : ["-c", "user.name=Monomem", "-c", "user.email=monomem@localhost"];
       // Local edits to the vault folder are committed first, so a merge never trips over them.
       if (git(repo, ["status", "--porcelain", "--", vaultName], o.env).out) {
         mustGit(repo, ["add", "-A", "--", vaultName], o.env, "staging local edits");
-        mustGit(repo, [...ident, "commit", "-m", "onememory: local edits before sync", "--", vaultName], o.env, "committing local edits");
+        mustGit(repo, [...ident, "commit", "-m", "monomem: local edits before sync", "--", vaultName], o.env, "committing local edits");
       }
       if (remote) {
         mustGit(repo, ["fetch", remote], o.env, `fetching from ${remote}`);
@@ -356,7 +356,7 @@ export async function runGitSync(io: GitSyncIO, o: GitSyncOptions): Promise<numb
               io.out(`  ${c.conflict} note(s) were edited on two computers; the losing text is saved in ${keep}`);
             }
           }
-          if (c.rejected > 0) io.err(`  ${c.rejected} file(s) were rejected (see \`onememory import --dir\` for details).`);
+          if (c.rejected > 0) io.err(`  ${c.rejected} file(s) were rejected (see \`monomem import --dir\` for details).`);
         } finally {
           store.close();
         }
@@ -368,7 +368,7 @@ export async function runGitSync(io: GitSyncIO, o: GitSyncOptions): Promise<numb
       mustGit(repo, ["add", "-A", "--", vaultName], o.env, "staging");
       const staged = git(repo, ["diff", "--cached", "--name-only", "--", vaultName], o.env).out;
       if (staged) {
-        mustGit(repo, [...ident, "commit", "-m", `onememory sync ${now().toISOString()}`, "--", vaultName], o.env, "committing");
+        mustGit(repo, [...ident, "commit", "-m", `monomem sync ${now().toISOString()}`, "--", vaultName], o.env, "committing");
         io.out(`  committed ${staged.split("\n").length} changed file(s).`);
       } else io.out("  nothing new to commit.");
       if (remote && !o.noPush) {

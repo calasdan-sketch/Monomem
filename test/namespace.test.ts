@@ -26,7 +26,7 @@ import {
 } from "../src/namespace.js";
 
 // --- env hygiene: resolveNamespace/loadNamespaceConfig read these ---------
-const ENV_KEYS = ["ONEMEMORY_SPACE", "ONEMEMORY_SPACES"] as const;
+const ENV_KEYS = ["MONOMEM_SPACE", "MONOMEM_SPACES"] as const;
 let savedEnv: Record<string, string | undefined> = {};
 beforeEach(() => {
   savedEnv = {};
@@ -47,17 +47,17 @@ function cfg(spaces: Record<string, string>, def = "default"): NamespaceConfig {
 }
 
 describe("resolveNamespace", () => {
-  test("ONEMEMORY_SPACE override wins over everything", () => {
+  test("MONOMEM_SPACE override wins over everything", () => {
     const parent = join(tmpdir(), "ns-parent");
-    process.env.ONEMEMORY_SPACE = "ops";
+    process.env.MONOMEM_SPACE = "ops";
     assert.equal(
       resolveNamespace(join(parent, "sub"), cfg({ [parent]: "work" })),
       "ops"
     );
   });
 
-  test("empty ONEMEMORY_SPACE is ignored", () => {
-    process.env.ONEMEMORY_SPACE = "   ";
+  test("empty MONOMEM_SPACE is ignored", () => {
+    process.env.MONOMEM_SPACE = "   ";
     const parent = join(tmpdir(), "ns-parent2");
     assert.equal(resolveNamespace(join(parent, "sub"), cfg({ [parent]: "work" })), "work");
   });
@@ -120,7 +120,7 @@ describe("loadNamespaceConfig", () => {
   });
 
   test("invalid JSON returns null instead of throwing", () => {
-    process.env.ONEMEMORY_SPACES = "{not json";
+    process.env.MONOMEM_SPACES = "{not json";
     assert.equal(namespaceConfigSource(), "env");
     assert.equal(loadNamespaceConfig(), null);
   });
@@ -132,13 +132,13 @@ describe("loadNamespaceConfig", () => {
       `{"spaces": {}, "default_namespace": "d", "reads_from": {"a": "not-an-array"}}`,
       `[1, 2, 3]`,
     ]) {
-      process.env.ONEMEMORY_SPACES = bad;
+      process.env.MONOMEM_SPACES = bad;
       assert.equal(loadNamespaceConfig(), null, bad);
     }
   });
 
   test("valid env JSON parses, with reads_from", () => {
-    process.env.ONEMEMORY_SPACES = JSON.stringify({
+    process.env.MONOMEM_SPACES = JSON.stringify({
       spaces: { "/work": "work-ns" },
       default_namespace: "default",
       reads_from: { "work-ns": ["shared"] },
@@ -158,7 +158,7 @@ describe("resolveStartupNamespace", () => {
 
   test("resolves from env config and honors the override", () => {
     const parent = join(tmpdir(), "ns-startup");
-    process.env.ONEMEMORY_SPACES = JSON.stringify({
+    process.env.MONOMEM_SPACES = JSON.stringify({
       spaces: { [parent]: "work-ns" },
       default_namespace: "default",
       reads_from: { "work-ns": ["shared"] },
@@ -168,7 +168,7 @@ describe("resolveStartupNamespace", () => {
     assert.equal(r.namespace, "work-ns");
     assert.deepEqual(r.readsFrom, { "work-ns": ["shared"] });
 
-    process.env.ONEMEMORY_SPACE = "manual";
+    process.env.MONOMEM_SPACE = "manual";
     assert.equal(resolveStartupNamespace(join(parent, "proj"))?.namespace, "manual");
   });
 });

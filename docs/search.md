@@ -7,9 +7,9 @@ meaning-based search and the bridge will also embed each note so a query like
 *"canine companion"* finds a note about your dog that shares no words with it:
 
 ```bash
-export ONEMEMORY_EMBEDDINGS=on
-export ONEMEMORY_EMBED_URL=http://localhost:11434/v1/embeddings  # Ollama default
-export ONEMEMORY_EMBED_MODEL=nomic-embed-text
+export MONOMEM_EMBEDDINGS=on
+export MONOMEM_EMBED_URL=http://localhost:11434/v1/embeddings  # Ollama default
+export MONOMEM_EMBED_MODEL=nomic-embed-text
 node dist/src/cli.js reindex   # backfill embeddings for existing notes
 ```
 
@@ -47,7 +47,7 @@ Supported phrases (case-insensitive, found anywhere in the string, so
 - Absolute: `2026-10-14`, `Oct 14`, `October 14 2025`, `10/14/2026`
   (numeric dates are **MM/DD**; a missing year means the most recent past occurrence)
 
-Day boundaries are computed in your timezone: set `ONEMEMORY_TIMEZONE`
+Day boundaries are computed in your timezone: set `MONOMEM_TIMEZONE`
 (e.g. `America/Winnipeg`, default: the host's system timezone). Invalid names fall back to UTC.
 
 ## Relevant-memory search
@@ -65,7 +65,7 @@ state_relevant({ message: "what did we decide about the acme launch?" })
 ```
 
 Same over HTTP: `POST /relevant` with `{ message, limit?, namespace? }`
-(read-scoped), and on the CLI: `onememory relevant "some message" [--limit 5]`.
+(read-scoped), and on the CLI: `monomem relevant "some message" [--limit 5]`.
 
 ## Staleness detection
 
@@ -92,10 +92,10 @@ Thresholds (env vars, read live — no restart needed to retune):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ONEMEMORY_STALE_DAYS` | `90` | Notes older than this (by `updated_at`) are stale |
-| `ONEMEMORY_STALE_TAGS` | `#status` | Comma-separated tags that expire faster (matched with or without `#`) |
-| `ONEMEMORY_STALE_TAG_DAYS` | `30` | Expiry for notes carrying a stale tag |
-| `ONEMEMORY_ACCESS_BOOST` | on | Set to `0` to turn off the access-count boost and staleness penalty in search ranking (results then follow native relevance only, as in 1.0.0); access counts are still recorded |
+| `MONOMEM_STALE_DAYS` | `90` | Notes older than this (by `updated_at`) are stale |
+| `MONOMEM_STALE_TAGS` | `#status` | Comma-separated tags that expire faster (matched with or without `#`) |
+| `MONOMEM_STALE_TAG_DAYS` | `30` | Expiry for notes carrying a stale tag |
+| `MONOMEM_ACCESS_BOOST` | on | Set to `0` to turn off the access-count boost and staleness penalty in search ranking (results then follow native relevance only, as in 1.0.0); access counts are still recorded |
 
 Invalid values fall back to the defaults. Staleness is per-note and
 namespace-agnostic — it never crosses (or needs to know about) namespace
@@ -135,10 +135,10 @@ node dist/src/cli.js consolidate --threshold 0.98 --namespace acme
 **Scheduled auto-consolidation** (opt-in):
 
 ```bash
-export ONEMEMORY_AUTO_CONSOLIDATE_INTERVAL=24h   # or "30m", "90s", "3600" (seconds)
+export MONOMEM_AUTO_CONSOLIDATE_INTERVAL=24h   # or "30m", "90s", "3600" (seconds)
 ```
 
-When set, `onememory start` runs a background pass on that interval that
+When set, `monomem start` runs a background pass on that interval that
 **logs** every candidate pair ≥ 0.95 for review — and only auto-merges pairs
 scoring **≥ 0.99** (near-identical notes, e.g. the same fact saved twice
 verbatim). Weaker duplicates are never merged blindly; review them with

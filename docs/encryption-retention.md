@@ -1,6 +1,6 @@
 # Encryption at rest, retention, and retrieval visibility
 
-Three additions aimed at running OneMemory as a *shared* memory service,
+Three additions aimed at running Monomem as a *shared* memory service,
 where "my notes" may be read by several agents and devices. Each section
 leads with the tradeoff, not the marketing.
 
@@ -9,13 +9,13 @@ leads with the tradeoff, not the marketing.
 ## Encryption at rest (AES-256-GCM)
 
 Note **bodies** are encrypted on disk with AES-256-GCM. The key is a
-32-byte file at `~/.onememory/.key` (mode `0600`), created on first
-`onememory encrypt enable`.
+32-byte file at `~/.monomem/.key` (mode `0600`), created on first
+`monomem encrypt enable`.
 
 ```bash
-onememory encrypt enable     # create the key, encrypt existing bodies
-onememory encrypt status     # on/off, key path, encrypted note count
-onememory encrypt disable    # decrypt bodies and remove the key
+monomem encrypt enable     # create the key, encrypt existing bodies
+monomem encrypt status     # on/off, key path, encrypted note count
+monomem encrypt disable    # decrypt bodies and remove the key
 ```
 
 ### What is protected, and what is not
@@ -29,7 +29,7 @@ This is the part most tools omit, so read it before enabling:
 | **`written_by` / `created_by`** (who wrote it) | No | Server-stamped token label or `stdio`/`cli`/`server`; filtering needs it in plaintext, and it is never note content |
 | **Tags**, timestamps, namespace | No | Same: filtering, search and isolation read them directly |
 | Access counters | No | Ranking input; not sensitive |
-| **Embeddings** (`note_vectors`) | No | Vectors are stored unencrypted, and with `ONEMEMORY_EMBEDDINGS=on` the **decrypted body is sent to your embeddings endpoint** when a note is embedded. Leave semantic search off if that matters |
+| **Embeddings** (`note_vectors`) | No | Vectors are stored unencrypted, and with `MONOMEM_EMBEDDINGS=on` the **decrypted body is sent to your embeddings endpoint** when a note is embedded. Leave semantic search off if that matters |
 | **The FTS search index** | No — and **body text is not indexed at all** when encryption is on | See below |
 
 **The search tradeoff, stated plainly.** `notes_fts` is a SQLite
@@ -61,7 +61,7 @@ in addition to, not instead of, this.
 - **The key sits beside the database**, so a backup of the whole data
   directory carries both. Back the key up separately from database backups.
 - **The attestation signing key** (`.attest-key`, 1.4.0; [trust.md](./trust.md)) is a separate Ed25519 file beside
-  the database. It does not encrypt anything, is not copied by `onememory backup`, and is not needed to read
+  the database. It does not encrypt anything, is not copied by `monomem backup`, and is not needed to read
   your data; losing it only changes the identity your exports are signed with.
 - **Losing the key file loses the bodies.** Back it up. There is no
   recovery path, by design.

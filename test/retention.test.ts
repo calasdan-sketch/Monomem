@@ -14,12 +14,12 @@ const DAY_MS = 86_400_000;
 /** Fresh temp store per test; encryption key deliberately absent (plaintext). */
 function freshStore(): { store: Store; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), "om-retention-"));
-  const saved = process.env.ONEMEMORY_KEY_FILE;
-  process.env.ONEMEMORY_KEY_FILE = join(dir, "no-such-key");
+  const saved = process.env.MONOMEM_KEY_FILE;
+  process.env.MONOMEM_KEY_FILE = join(dir, "no-such-key");
   const store = new Store(join(dir, "state.db"));
   // Restore env immediately; the Store already captured its key state.
-  if (saved === undefined) delete process.env.ONEMEMORY_KEY_FILE;
-  else process.env.ONEMEMORY_KEY_FILE = saved;
+  if (saved === undefined) delete process.env.MONOMEM_KEY_FILE;
+  else process.env.MONOMEM_KEY_FILE = saved;
   return { store, dir };
 }
 

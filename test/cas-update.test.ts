@@ -22,7 +22,7 @@ describe("Store.update compare-and-swap", () => {
   let dbPath: string;
 
   before(() => {
-    dir = mkdtempSync(join(tmpdir(), "onememory-cas-"));
+    dir = mkdtempSync(join(tmpdir(), "monomem-cas-"));
     dbPath = join(dir, "state.db");
   });
   after(() => {

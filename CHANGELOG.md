@@ -4,6 +4,54 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-11-02 — OneMemory is now **Monomem**
+
+Same product, same code, new name. The version restarts at 1.0.0 because this is a new package on npm;
+it is not a rewrite and nothing was removed. OneMemory's history is below, unchanged.
+
+### Why
+
+There is another product called OneMemory — [onememoryai.com](https://onememoryai.com) — which has been
+going since July 2026, two months longer than this one. It is in the same space, and it advertises the
+same things this project is built on: a tamper-evident audit log, secret redaction before storage,
+conflict detection and correction history. Two tools with one name, both claiming auditability, helps
+nobody. They were there first, so we moved.
+
+### Nothing you have is lost
+
+**Your notes stay exactly where they are.** If `~/.onememory` holds a store and `~/.monomem` does not,
+Monomem uses the old directory in place. Nothing is copied, nothing is moved, and a downgrade to
+OneMemory still works. `doctor` reports this as `legacy-home` so you can see which store is open.
+
+**Your settings keep working.** Every `ONEMEMORY_*` variable is read as `MONOMEM_*`, as are the older
+`CLAUDE_BRIDGE_*` names from the rename before this one. The current name wins when both are set.
+
+**Your hooks are not duplicated.** The hook line in your `settings.json` still names the old path.
+Setup recognises `monomem`, `onememory` and `claude-bridge` as its own, so re-running it will not add a
+second copy beside the one you have.
+
+**The `onememory` command still works.** It is kept as an alias of `monomem`, so existing scripts, aliases
+and MCP client configs do not need editing today.
+
+### What to change, when you get to it
+
+```bash
+npm i -g monomem       # replaces onememory-mcp
+monomem doctor         # confirms which store and which Node it found
+```
+
+Nothing is urgent. `onememory-mcp` will get one final release pointing here and will then stop receiving
+updates; it will not be unpublished, so nothing you have installed breaks.
+
+### Also in this release
+
+- The capture-hook and session-hook detectors match all three historical names, which is what prevents the
+  duplicate-hook problem above. Found by a test, not in the wild.
+- `resolveDataDir` gained a `legacy-home` case with a test that uses a fake home directory. The previous
+  test asserted the result was always `home`, which only held on machines with no old store — it was
+  measuring the developer's laptop rather than the code, the same failure that shipped the wrong Node
+  floor three times in 2.1.x.
+
 ## [2.1.2] - 2026-11-01
 
 **2.1.1 published the wrong Node floor and would crash for part of the line it claimed to support.**

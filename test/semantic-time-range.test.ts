@@ -44,11 +44,11 @@ const VEC = Float32Array.from([1, 0, 0]);
 
 describe("time-scoped semantic search (panel blocker #1)", () => {
   let store: Store;
-  const SAVE = process.env.ONEMEMORY_EMBEDDINGS;
+  const SAVE = process.env.MONOMEM_EMBEDDINGS;
   let window: { start: Date; end: Date };
 
   beforeEach(() => {
-    process.env.ONEMEMORY_EMBEDDINGS = "on";
+    process.env.MONOMEM_EMBEDDINGS = "on";
     store = new Store(":memory:");
     window = yesterdayWindow();
     const inWindowISO = new Date(window.start.getTime() + 12 * 3600_000).toISOString();
@@ -72,8 +72,8 @@ describe("time-scoped semantic search (panel blocker #1)", () => {
 
   afterEach(() => {
     globalThis.fetch = realFetch;
-    if (SAVE === undefined) delete process.env.ONEMEMORY_EMBEDDINGS;
-    else process.env.ONEMEMORY_EMBEDDINGS = SAVE;
+    if (SAVE === undefined) delete process.env.MONOMEM_EMBEDDINGS;
+    else process.env.MONOMEM_EMBEDDINGS = SAVE;
     store.close();
   });
 

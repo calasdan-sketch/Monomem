@@ -1,4 +1,4 @@
-// `onememory watch`: react to changes the moment they land.
+// `monomem watch`: react to changes the moment they land.
 //
 // A long-poll loop over the local store (the same live wait the API uses):
 // parked at no cost until something changes in scope, then it prints the
@@ -104,7 +104,7 @@ async function watchLoopInner(store: Store, opts: WatchOpts): Promise<number> {
       const code = await run(
         opts.exec,
         JSON.stringify({ consumer: opts.consumer, changes: out.changes, counts: out.counts }),
-        { ONEMEMORY_CHANGE_COUNT: String(out.changes.length), ONEMEMORY_CONSUMER: opts.consumer },
+        { MONOMEM_CHANGE_COUNT: String(out.changes.length), MONOMEM_CONSUMER: opts.consumer },
         opts.signal
       );
       ok = code === 0;

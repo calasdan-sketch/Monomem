@@ -1,4 +1,4 @@
-# The provenance benchmark (`onememory bench`)
+# The provenance benchmark (`monomem bench`)
 
 A memory shared by several agents needs more than good search. It needs to say where a fact came from, when,
 for whom, and what happens when it is wrong or old, so that one agent cannot quietly turn a weak guess into
@@ -6,18 +6,18 @@ shared truth. This benchmark checks that behaviour. It is deterministic, offline
 throwaway store, so it can gate CI.
 
 ```
-onememory bench                 # human table; exit 1 if any scenario fails
-onememory bench --json          # every scenario, every check, expected vs actual
+monomem bench                 # human table; exit 1 if any scenario fails
+monomem bench --json          # every scenario, every check, expected vs actual
 npm run bench                   # same, from a checkout (builds first)
 ```
 
 It never touches your own data: it creates a temporary folder, starts a private server on `127.0.0.1` with
-random tokens, hides every `ONEMEMORY_*` setting while it runs, writes its audit log into the temporary
+random tokens, hides every `MONOMEM_*` setting while it runs, writes its audit log into the temporary
 folder, and deletes everything when it ends.
 
 ## What it measures
 
-Five suites, written as plain JSON files in [`bench/scenarios/`](https://github.com/calasdan-sketch/onememory/tree/main/bench/scenarios) (they ship in the package).
+Five suites, written as plain JSON files in [`bench/scenarios/`](https://github.com/calasdan-sketch/monomem/tree/main/bench/scenarios) (they ship in the package).
 
 | Suite | Question | Headline numbers |
 |---|---|---|
@@ -61,7 +61,7 @@ Five suites, written as plain JSON files in [`bench/scenarios/`](https://github.
 
 ## Known gaps
 
-A scenario that fails because OneMemory genuinely lacks the behaviour is **not hidden and not weakened**. It
+A scenario that fails because Monomem genuinely lacks the behaviour is **not hidden and not weakened**. It
 carries `"known_gap": "GAP-..."`, and the gap is described in `bench/scenarios/known-gaps.json`. A known gap is
 printed in its own section and does not fail the run (use `--strict-gaps` to fail on them). If a marked
 scenario starts to pass, the run **fails** with "known gap now PASSES": remove the marker and mark the gap
@@ -71,7 +71,7 @@ scenario starts to pass, the run **fails** with "known gap now PASSES": remove t
 shipped scenario carries a marker any more. The mechanism stays for the next gap. Two honest notes on what "closed" means here:
 
 - Five of the old gap scenarios (A05, A06, A10, A20, B03) now include the replace steps: the agent *replaces* the old note through
-  the two-step preview and confirm. OneMemory still does **not** guess that a new note replaces an old one and hide the old one by
+  the two-step preview and confirm. Monomem still does **not** guess that a new note replaces an old one and hide the old one by
   itself; that is a deliberate safety choice (nothing disappears unless a person confirms). Run against the 1.5.0 scenario files,
   1.6.0 still returns both notes for those five.
 - A11 (a 200-day-old twin) passes through the ranking fix alone, B08 through note history, D10 through the confidence field,
@@ -160,8 +160,8 @@ two runs differ).
 
 ## Adapting another memory system
 
-The engine knows nothing about OneMemory. It talks to a `MemoryAdapter`
-([`src/bench/types.ts`](https://github.com/calasdan-sketch/onememory/blob/main/src/bench/types.ts)). Implement the four core calls and say which optional ones you
+The engine knows nothing about Monomem. It talks to a `MemoryAdapter`
+([`src/bench/types.ts`](https://github.com/calasdan-sketch/monomem/blob/main/src/bench/types.ts)). Implement the four core calls and say which optional ones you
 have:
 
 ```ts
@@ -193,7 +193,7 @@ A scenario whose needed operations your adapter lacks is reported **skipped**, n
 system does not have simply reads as absent, so a scenario about it fails honestly. Use it from code:
 
 ```ts
-import { runBench } from "onememory-mcp/dist/src/bench/index.js";
+import { runBench } from "monomem/dist/src/bench/index.js";
 const { report } = await runBench({ adapter: new MyAdapter(), suites: ["stale"] });
 ```
 
@@ -217,16 +217,16 @@ reads anything and no judge grades anything: each conversation is written into a
 question is searched, and the returned sessions (or turns) are compared with the dataset's own gold evidence.
 
 ```
-onememory bench --longmemeval [--data file] [--limit N] [--mode keyword|hybrid] [--granularity session|turn] [--json]
-onememory bench --locomo      [--data file] [--limit N] [--mode keyword|hybrid] [--granularity turn|session] [--json]
+monomem bench --longmemeval [--data file] [--limit N] [--mode keyword|hybrid] [--granularity session|turn] [--json]
+monomem bench --locomo      [--data file] [--limit N] [--mode keyword|hybrid] [--granularity turn|session] [--json]
 ```
 
 - **Data.** LongMemEval-S, cleaned release ([`xiaowu0162/longmemeval-cleaned`](https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned),
   `longmemeval_s_cleaned.json`, 264 MB) and LoCoMo ([`snap-research/locomo`](https://github.com/snap-research/locomo),
-  `data/locomo10.json`). Without `--data` each file is downloaded once to `~/.cache/onememory-bench/`
+  `data/locomo10.json`). Without `--data` each file is downloaded once to `~/.cache/monomem-bench/`
   (outside the repository) and reused. The file is treated as untrusted data and only `JSON.parse`d.
-- **Isolation.** The command points `ONEMEMORY_HOME` at a new temporary folder before the configuration
-  loads, drops every other `ONEMEMORY_*` setting except the embedding ones, and refuses to run unless the
+- **Isolation.** The command points `MONOMEM_HOME` at a new temporary folder before the configuration
+  loads, drops every other `MONOMEM_*` setting except the embedding ones, and refuses to run unless the
   resolved database path is inside that folder. Every haystack gets its own store, deleted afterwards.
 - **Indexing.** LongMemEval: one store per question; one note per haystack session (title = session id, body =
   the turns as `role: content` lines), or with `--granularity turn` one note per turn, mapped back to its
@@ -247,8 +247,8 @@ onememory bench --locomo      [--data file] [--limit N] [--mode keyword|hybrid] 
 
 ### Results, 2026-10-31
 
-Machine: Windows 11 Home, RTX 5080 PC, Node v24.18.0, OneMemory 2.0.0. Embeddings for `hybrid`: `nomic-embed-text`
-through a local Ollama (`ONEMEMORY_EMBEDDINGS=on`, `ONEMEMORY_EMBED_URL=http://127.0.0.1:11499/v1/embeddings`).
+Machine: Windows 11 Home, RTX 5080 PC, Node v24.18.0, Monomem 2.0.0. Embeddings for `hybrid`: `nomic-embed-text`
+through a local Ollama (`MONOMEM_EMBEDDINGS=on`, `MONOMEM_EMBED_URL=http://127.0.0.1:11499/v1/embeddings`).
 Commands exactly as above. Wall time with embeddings: LongMemEval session 15 min (embedding every session is the cost),
 LoCoMo a few minutes; keyword-only runs take seconds.
 
@@ -306,7 +306,7 @@ nDCG@10 87.5, MRR 88.6, search p50 1.7 ms.
   and **round (turn) R@5 0.472 / R@10 0.538**; Stella V5 1.5B (dense) reaches session R@5 0.720 / R@10 0.794.
   Its retrieval experiments use the larger **LongMemEval-M** setting (about 500 sessions per haystack) and index
   only the user side of each session, so they are **not directly comparable** with the -S numbers above.
-  Running OneMemory on -M is the comparable experiment and has not been done yet.
+  Running Monomem on -M is the comparable experiment and has not been done yet.
 - **End-to-end QA accuracy is a different metric.** Memory vendors usually publish LongMemEval or LoCoMo
   "accuracy" (an LLM answers from retrieved context and another LLM grades it). Those numbers depend on the
   answering model, the prompt and the judge, and **cannot be compared** with the retrieval recall here, in

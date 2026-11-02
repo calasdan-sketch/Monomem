@@ -158,8 +158,8 @@ describe("2. reserved tags", () => {
 describe("2. audit log", () => {
   test("task / handoff / catch_up entries carry the token label and kind", async () => {
     const dir = mkdtempSync(join(tmpdir(), "om-audit-"));
-    const prev = process.env.ONEMEMORY_AUDIT_LOG;
-    process.env.ONEMEMORY_AUDIT_LOG = join(dir, "audit.log");
+    const prev = process.env.MONOMEM_AUDIT_LOG;
+    process.env.MONOMEM_AUDIT_LOG = join(dir, "audit.log");
     const s = new Store(":memory:");
     const server = createApiServer(s, [{ token: "phone-tok", scope: "write", label: "phone" }]);
     await new Promise<void>((res) => server.listen(0, res));
@@ -182,8 +182,8 @@ describe("2. audit log", () => {
     } finally {
       await new Promise<void>((res) => server.close(() => res()));
       s.close();
-      if (prev === undefined) delete process.env.ONEMEMORY_AUDIT_LOG;
-      else process.env.ONEMEMORY_AUDIT_LOG = prev;
+      if (prev === undefined) delete process.env.MONOMEM_AUDIT_LOG;
+      else process.env.MONOMEM_AUDIT_LOG = prev;
       rmSync(dir, { recursive: true, force: true });
     }
   });

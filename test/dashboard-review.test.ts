@@ -68,7 +68,7 @@ describe("dashboard review queue", () => {
   test("the script is valid JavaScript", () => {
     assert.doesNotThrow(() => new vm.Script(DASHBOARD_JS));
   });
-  test("the page says OneMemory, not the old name", () => {
+  test("the page says Monomem, not the old name", () => {
     assert.ok(!/claude<span/.test(DASHBOARD_HTML));
     assert.match(DASHBOARD_HTML, /one<span/);
   });

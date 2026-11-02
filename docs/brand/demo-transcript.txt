@@ -1,13 +1,13 @@
-OneMemory README demo — ground truth
+Monomem README demo — ground truth
 ====================================
 
-Everything shown in docs/onememory-demo.gif is reproduced from this file.
+Everything shown in docs/monomem-demo.gif is reproduced from this file.
 The GIF's frames are rendered (not screen-captured) so the text is legible at
 850px wide, but the note, its provenance and the measured latency below are
-real output from a real OneMemory server. Nothing is sped up.
+real output from a real Monomem server. Nothing is sped up.
 
 Captured:      2026-11-01
-Version:       onememory-mcp 2.1.1
+Version:       monomem 2.1.1
 Platform:      Windows 11, Node v24.18.0
 Server:        local, bound 127.0.0.1, isolated store (empty at start)
 

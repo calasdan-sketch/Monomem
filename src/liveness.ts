@@ -24,7 +24,7 @@
 //     token's label (a token named "runner" is stored as `token:runner`), so a
 //     forged heartbeat is ignored. Heartbeats from a runner older than 1.3.4
 //     carry no marker (written_by ""): since 1.4.0 they are NOT accepted unless
-//     ONEMEMORY_RUNNER_ACCEPT_LEGACY=1 (upgrade the runner instead: it needs no
+//     MONOMEM_RUNNER_ACCEPT_LEGACY=1 (upgrade the runner instead: it needs no
 //     other change). Limit: anyone with write access to the database FILE
 //     itself can still stamp any value;
 //   - a time in the future (beyond a small allowance) is never believed.
@@ -62,23 +62,23 @@ export const STATUS_CACHE_MS = 5_000;
 /** Most heartbeat notes read per writer (one per runner is expected). */
 const HEARTBEAT_SCAN_LIMIT = 200;
 
-/** ONEMEMORY_RUNNER_ACCEPT_LEGACY=1: also believe heartbeats with no writer marker (runners older than 1.3.4). */
+/** MONOMEM_RUNNER_ACCEPT_LEGACY=1: also believe heartbeats with no writer marker (runners older than 1.3.4). */
 export function acceptLegacyHeartbeats(): boolean {
-  return ["1", "true", "yes"].includes((process.env.ONEMEMORY_RUNNER_ACCEPT_LEGACY ?? "").toLowerCase());
+  return ["1", "true", "yes"].includes((process.env.MONOMEM_RUNNER_ACCEPT_LEGACY ?? "").toLowerCase());
 }
 
 /**
  * Seconds without a heartbeat before the runner counts as stale. Base:
- * ONEMEMORY_RUNNER_STALE_SECONDS (default 600, 30 s - 7 d). Never below three
+ * MONOMEM_RUNNER_STALE_SECONDS (default 600, 30 s - 7 d). Never below three
  * beat intervals: pass the runner's heartbeat interval (the heartbeat note
- * publishes it; ONEMEMORY_RUNNER_HEARTBEAT_MS is the fallback) so a slow beat
+ * publishes it; MONOMEM_RUNNER_HEARTBEAT_MS is the fallback) so a slow beat
  * cannot make a healthy runner look permanently offline.
  */
 export function staleAfterSeconds(heartbeatMs?: number): number {
-  const raw = Number(process.env.ONEMEMORY_RUNNER_STALE_SECONDS);
+  const raw = Number(process.env.MONOMEM_RUNNER_STALE_SECONDS);
   const base = Number.isFinite(raw) && raw > 0 ? Math.min(7 * 86_400, Math.max(30, Math.floor(raw))) : 600;
   let beat = Number(heartbeatMs);
-  if (!Number.isFinite(beat) || beat <= 0) beat = Number(process.env.ONEMEMORY_RUNNER_HEARTBEAT_MS);
+  if (!Number.isFinite(beat) || beat <= 0) beat = Number(process.env.MONOMEM_RUNNER_HEARTBEAT_MS);
   const need = Number.isFinite(beat) && beat > 0 ? Math.ceil((3 * beat) / 1000) : 0;
   return Math.min(7 * 86_400, Math.max(base, need));
 }
@@ -205,7 +205,7 @@ function readBeats(store: Store, now: number): Map<string, Beat> {
 
 /** Heartbeat notes untouched for this many days are removed by the runner / server housekeeping (0 = never). */
 export function heartbeatPruneDays(): number {
-  const raw = (process.env.ONEMEMORY_RUNNER_HEARTBEAT_PRUNE_DAYS ?? "").trim();
+  const raw = (process.env.MONOMEM_RUNNER_HEARTBEAT_PRUNE_DAYS ?? "").trim();
   if (raw === "") return 30; // unset or empty: the default (an empty string used to read as 0 = never prune)
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 30;

@@ -96,7 +96,7 @@ export class ValidationError extends Error {}
 /** v16: a no-migrate open (the capture hooks) found a database at another schema version than this build's. */
 export class SchemaMismatchError extends Error {
   constructor(readonly found: number) {
-    super(`onememory: the database is at schema v${found}, this build uses v${SCHEMA_VERSION}; not opening it without a migration`);
+    super(`monomem: the database is at schema v${found}, this build uses v${SCHEMA_VERSION}; not opening it without a migration`);
   }
 }
 
@@ -161,8 +161,8 @@ export function historyLimits(): { versions: number; bytes: number } {
   };
   return {
     // 0 turns note history off (nothing is kept from then on; what is already stored stays until purged).
-    versions: num("ONEMEMORY_HISTORY_VERSIONS", HISTORY_DEFAULT_VERSIONS, 0, HISTORY_MAX_VERSIONS),
-    bytes: num("ONEMEMORY_HISTORY_MAX_BYTES", HISTORY_DEFAULT_BYTES, 10_000, 50_000_000),
+    versions: num("MONOMEM_HISTORY_VERSIONS", HISTORY_DEFAULT_VERSIONS, 0, HISTORY_MAX_VERSIONS),
+    bytes: num("MONOMEM_HISTORY_MAX_BYTES", HISTORY_DEFAULT_BYTES, 10_000, 50_000_000),
   };
 }
 
@@ -221,7 +221,7 @@ export class RebuildBusyError extends ValidationError {
 export class CandidateScanError extends ValidationError {}
 
 /**
- * A write held for admin review by the write-time linter (ONEMEMORY_LINT
+ * A write held for admin review by the write-time linter (MONOMEM_LINT
  * quarantine policy). A ValidationError subclass so an unaware caller still
  * maps it to a clean caller-facing error; the REST and MCP write paths catch
  * it and report `{ quarantined: { id, reasons } }` instead.
@@ -239,7 +239,7 @@ export class QuarantinedError extends ValidationError {
 
 /** How much of the write-time linter a write path runs. */
 export type LintMode =
-  /** Default: secrets + injection, ONEMEMORY_LINT policy. */
+  /** Default: secrets + injection, MONOMEM_LINT policy. */
   | "full"
   /** Internal re-writes of already-stored content (consolidation): injection
    *  is skipped and a secret can only block or warn, never quarantine. */
@@ -394,7 +394,7 @@ export interface AttestationReport {
   unverified: number;
   /** Why notes were unverified, with counts. */
   reasons: Record<string, number>;
-  /** Attester keys seen but not trusted: a person decides whether to add one (`onememory trust attester-add`). */
+  /** Attester keys seen but not trusted: a person decides whether to add one (`monomem trust attester-add`). */
   untrusted_keys: Array<{ key_id: string; server_id: string; notes: number }>;
 }
 
@@ -504,7 +504,7 @@ export const SCHEMA_VERSION = 16;
 
 /**
  * Notes fetched per page by exportBatch(), which both streaming export
- * paths (HTTP /export and `onememory export --format json`) use so peak
+ * paths (HTTP /export and `monomem export --format json`) use so peak
  * memory stays one page regardless of store size.
  */
 export const EXPORT_PAGE_SIZE = 500;
@@ -942,16 +942,16 @@ export const EDGE_STORE_LIMIT = 32;
 
 /**
  * Edge-index cache bounds (env-tunable, read per use): a namespace's index
- * is released after ONEMEMORY_EDGE_INDEX_IDLE_MS without use (default 10
+ * is released after MONOMEM_EDGE_INDEX_IDLE_MS without use (default 10
  * min), and least-recently-used namespaces are released while more than
- * ONEMEMORY_EDGE_INDEX_MAX_NOTES notes are cached (default 50,000).
+ * MONOMEM_EDGE_INDEX_MAX_NOTES notes are cached (default 50,000).
  */
 /** Most distinct notes with buffered (unflushed) reads; extra reads are dropped. */
 const ACCESS_PENDING_MAX = 100_000;
 
-/** ONEMEMORY_ACCESS_FLUSH_MS: how often buffered read counts are written (default 5000; 0 = immediately). */
+/** MONOMEM_ACCESS_FLUSH_MS: how often buffered read counts are written (default 5000; 0 = immediately). */
 export function accessFlushMs(): number {
-  const v = process.env.ONEMEMORY_ACCESS_FLUSH_MS;
+  const v = process.env.MONOMEM_ACCESS_FLUSH_MS;
   const n = Number(v);
   return v !== undefined && v.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : 5000;
 }
@@ -962,8 +962,8 @@ export function edgeIndexLimits(): { idleMs: number; maxNotes: number } {
     return v !== undefined && v.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : def;
   };
   return {
-    idleMs: num(process.env.ONEMEMORY_EDGE_INDEX_IDLE_MS, 600_000),
-    maxNotes: num(process.env.ONEMEMORY_EDGE_INDEX_MAX_NOTES, 50_000),
+    idleMs: num(process.env.MONOMEM_EDGE_INDEX_IDLE_MS, 600_000),
+    maxNotes: num(process.env.MONOMEM_EDGE_INDEX_MAX_NOTES, 50_000),
   };
 }
 
@@ -1143,8 +1143,8 @@ export const PINNED_TAG = "pinned";
 const DECAY_META_PREFIX = "decay_archived:";
 
 /**
- * Decay of captured rows (see Store.sweepDecay): ONEMEMORY_DECAY_DAYS (default 30; 0 = decay off) for observations,
- * ONEMEMORY_DECAY_SUMMARY_DAYS (default 180; 0 = summaries never decay). Read per call so tests can flip it.
+ * Decay of captured rows (see Store.sweepDecay): MONOMEM_DECAY_DAYS (default 30; 0 = decay off) for observations,
+ * MONOMEM_DECAY_SUMMARY_DAYS (default 180; 0 = summaries never decay). Read per call so tests can flip it.
  */
 export function decayConfig(env: NodeJS.ProcessEnv = process.env): { days: number; summaryDays: number } {
   const num = (raw: string | undefined, def: number): number => {
@@ -1152,7 +1152,7 @@ export function decayConfig(env: NodeJS.ProcessEnv = process.env): { days: numbe
     const n = Number(raw);
     return Number.isFinite(n) && n >= 0 ? n : def;
   };
-  return { days: num(env.ONEMEMORY_DECAY_DAYS, 30), summaryDays: num(env.ONEMEMORY_DECAY_SUMMARY_DAYS, 180) };
+  return { days: num(env.MONOMEM_DECAY_DAYS, 30), summaryDays: num(env.MONOMEM_DECAY_SUMMARY_DAYS, 180) };
 }
 
 /** One row the next decay sweep would archive. */
@@ -1402,7 +1402,7 @@ export class Store {
     const m = e instanceof Error ? e.message : String(e);
     if (!Store.isReadOnlyError(e)) return m;
     return (
-      `onememory cannot write to its data directory ${dirname(dbPath)} (${m}). The directory is read-only, or not writable by this user ` +
+      `monomem cannot write to its data directory ${dirname(dbPath)} (${m}). The directory is read-only, or not writable by this user ` +
       "(for example a Docker volume mounted :ro or created by root): mount it read-write or fix its owner and permissions. " +
       "SQLite needs to create files next to the database (state.db-wal, state.db-shm) even to read it."
     );
@@ -1426,7 +1426,7 @@ export class Store {
       throw new SchemaMismatchError(found);
     }
     if (found > SCHEMA_VERSION) {
-      // A newer onememory migrated this file. Opening it with older code
+      // A newer monomem migrated this file. Opening it with older code
       // would silently misread/corrupt data it does not know about (for
       // example plaintext writes next to ciphertext), so refuse.
       try {
@@ -1435,8 +1435,8 @@ export class Store {
         /* nothing to close */
       }
       throw new Error(
-        `onememory: this database is at schema version ${found}, newer than this build supports ` +
-          `(${SCHEMA_VERSION}). Upgrade onememory (npm i -g onememory-mcp@latest) instead of opening it with an older version.`
+        `monomem: this database is at schema version ${found}, newer than this build supports ` +
+          `(${SCHEMA_VERSION}). Upgrade monomem (npm i -g monomem@latest) instead of opening it with an older version.`
       );
     }
     if (found >= SCHEMA_VERSION) {
@@ -1574,13 +1574,13 @@ export class Store {
    * Before the first upgrade of a non-empty file (any older version -> the current one), keep one
    * copy of the pre-upgrade database next to it: `<db>.pre-v16-backup`. It is a
    * consistent snapshot (VACUUM INTO) still at the OLD schema version, so an
-   * older onememory can open it (rollback = stop everything, put this file
+   * older monomem can open it (rollback = stop everything, put this file
    * back as the database, delete the -wal and -shm files beside it, install the older version). Never overwrites an
    * existing copy, so a second attempt cannot replace the real original.
    * 1.3.x named its copy `.pre-v13-backup`; that file is left alone.
    * The copy is REQUIRED: when it cannot be made (no room on the disk, a failed or unverifiable copy) the upgrade does
-   * not run and the error says how to proceed; ONEMEMORY_SKIP_PREMIGRATION_BACKUP=1 migrates without one (take your
-   * own `onememory backup` first).
+   * not run and the error says how to proceed; MONOMEM_SKIP_PREMIGRATION_BACKUP=1 migrates without one (take your
+   * own `monomem backup` first).
    */
   private preMigrationBackup(from: number): void {
     if (this.dbPath === ":memory:") return;
@@ -1597,18 +1597,18 @@ export class Store {
         }
       }
     };
-    const skip = ["1", "true", "yes"].includes((process.env.ONEMEMORY_SKIP_PREMIGRATION_BACKUP ?? "").trim().toLowerCase());
+    const skip = ["1", "true", "yes"].includes((process.env.MONOMEM_SKIP_PREMIGRATION_BACKUP ?? "").trim().toLowerCase());
     const refuse = (why: string): never => {
       throw Object.assign(new Error(
-        `onememory: the database was not upgraded, because the safety copy made before the upgrade could not be completed (${why}). ` +
-          `Free some disk space or fix the problem and start again, make your own copy first (onememory backup --out <dir>), ` +
-          "or set ONEMEMORY_SKIP_PREMIGRATION_BACKUP=1 to upgrade without a copy (there is then no way back to the older version)."
+        `monomem: the database was not upgraded, because the safety copy made before the upgrade could not be completed (${why}). ` +
+          `Free some disk space or fix the problem and start again, make your own copy first (monomem backup --out <dir>), ` +
+          "or set MONOMEM_SKIP_PREMIGRATION_BACKUP=1 to upgrade without a copy (there is then no way back to the older version)."
       ), { preMigration: true });
     };
     try {
       if (!this.db.prepare("SELECT 1 FROM notes LIMIT 1").get()) return;
       if (skip) {
-        console.error("[onememory] ONEMEMORY_SKIP_PREMIGRATION_BACKUP is set: upgrading WITHOUT a pre-upgrade copy.");
+        console.error("[monomem] MONOMEM_SKIP_PREMIGRATION_BACKUP is set: upgrading WITHOUT a pre-upgrade copy.");
         return;
       }
       const have = Number((this.db.prepare("SELECT COUNT(*) AS c FROM notes").get() as { c: number }).c);
@@ -1619,7 +1619,7 @@ export class Store {
         // would otherwise be trusted forever and "restore" an empty database.
         const check = Store.verifyBackupFile(dest);
         if (check.ok && check.notes === have) {
-          console.error(`[onememory] keeping the existing pre-upgrade copy ${dest} (${check.notes} notes, schema v${check.version}); not replacing it.`);
+          console.error(`[monomem] keeping the existing pre-upgrade copy ${dest} (${check.notes} notes, schema v${check.version}); not replacing it.`);
           return;
         }
         if (check.ok) {
@@ -1630,11 +1630,11 @@ export class Store {
           let kept = `${dest}-${stamp}`;
           for (let i = 2; existsSync(kept); i++) kept = `${dest}-${stamp}-${i}`;
           renameSync(dest, kept);
-          console.error(`[onememory] the existing pre-upgrade copy held ${check.notes} notes but the database now holds ${have}; it was kept as ${kept} and a fresh copy is made.`);
+          console.error(`[monomem] the existing pre-upgrade copy held ${check.notes} notes but the database now holds ${have}; it was kept as ${kept} and a fresh copy is made.`);
         } else if ((check.kind === "empty" || check.kind === "garbage") && statSync(dest).isFile()) {
           // (A directory or other non-regular entry is never deleted here, whatever the platform says about opening it: it goes to the aside branch.)
           // Positively known to be worthless (zero bytes, not a database, no schema): the only case where a copy is deleted.
-          console.error(`[onememory] the existing pre-upgrade copy ${dest} is not usable (${check.reason}); replacing it.`);
+          console.error(`[monomem] the existing pre-upgrade copy ${dest} is not usable (${check.reason}); replacing it.`);
           unlinkSync(dest);
         } else {
           // It could not be judged (no permission to open it, busy, a failed integrity check): it may well be the real
@@ -1643,7 +1643,7 @@ export class Store {
           let kept = `${dest}-${stamp}`;
           for (let i = 2; existsSync(kept); i++) kept = `${dest}-${stamp}-${i}`;
           renameSync(dest, kept);
-          console.error(`[onememory] the existing pre-upgrade copy could not be checked (${check.reason}); it was kept as ${kept} and a fresh copy is made.`);
+          console.error(`[monomem] the existing pre-upgrade copy could not be checked (${check.reason}); it was kept as ${kept} and a fresh copy is made.`);
         }
       }
       dropPartial();
@@ -1659,7 +1659,7 @@ export class Store {
         if ((e as { preMigration?: boolean }).preMigration) throw e;
         /* statfs unavailable: try the copy anyway */
       }
-      // VACUUM INTO is one consistent snapshot even while an older onememory is still writing to this file. The copy is checked
+      // VACUUM INTO is one consistent snapshot even while an older monomem is still writing to this file. The copy is checked
       // for integrity AND for its note count: it must hold the number of notes the database held when the copy started or
       // when it finished (a writer that is active in between is allowed for; a copy outside that range is a bad copy and is
       // retried, then refused). Written under a temporary name and renamed only when complete and verified (retried once; a rename that an
@@ -1706,15 +1706,15 @@ export class Store {
       dropPartial();
       const nowHave = Number((this.db.prepare("SELECT COUNT(*) AS c FROM notes").get() as { c: number }).c);
       console.error(
-        `[onememory] upgrading the database from schema v${from} to v${SCHEMA_VERSION}; the original was copied to ${dest} ` +
-          "(to roll back: stop every onememory process, MOVE that file over the database, DELETE the database's -wal and -shm files next to it, then install the older version). " +
+        `[monomem] upgrading the database from schema v${from} to v${SCHEMA_VERSION}; the original was copied to ${dest} ` +
+          "(to roll back: stop every monomem process, MOVE that file over the database, DELETE the database's -wal and -shm files next to it, then install the older version). " +
           "It holds your notes as they were before the upgrade, including any you later delete or forget: remove it once you are happy " +
-          "(`onememory backup --prune-premigration`)."
+          "(`monomem backup --prune-premigration`)."
       );
       if (nowHave !== copyNotes) {
         console.error(
-          `[onememory] note: the database was being written while it was copied (the copy holds ${copyNotes} notes, the database now ${nowHave}). ` +
-            "The copy is a consistent snapshot, but stop every older onememory process before upgrading if you need a copy of the latest state."
+          `[monomem] note: the database was being written while it was copied (the copy holds ${copyNotes} notes, the database now ${nowHave}). ` +
+            "The copy is a consistent snapshot, but stop every older monomem process before upgrading if you need a copy of the latest state."
         );
       }
     } catch (e) {
@@ -2251,7 +2251,7 @@ export class Store {
       // v16 (2.0.0): automatic memory. Captured observations and session summaries are ordinary notes rows with a kind, so
       // they inherit lint, quarantine, history, FTS and trust. Every existing read asks for kind 'note' only (RangeOpts.kinds).
       //  - sessions: one row per agent session (cwd, counts, how far the distiller got, its summary note).
-      //  - capture_events: raw hook events, short-lived (ONEMEMORY_CAPTURE_RETENTION_DAYS, see sweepCaptureEvents), never
+      //  - capture_events: raw hook events, short-lived (MONOMEM_CAPTURE_RETENTION_DAYS, see sweepCaptureEvents), never
       //    synced. `output` / `input` are sealed into output_enc / input_enc like a note body when at-rest encryption is on.
       //  - note_files: which files an observation read or changed (gone with the note).
       //  - file_context_seen: which files a session was already shown context for.
@@ -2514,7 +2514,7 @@ export class Store {
     // nested inside a caller's transaction (consolidateNotes) a SAVEPOINT
     // keeps the note + edges all-or-nothing without touching the outer txn.
     const nested = this.db.isTransaction;
-    this.db.exec(nested ? "SAVEPOINT onememory_create" : "BEGIN IMMEDIATE");
+    this.db.exec(nested ? "SAVEPOINT monomem_create" : "BEGIN IMMEDIATE");
     let id: number;
     try {
       // Key state is read INSIDE the write transaction (see writeKey): the
@@ -2565,12 +2565,12 @@ export class Store {
       if (!opts.skipEdges && !archivedAt) {
         this.recomputeEdgesFor(id, namespace, input.title, body, this.getEdgeThreshold());
       }
-      this.db.exec(nested ? "RELEASE onememory_create" : "COMMIT");
+      this.db.exec(nested ? "RELEASE monomem_create" : "COMMIT");
     } catch (e) {
       this.edgeIndexes.clear(); // may hold rolled-back state; resync lazily
       try {
-        this.db.exec(nested ? "ROLLBACK TO onememory_create" : "ROLLBACK");
-        if (nested) this.db.exec("RELEASE onememory_create");
+        this.db.exec(nested ? "ROLLBACK TO monomem_create" : "ROLLBACK");
+        if (nested) this.db.exec("RELEASE monomem_create");
       } catch {
         /* already rolled back -- rethrow the original */
       }
@@ -2668,7 +2668,7 @@ export class Store {
   /**
    * Record one user-facing read of a note: access_count + 1, last_accessed =
    * now. Buffered in memory and flushed in one transaction every
-   * ONEMEMORY_ACCESS_FLUSH_MS (see bufferAccess), so reads never write
+   * MONOMEM_ACCESS_FLUSH_MS (see bufferAccess), so reads never write
    * synchronously. A missing id is a silent no-op, never an error.
    * updated_at is deliberately left alone -- a read is not a change.
    */
@@ -2809,7 +2809,7 @@ export class Store {
         }
       });
     } catch (e) {
-      process.stderr.write(`onememory: could not upgrade v1 ciphertext to v2 (${(e as Error).message}); run \`onememory encrypt enable\` to retry.\n`);
+      process.stderr.write(`monomem: could not upgrade v1 ciphertext to v2 (${(e as Error).message}); run \`monomem encrypt enable\` to retry.\n`);
     }
   }
 
@@ -2864,7 +2864,7 @@ export class Store {
       try {
         renameSync(a.path, keyPath(this.keyDir));
         this.lastKey = loadKey(this.keyDir);
-        process.stderr.write(`onememory: restored the encryption key from ${a.path} (an interrupted \`encrypt disable\`).\n`);
+        process.stderr.write(`monomem: restored the encryption key from ${a.path} (an interrupted \`encrypt disable\`).\n`);
         return "restored";
       } catch {
         /* try the next one */
@@ -2909,7 +2909,7 @@ export class Store {
           if (r !== "live") {
             const aside = this.asideKeys().map((a) => a.path).join(", ");
             throw new Error(
-              `onememory: this database holds encrypted notes but the key file ${keyPath(this.keyDir)} is missing; ` +
+              `monomem: this database holds encrypted notes but the key file ${keyPath(this.keyDir)} is missing; ` +
                 `refusing to write plaintext next to ciphertext.` +
                 (aside ? ` A key copy exists at ${aside} -- rename it back to ${keyPath(this.keyDir)}.` : ` Restore the key from a backup.`)
             );
@@ -3350,10 +3350,10 @@ export class Store {
 
   /**
    * v16: raw capture events are short-lived (the distilled observations are what is kept): delete those older than
-   * ONEMEMORY_CAPTURE_RETENTION_DAYS (default 7). A namespace-pinned caller only clears its own sessions' events.
+   * MONOMEM_CAPTURE_RETENTION_DAYS (default 7). A namespace-pinned caller only clears its own sessions' events.
    */
   sweepCaptureEvents(now: number = Date.now(), namespaces?: string[]): number {
-    const raw = Number(process.env.ONEMEMORY_CAPTURE_RETENTION_DAYS);
+    const raw = Number(process.env.MONOMEM_CAPTURE_RETENTION_DAYS);
     const days = Number.isFinite(raw) && raw > 0 ? raw : 7;
     const cutoff = new Date(now - days * 86_400_000).toISOString();
     if (namespaces && namespaces.length === 0) return 0;
@@ -3750,7 +3750,7 @@ export class Store {
     const now = new Date().toISOString();
     // Inside a caller's transaction (confirm creates the replacing note in the same one) a SAVEPOINT keeps this all-or-nothing.
     const nested = this.db.isTransaction;
-    this.db.exec(nested ? "SAVEPOINT onememory_supersede" : "BEGIN IMMEDIATE");
+    this.db.exec(nested ? "SAVEPOINT monomem_supersede" : "BEGIN IMMEDIATE");
     try {
       // Single use: a nonce that was already spent makes the whole call fail. Spent nonces are kept past their expiry.
       this.db.prepare("DELETE FROM supersede_used WHERE expires_ms < ?").run(Date.now() - 86_400_000);
@@ -3774,12 +3774,12 @@ export class Store {
         }
         log.run(now, input.actor, target.namespace, oid, input.newId, input.flags ?? "");
       });
-      this.db.exec(nested ? "RELEASE onememory_supersede" : "COMMIT");
+      this.db.exec(nested ? "RELEASE monomem_supersede" : "COMMIT");
     } catch (e) {
       try {
         if (nested) {
-          this.db.exec("ROLLBACK TO onememory_supersede");
-          this.db.exec("RELEASE onememory_supersede");
+          this.db.exec("ROLLBACK TO monomem_supersede");
+          this.db.exec("RELEASE monomem_supersede");
         } else this.db.exec("ROLLBACK");
       } catch {
         /* already rolled back */
@@ -3900,7 +3900,7 @@ export class Store {
   }
 
   /**
-   * Encrypt every plaintext body in place (`onememory encrypt enable`).
+   * Encrypt every plaintext body in place (`monomem encrypt enable`).
    *
    * Moves body -> encrypted body_enc and empties body, so the FTS index
    * (which reads the body column via triggers) is rebuilt over title+tags
@@ -4033,7 +4033,7 @@ export class Store {
   }
 
   /**
-   * Decrypt every encrypted body back to plaintext (`onememory encrypt disable`).
+   * Decrypt every encrypted body back to plaintext (`monomem encrypt disable`).
    *
    * The inverse of encryptAll: body_enc -> body, body_enc NULL. Rows are read
    * inside the write transaction (see encryptAll). Throws if a body cannot be
@@ -4465,7 +4465,7 @@ export class Store {
       dedupe?: boolean;
       /**
        * Reject every note that does not come with an attestation that verifies against a trusted key (default:
-       * ONEMEMORY_IMPORT_REQUIRE_ATTESTATION=1, else off, so plain 1.3.x-style backups keep importing). Without it such
+       * MONOMEM_IMPORT_REQUIRE_ATTESTATION=1, else off, so plain 1.3.x-style backups keep importing). Without it such
        * notes are imported, flagged `imported_unverified`.
        */
       requireAttestation?: boolean;
@@ -4476,7 +4476,7 @@ export class Store {
     const idMap = new Map<number, number>();
     const retired: Array<{ exportId: number; target: number; at?: string }> = [];
     const importer = currentWriter();
-    const requireAttestation = opts.requireAttestation ?? ["1", "true", "yes"].includes((process.env.ONEMEMORY_IMPORT_REQUIRE_ATTESTATION ?? "").trim().toLowerCase());
+    const requireAttestation = opts.requireAttestation ?? ["1", "true", "yes"].includes((process.env.MONOMEM_IMPORT_REQUIRE_ATTESTATION ?? "").trim().toLowerCase());
     // Attestations: checked against the keys the admin trusts (plus this
     // server's own key for its own server id). Counted into the report.
     const trusted = this.trustedAttesters();
@@ -4548,7 +4548,7 @@ export class Store {
               att.reasons[verdict.reason] = (att.reasons[verdict.reason] ?? 0) + 1;
               opts.report?.rejected.push({
                 title: note.title,
-                error: `no verified attestation (${verdict.reason}); import attestation is required (--require-attestation / ONEMEMORY_IMPORT_REQUIRE_ATTESTATION)`,
+                error: `no verified attestation (${verdict.reason}); import attestation is required (--require-attestation / MONOMEM_IMPORT_REQUIRE_ATTESTATION)`,
               });
               continue;
             }
@@ -4637,7 +4637,7 @@ export class Store {
     // against the whole namespace. On a bulk restore that is 88-97% of the
     // total time (measured: 8000 notes = 3.6s of inserts, 34.9s of linking).
     // `deferEdges` skips it so a restore lands in seconds; the caller is
-    // responsible for telling the operator to run `onememory rebuild-edges`
+    // responsible for telling the operator to run `monomem rebuild-edges`
     // afterwards. Small/one-at-a-time imports keep inline linking so the
     // graph is never silently missing for the common case.
     // Re-point replaced notes at the replacement NOW in this store. A link to a note that is not in this file is dropped
@@ -4983,8 +4983,8 @@ export class Store {
 
   /**
    * Bound the edge-index cache: drop namespaces idle longer than
-   * ONEMEMORY_EDGE_INDEX_IDLE_MS, then least-recently-used ones while the
-   * cached note count exceeds ONEMEMORY_EDGE_INDEX_MAX_NOTES. `keep` (the
+   * MONOMEM_EDGE_INDEX_IDLE_MS, then least-recently-used ones while the
+   * cached note count exceeds MONOMEM_EDGE_INDEX_MAX_NOTES. `keep` (the
    * namespace in use) is never dropped. A dropped index is rebuilt on next
    * use (one tokenize pass over that namespace).
    */
@@ -5657,7 +5657,7 @@ export class Store {
       this.approvalKeyCache = Buffer.from(hex, "hex");
     }
     return createHmac("sha256", this.approvalKeyCache)
-      .update("onememory-task-approval-v1\n" + JSON.stringify(parts))
+      .update("monomem-task-approval-v1\n" + JSON.stringify(parts))
       .digest("hex")
       .slice(0, 32);
   }
@@ -6223,7 +6223,7 @@ export class Store {
     this.signingKey = key;
     this.signingStamp = seen;
     if (before && before !== key.keyId) {
-      console.error(`[onememory] the signing key file changed on disk (${before} -> ${key.keyId}); this process now signs with the new key.`);
+      console.error(`[monomem] the signing key file changed on disk (${before} -> ${key.keyId}); this process now signs with the new key.`);
     }
     this.rememberKey(key, !existed);
     return key;
@@ -6246,9 +6246,9 @@ export class Store {
     if (minted && prior && prior !== key.keyId && this.signingKeyMintedFor !== key.keyId) {
       this.signingKeyMintedFor = key.keyId;
       console.error(
-        `[onememory] a NEW attestation key was created (${key.keyId}) for the existing server id ${this.serverId()}: this database earlier signed with key ${prior}, ` +
-          "whose key file is missing (a restore without it?). Peers that trusted the old key must be given the new one (`onememory trust identity`); " +
-          "exports signed by the old key will not verify here unless you add the old PUBLIC key (`onememory trust attester-add <old public key> --server-id " +
+        `[monomem] a NEW attestation key was created (${key.keyId}) for the existing server id ${this.serverId()}: this database earlier signed with key ${prior}, ` +
+          "whose key file is missing (a restore without it?). Peers that trusted the old key must be given the new one (`monomem trust identity`); " +
+          "exports signed by the old key will not verify here unless you add the old PUBLIC key (`monomem trust attester-add <old public key> --server-id " +
           `${this.serverId()}\`). See docs/trust.md.`
       );
     }
@@ -6332,7 +6332,7 @@ export class Store {
       });
     } catch (e) {
       console.error(
-        `[onememory] the signing key WAS rotated (${old?.keyId ?? "-"} -> ${k.keyId}) and the old public key is recorded, but the audit line could not be written (${(e as Error).message}).`
+        `[monomem] the signing key WAS rotated (${old?.keyId ?? "-"} -> ${k.keyId}) and the old public key is recorded, but the audit line could not be written (${(e as Error).message}).`
       );
     }
     return { old_key_id: old?.keyId ?? null, new_key_id: k.keyId, public_key: k.publicKey, old_key_file: oldFile, old_public_key: old?.publicKey ?? null };
@@ -6353,11 +6353,11 @@ export class Store {
   }
 
   /** Header of an export: format, the exporting server and its public key. Throws if the key cannot be created. */
-  exportHeader(): { format: "onememory-export"; format_version: 2; exported_at: string; server_id: string; key_id: string; public_key: string; algorithm: "ed25519" } {
-    return { format: "onememory-export", format_version: 2, exported_at: new Date().toISOString(), ...this.identity() };
+  exportHeader(): { format: "monomem-export"; format_version: 2; exported_at: string; server_id: string; key_id: string; public_key: string; algorithm: "ed25519" } {
+    return { format: "monomem-export", format_version: 2, exported_at: new Date().toISOString(), ...this.identity() };
   }
 
-  /** Public keys whose attestations an import will accept: the admin's list plus ONEMEMORY_TRUSTED_ATTESTERS. */
+  /** Public keys whose attestations an import will accept: the admin's list plus MONOMEM_TRUSTED_ATTESTERS. */
   trustedAttesters(): Map<string, TrustedAttester> {
     const out = new Map<string, TrustedAttester>();
     for (const t of this.envAttesters()) out.set(keyIdOf(t.public_key), t);
@@ -6372,19 +6372,19 @@ export class Store {
     return out;
   }
 
-  /** ONEMEMORY_TRUSTED_ATTESTERS, parsed; unusable entries (or a variable that yields nothing) are reported loudly, once per value. */
+  /** MONOMEM_TRUSTED_ATTESTERS, parsed; unusable entries (or a variable that yields nothing) are reported loudly, once per value. */
   private envAttesters(): TrustedAttester[] {
-    const raw = process.env.ONEMEMORY_TRUSTED_ATTESTERS;
+    const raw = process.env.MONOMEM_TRUSTED_ATTESTERS;
     const r = parseTrustedAttestersEnvDetailed(raw);
     if (raw && raw.trim() && warnedEnvAttesters !== raw) {
       warnedEnvAttesters = raw;
       if (r.attesters.length === 0) {
         console.error(
-          "[onememory] WARNING: ONEMEMORY_TRUSTED_ATTESTERS is set but no usable entry was found, so imports will treat every note as unverified. " +
+          "[monomem] WARNING: MONOMEM_TRUSTED_ATTESTERS is set but no usable entry was found, so imports will treat every note as unverified. " +
             "Use <server id>=<public key> entries (or a JSON array of {public_key, server_id}); see docs/configuration.md."
         );
       }
-      for (const i of r.issues) console.error(`[onememory] WARNING: ONEMEMORY_TRUSTED_ATTESTERS entry ${JSON.stringify(i.entry)} ignored: ${i.problem}`);
+      for (const i of r.issues) console.error(`[monomem] WARNING: MONOMEM_TRUSTED_ATTESTERS entry ${JSON.stringify(i.entry)} ignored: ${i.problem}`);
     }
     return r.attesters;
   }
@@ -6430,23 +6430,23 @@ export class Store {
     replaced?: { server_id: string; not_after: string };
   } {
     const key = typeof input.public_key === "string" ? input.public_key.trim() : "";
-    if (!isPublicKey(key)) throw new ValidationError("public_key must be the 43-character base64url key printed by `onememory trust identity` on the other server");
+    if (!isPublicKey(key)) throw new ValidationError("public_key must be the 43-character base64url key printed by `monomem trust identity` on the other server");
     const sid = (input.server_id ?? "").trim().toLowerCase();
     if (sid && !isServerId(sid)) throw new ValidationError("server_id must be a UUID");
     if (!sid && input.any_server !== true) {
       throw new ValidationError(
-        "server_id is required: a trusted key speaks for ONE server (use the server_id printed by `onememory trust identity` on that server). " +
+        "server_id is required: a trusted key speaks for ONE server (use the server_id printed by `monomem trust identity` on that server). " +
           "Pass --any-server (any_server: true over the API) only if you accept that this key's holder could claim to be any peer."
       );
     }
     // A key pinned to THIS server's own id is a "retired own key": the public key this server signed with before a rotation
     // or before a restore that lost its key file. It lets the server recognise its own earlier exports (the same meaning
-    // as an ONEMEMORY_TRUSTED_ATTESTERS entry naming this server's id). Only an admin can add one; revoke it if it leaked.
+    // as an MONOMEM_TRUSTED_ATTESTERS entry naming this server's id). Only an admin can add one; revoke it if it leaked.
     const notAfter = (input.not_after ?? "").trim();
     if (notAfter && !isIso(notAfter)) throw new ValidationError("not_after must be an ISO-8601 time such as 2027-01-31T00:00:00Z");
     const key_id = keyIdOf(key);
     if (key_id === this.identity().key_id) throw new ValidationError("that is this server's own current key: it is always trusted for this server's own exports");
-    if (this.revokedKeys().has(key_id)) throw new ValidationError(`key ${key_id} is on the revocation list; run \`onememory trust attester-unrevoke ${key_id}\` first if you really want to trust it again`);
+    if (this.revokedKeys().has(key_id)) throw new ValidationError(`key ${key_id} is on the revocation list; run \`monomem trust attester-unrevoke ${key_id}\` first if you really want to trust it again`);
     const label = cleanWriter(input.label ?? "").slice(0, 100);
     let replaced: { server_id: string; not_after: string } | undefined;
     this.transaction(() => {
@@ -6509,7 +6509,7 @@ export class Store {
     const id = typeof keyId === "string" ? keyId.trim().toLowerCase() : "";
     if (!/^[0-9a-f]{16}$/.test(id)) throw new ValidationError("key_id must be the 16-hex-digit key id");
     const cur = this.dbPath === ":memory:" ? this.signingKey : peekSigningKey(this.keyDir);
-    if (cur && cur.keyId === id) throw new ValidationError("that is this server's CURRENT signing key: run `onememory trust rotate` first, then revoke the retired key");
+    if (cur && cur.keyId === id) throw new ValidationError("that is this server's CURRENT signing key: run `monomem trust rotate` first, then revoke the retired key");
     let already = false;
     this.transaction(() => {
       const all = this.revocations();

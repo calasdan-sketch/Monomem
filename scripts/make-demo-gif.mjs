@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds docs/onememory-demo.gif from docs/brand/demo-transcript.txt.
+// Builds docs/monomem-demo.gif from docs/brand/demo-transcript.txt.
 //
 // Why this script exists: the previous demo GIF was an orphan binary with no
 // generator, which is indefensible in a repo whose pitch is provenance. Every
@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, existsSync, copyFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const OUT = "docs/onememory-demo.gif";
+const OUT = "docs/monomem-demo.gif";
 const BUILD = "build/gif";
 const W = 850, H = 336, FPS = 12;
 
@@ -128,7 +128,7 @@ layers.push(...typed(
   ["> remember:", "we", "deploy", "on", "Fly.io,", "not", "Render"],
   { x: L.x + PAD, y: LY, size: 15, color: C.text, from: T.leftType, until: T.leftTool }
 ));
-layers.push(text("onememory - state_write", { x: L.x + PAD, y: LY + 34, size: 13, color: C.dim, from: T.leftTool }));
+layers.push(text("monomem - state_write", { x: L.x + PAD, y: LY + 34, size: 13, color: C.dim, from: T.leftTool }));
 layers.push(text("stored - id 1 - rev 1", { x: L.x + PAD, y: LY + 54, size: 13, color: C.tick, from: T.leftTool + 0.5 }));
 layers.push(text("written_by: claude-code", { x: L.x + PAD, y: LY + 74, size: 13, color: C.dim, from: T.leftTool + 0.8 }));
 
@@ -140,7 +140,7 @@ layers.push(...typed(
   ["> where", "do", "we", "deploy?"],
   { x: R.x + PAD, y: RY, size: 15, color: C.text, from: T.rightType, until: T.rightTool }
 ));
-layers.push(text("onememory - state_relevant", { x: R.x + PAD, y: RY + 34, size: 13, color: C.dim, from: T.rightTool }));
+layers.push(text("monomem - state_relevant", { x: R.x + PAD, y: RY + 34, size: 13, color: C.dim, from: T.rightTool }));
 // the real measured gap: 255 ms, held in full, not shortened
 layers.push(text("...", { x: R.x + PAD, y: RY + 54, size: 13, color: C.dim, from: T.rightLatency, to: T.answer }));
 layers.push(text("Fly.io - not Render.", { x: R.x + PAD, y: RY + 54, size: 16, color: C.text, from: T.answer }));
@@ -156,7 +156,7 @@ const cap = (s, from, to, color = C.caption, size = 17) =>
 cap("Two assistants. One memory.", T.open, T.bridge);
 cap("Written once, to a file on your own machine.", T.bridge, T.payoff);
 cap("The second writer never saw the first. Same note - and it shows who wrote it.", T.payoff, T.cta, C.caption, 16);
-cap("npx onememory-mcp setup", T.cta, T.end, C.gold, 19);
+cap("npx monomem setup", T.cta, T.end, C.gold, 19);
 
 // --- render ---------------------------------------------------------------
 // The Calas mark, gold on transparent, in the closing frame only. It is

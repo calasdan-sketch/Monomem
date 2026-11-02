@@ -169,7 +169,7 @@ describe("step 2: the confirmation", () => {
   });
 
   test("the code expires", async () => {
-    process.env.ONEMEMORY_SUPERSEDE_TTL_SECONDS = "1";
+    process.env.MONOMEM_SUPERSEDE_TTL_SECONDS = "1";
     try {
       assert.equal(supersedeTtlSeconds(), 1);
       const old = mk("alice", "a", "alpha");
@@ -179,16 +179,16 @@ describe("step 2: the confirmation", () => {
       expectErr(() => confirm(write("alice"), p.token), 410, /expired/);
       assert.equal(store.read(old.id)!.superseded_by, undefined);
     } finally {
-      delete process.env.ONEMEMORY_SUPERSEDE_TTL_SECONDS;
+      delete process.env.MONOMEM_SUPERSEDE_TTL_SECONDS;
     }
   });
 
   test("the expiry setting is bounded", () => {
     for (const [v, want] of [["", 600], ["abc", 600], ["0", 600], ["99999", 3600], ["45", 45]] as const) {
-      process.env.ONEMEMORY_SUPERSEDE_TTL_SECONDS = v;
+      process.env.MONOMEM_SUPERSEDE_TTL_SECONDS = v;
       assert.equal(supersedeTtlSeconds(), want, `value ${v}`);
     }
-    delete process.env.ONEMEMORY_SUPERSEDE_TTL_SECONDS;
+    delete process.env.MONOMEM_SUPERSEDE_TTL_SECONDS;
   });
 
   test("the code is useless to another writer, another scope, or another tenant", () => {
@@ -219,7 +219,7 @@ describe("step 2: the confirmation", () => {
   });
 
   test("a code for someone else does not even reveal whether it has expired or been used", async () => {
-    process.env.ONEMEMORY_SUPERSEDE_TTL_SECONDS = "1";
+    process.env.MONOMEM_SUPERSEDE_TTL_SECONDS = "1";
     try {
       const old = mk("alice", "a", "alpha");
       const nw = mk("alice", "b", "beta");
@@ -230,7 +230,7 @@ describe("step 2: the confirmation", () => {
       assert.notEqual(stranger.message, owner.message);
       assert.match(stranger.message, /not a valid confirmation code/);
     } finally {
-      delete process.env.ONEMEMORY_SUPERSEDE_TTL_SECONDS;
+      delete process.env.MONOMEM_SUPERSEDE_TTL_SECONDS;
     }
   });
 
@@ -240,7 +240,7 @@ describe("step 2: the confirmation", () => {
     const p = preview(write("alice"), [old.id], nw.id);
     const body = p.token.split(".")[0];
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    const forged = store.mintToken("onememory-ack-v1", payload);
+    const forged = store.mintToken("monomem-ack-v1", payload);
     expectErr(() => confirm(write("alice"), forged), 400);
     assert.equal(store.read(old.id)!.superseded_by, undefined);
   });

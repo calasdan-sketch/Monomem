@@ -1,9 +1,9 @@
 // MCP server over stdio, for local Claude Code / Claude Desktop config.
-// Points at the same SQLite file the HTTP API uses (ONEMEMORY_DB_PATH
+// Points at the same SQLite file the HTTP API uses (MONOMEM_DB_PATH
 // or the default <data dir>/state.db, see config.ts) so state written here is immediately
 // visible to the API and vice versa.
 import "./quiet-sqlite.js"; // first: hide the node:sqlite ExperimentalWarning
-import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as ONEMEMORY_*
+import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as MONOMEM_*
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Store } from "./store.js";
 import { createMcpServer } from "./mcp-server-core.js";
@@ -65,10 +65,10 @@ transport.onerror = (err: Error) => {
 };
 
 // eslint-disable-next-line no-console
-console.error(`[onememory] MCP stdio server connected. DB: ${DB_PATH}`);
+console.error(`[monomem] MCP stdio server connected. DB: ${DB_PATH}`);
 if (nsOpts) {
   // eslint-disable-next-line no-console
-  console.error(`[onememory] namespace resolution ACTIVE: namespace="${nsOpts.namespace}"`);
+  console.error(`[monomem] namespace resolution ACTIVE: namespace="${nsOpts.namespace}"`);
 }
 
 function shutdown(): void {

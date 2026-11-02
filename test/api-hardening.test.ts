@@ -76,19 +76,19 @@ describe("API hardening", () => {
 describe("audit log records operations but not note content", () => {
   let dir: string;
   let logPath: string;
-  const SAVE = process.env.ONEMEMORY_AUDIT_LOG;
+  const SAVE = process.env.MONOMEM_AUDIT_LOG;
 
   before(() => {
-    dir = mkdtempSync(join(tmpdir(), "onememory-audit-"));
+    dir = mkdtempSync(join(tmpdir(), "monomem-audit-"));
     logPath = join(dir, "audit.log");
-    process.env.ONEMEMORY_AUDIT_LOG = logPath;
+    process.env.MONOMEM_AUDIT_LOG = logPath;
   });
   afterEach(() => {
     /* keep the log across the describe's single test */
   });
   after(() => {
-    if (SAVE === undefined) delete process.env.ONEMEMORY_AUDIT_LOG;
-    else process.env.ONEMEMORY_AUDIT_LOG = SAVE;
+    if (SAVE === undefined) delete process.env.MONOMEM_AUDIT_LOG;
+    else process.env.MONOMEM_AUDIT_LOG = SAVE;
     rmSync(dir, { recursive: true, force: true });
   });
 

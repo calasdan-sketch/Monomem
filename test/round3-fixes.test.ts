@@ -57,8 +57,8 @@ describe("command approval: binding, expiry, consumption, starvation, leases", (
   afterEach(() => {
     store.close();
     rmSync(dir, { recursive: true, force: true });
-    delete process.env.ONEMEMORY_APPROVAL_TTL_SECONDS;
-    delete process.env.ONEMEMORY_TASK_COMMAND_QUOTA;
+    delete process.env.MONOMEM_APPROVAL_TTL_SECONDS;
+    delete process.env.MONOMEM_TASK_COMMAND_QUOTA;
   });
 
   const queue = (p = marker, extra: Record<string, unknown> = {}) =>
@@ -104,7 +104,7 @@ describe("command approval: binding, expiry, consumption, starvation, leases", (
   });
 
   test("starvation: approved tasks beyond one page are all reached", async () => {
-    process.env.ONEMEMORY_TASK_COMMAND_QUOTA = "1000";
+    process.env.MONOMEM_TASK_COMMAND_QUOTA = "1000";
     for (let i = 0; i < 205; i++) {
       const t = queue(join(dir, `m${i}`));
       approveTask(store, { id: t.id, if_rev: store.read(t.id)!.rev });
@@ -113,7 +113,7 @@ describe("command approval: binding, expiry, consumption, starvation, leases", (
   });
 
   test("quota: a namespace cannot hold more queued command tasks than the limit", () => {
-    process.env.ONEMEMORY_TASK_COMMAND_QUOTA = "3";
+    process.env.MONOMEM_TASK_COMMAND_QUOTA = "3";
     for (let i = 0; i < 3; i++) queue(join(dir, `q${i}`));
     assert.throws(() => queue(join(dir, "q3")), /too many queued command tasks/);
     // other namespaces and plain tasks are unaffected
@@ -146,7 +146,7 @@ describe("command approval: binding, expiry, consumption, starvation, leases", (
   });
 
   test("approvals expire inside the MAC", async () => {
-    process.env.ONEMEMORY_APPROVAL_TTL_SECONDS = "60";
+    process.env.MONOMEM_APPROVAL_TTL_SECONDS = "60";
     const t = queue();
     const a = approveTask(store, { id: t.id, if_rev: store.read(t.id)!.rev });
     assert.equal(a.approval, "approved");
@@ -214,7 +214,7 @@ describe("backup and the approval key", () => {
       r2.close();
       assert.match(readFileSync(join(dir, "b1", "README.txt"), "utf8"), /approval key NOT included/);
       // CLI flag
-      const env = { ...process.env, ONEMEMORY_HOME: dir, ONEMEMORY_DB_PATH: db };
+      const env = { ...process.env, MONOMEM_HOME: dir, MONOMEM_DB_PATH: db };
       const c1 = spawnSync(process.execPath, [CLI, "backup", "--out", join(dir, "b3")], { env, encoding: "utf8" });
       assert.equal(c1.status, 0, c1.stderr);
       assert.match(c1.stdout, /NOT copied/);
@@ -348,7 +348,7 @@ describe("markdown restore of reserved tags", () => {
       const s2 = new Store(db);
       s2.create({ title: "occupies id 1" });
       s2.close();
-      const env = { ...process.env, ONEMEMORY_HOME: dir, ONEMEMORY_DB_PATH: db };
+      const env = { ...process.env, MONOMEM_HOME: dir, MONOMEM_DB_PATH: db };
       const r = spawnSync(process.execPath, [CLI, "import", "--dir", files], { env, encoding: "utf8" });
       assert.equal(r.status, 1, r.stdout + r.stderr);
       assert.match(r.stderr, /1 FILE\(S\) WERE REJECTED/);
@@ -370,7 +370,7 @@ describe("audit log rotation under concurrent writers", () => {
       const log = join(dir, "audit.log");
       const script = `const {audit}=require(${JSON.stringify(join(process.cwd(), "dist/src/security.js"))});` +
         `for(let i=0;i<1500;i++)audit({op:"t",id:i,label:process.argv[1]});`;
-      const env = { ...process.env, ONEMEMORY_HOME: dir, ONEMEMORY_AUDIT_LOG: log, ONEMEMORY_AUDIT_MAX_BYTES: "20000", ONEMEMORY_AUDIT_KEEP: "500" };
+      const env = { ...process.env, MONOMEM_HOME: dir, MONOMEM_AUDIT_LOG: log, MONOMEM_AUDIT_MAX_BYTES: "20000", MONOMEM_AUDIT_KEEP: "500" };
       // dist is ESM: use a dynamic import instead of require
       const esm = `import(${JSON.stringify("file://" + join(process.cwd(), "dist/src/security.js"))}).then(({audit})=>{for(let i=0;i<1500;i++)audit({op:"t",id:i,label:process.argv[1]});});`;
       void script;
@@ -396,14 +396,14 @@ describe("audit log rotation under concurrent writers", () => {
   });
 });
 
-describe("onememory watch stops on signals", () => {
+describe("monomem watch stops on signals", () => {
   test("SIGTERM while a handler runs: the handler is killed and the watcher exits promptly", async () => {
     const dir = mk("om-r3-watch-");
     try {
       const db = join(dir, "state.db");
       const s = new Store(db);
       s.close();
-      const env = { ...process.env, ONEMEMORY_HOME: dir, ONEMEMORY_DB_PATH: db };
+      const env = { ...process.env, MONOMEM_HOME: dir, MONOMEM_DB_PATH: db };
       const child = spawn(
         process.execPath,
         [CLI, "watch", "--consumer", "w", "--wait", "1", "--exec", process.execPath, "-e", "setTimeout(()=>{},40000)"],

@@ -9,7 +9,7 @@ that wants to catch up before acting.
 memory_since({ since: "24h" })
 memory_since({ since: "last", consumer: "phone" })
 GET  /changes?since=2026-10-15T09:00:00Z&namespace=work&limit=50
-onememory changes --since last --consumer laptop
+monomem changes --since last --consumer laptop
 ```
 
 The dashboard has a **Changes** button (last 24 hours).
@@ -127,10 +127,10 @@ memory_since({ since: "last", consumer: "pc", wait_seconds: 25 })
   read never wakes you or shows up.
 - Writes made through this server wake waiters immediately; writes made by
   another process on the same database (e.g. the CLI) are noticed within
-  about a second (`ONEMEMORY_WAIT_POLL_MS`).
-- Limits: at most 16 parked requests per token (`ONEMEMORY_WAIT_MAX_PER_TOKEN`),
-  32 per namespace scope across all tokens (`ONEMEMORY_WAIT_MAX_PER_NAMESPACE`)
-  and 64 per process (`ONEMEMORY_WAIT_MAX_TOTAL`). Past that REST answers 429
+  about a second (`MONOMEM_WAIT_POLL_MS`).
+- Limits: at most 16 parked requests per token (`MONOMEM_WAIT_MAX_PER_TOKEN`),
+  32 per namespace scope across all tokens (`MONOMEM_WAIT_MAX_PER_NAMESPACE`)
+  and 64 per process (`MONOMEM_WAIT_MAX_TOTAL`). Past that REST answers 429
   and MCP returns a tool error whose text names the limit that was hit and the
   variable that raises it. A parked request holds its slot until it returns, times
   out or the client disconnects (which frees it at once); one wait loop per
@@ -187,11 +187,11 @@ A consumer whose `last` marker is older than the change-log retention (90 days) 
 `markerReset: true` with whatever is still retained, rather than silently skipping
 the purged events.
 
-### React from a script: `onememory watch`
+### React from a script: `monomem watch`
 
 ```
-onememory watch --consumer pc                       # print each change as it lands
-onememory watch --consumer pc --exec notify-send OneMemory
+monomem watch --consumer pc                       # print each change as it lands
+monomem watch --consumer pc --exec notify-send Monomem
 ```
 
 A long-poll loop on the local store. With `--exec`, the program (and its
@@ -215,7 +215,7 @@ note blanks its older titles, so the log only ever holds a note's current
 title. Rows older than 90 days are pruned periodically (at most hourly,
 never per write). The running server also prunes on its own hourly timer, so
 the log stays bounded even if nobody reads the feed. An admin can empty the whole log (and every `last`
-marker) at once with `onememory changes --purge`.
+marker) at once with `monomem changes --purge`.
 `since=<time>` maps to the first change stamped at or after that time.
 
 ## How `last` works
@@ -234,7 +234,7 @@ dropped. Markers read within the last 7 days are never evicted -- if all
 256 are that fresh, a new label's marker is simply not stored (its next
 read reports `markerReset` again).
 
-Why a caller-chosen label instead of "per token": OneMemory tokens are bare
+Why a caller-chosen label instead of "per token": Monomem tokens are bare
 secrets with a scope, not identities, and several devices often share one
 token. A label also lets one device keep separate markers for separate jobs.
 Anyone who can read the feed can move a label's marker; that only affects

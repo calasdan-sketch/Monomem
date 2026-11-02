@@ -1,4 +1,4 @@
-// The OneMemory side of the benchmark. Everything goes through the product's public surface: the REST API over real
+// The Monomem side of the benchmark. Everything goes through the product's public surface: the REST API over real
 // HTTP on the loopback interface (tokens, scopes, namespaces, trust policy, export/import), and, for the one thing REST
 // does not offer (merging duplicates), the MCP tool `memory_consolidate` over an in-memory MCP connection.
 // Nothing here reads or writes the SQLite file directly.
@@ -50,7 +50,7 @@ function toOutcome(status: number): Outcome {
 type Raw = Record<string, unknown>;
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
-/** One OneMemory note (REST JSON) in the benchmark's vocabulary. */
+/** One Monomem note (REST JSON) in the benchmark's vocabulary. */
 export function normalizeNote(raw: Raw): BenchNote {
   const n: BenchNote = {
     id: String(raw.id),
@@ -84,8 +84,8 @@ async function nextTick(last: { t: number }): Promise<void> {
   last.t = Date.now();
 }
 
-export class OneMemoryAdapter implements MemoryAdapter {
-  readonly name = "onememory";
+export class MonomemAdapter implements MemoryAdapter {
+  readonly name = "monomem";
   readonly capabilities: ReadonlySet<Capability> = new Set(CAPS);
 
   private dir = "";
@@ -97,20 +97,20 @@ export class OneMemoryAdapter implements MemoryAdapter {
 
   async open(world: WorldSpec): Promise<void> {
     await this.close();
-    this.dir = mkdtempSync(join(tmpdir(), "onememory-bench-"));
+    this.dir = mkdtempSync(join(tmpdir(), "monomem-bench-"));
     // Ctrl-C or a crash must not leave the throwaway folder behind (best effort: the exit handler can only do sync work).
     process.once("exit", this.onExit);
     this.grants = world.grants;
     // The per-token rate limit (120 requests / 10 s) is a protection for a public server, not something to measure.
     // The audit log goes into the throwaway folder: the benchmark's traffic must never reach the user's own audit.log.
     this.prevEnv = {
-      ONEMEMORY_RATE_MAX: process.env.ONEMEMORY_RATE_MAX,
-      ONEMEMORY_AUDIT_LOG: process.env.ONEMEMORY_AUDIT_LOG,
-      ONEMEMORY_SUPERSEDE_TTL_SECONDS: process.env.ONEMEMORY_SUPERSEDE_TTL_SECONDS,
+      MONOMEM_RATE_MAX: process.env.MONOMEM_RATE_MAX,
+      MONOMEM_AUDIT_LOG: process.env.MONOMEM_AUDIT_LOG,
+      MONOMEM_SUPERSEDE_TTL_SECONDS: process.env.MONOMEM_SUPERSEDE_TTL_SECONDS,
     };
-    if (world.settings?.supersede_ttl_seconds !== undefined) process.env.ONEMEMORY_SUPERSEDE_TTL_SECONDS = String(world.settings.supersede_ttl_seconds);
-    process.env.ONEMEMORY_RATE_MAX = "1000000";
-    process.env.ONEMEMORY_AUDIT_LOG = join(this.dir, "audit.log");
+    if (world.settings?.supersede_ttl_seconds !== undefined) process.env.MONOMEM_SUPERSEDE_TTL_SECONDS = String(world.settings.supersede_ttl_seconds);
+    process.env.MONOMEM_RATE_MAX = "1000000";
+    process.env.MONOMEM_AUDIT_LOG = join(this.dir, "audit.log");
     const byServer = new Map<string, TokenEntry[]>();
     for (const [name, a] of Object.entries(world.actors)) {
       const token = `bench-${name}-${randomBytes(16).toString("hex")}`;
@@ -183,7 +183,7 @@ export class OneMemoryAdapter implements MemoryAdapter {
    */
   // `tools: "all"` on purpose: the benchmark measures the whole surface,
   // including the operator tools a plain install no longer registers, and it
-  // must give the same numbers whatever ONEMEMORY_TOOLS happens to be set to.
+  // must give the same numbers whatever MONOMEM_TOOLS happens to be set to.
   private serverOpts(): { namespace?: string; readsFrom?: Record<string, string[]>; tools: "all" } {
     return Object.keys(this.grants).length
       ? { namespace: "default", readsFrom: this.grants, tools: "all" }
@@ -449,7 +449,7 @@ export class OneMemoryAdapter implements MemoryAdapter {
       { label: a.writer, authed: true }
     );
     const [c, srv] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "onememory-bench", version: "1.0.0" });
+    const client = new Client({ name: "monomem-bench", version: "1.0.0" });
     try {
       await Promise.all([client.connect(c), mcp.connect(srv)]);
       const res = (await client.callTool({ name: "memory_consolidate", arguments: { ids: ids.map(Number) } })) as {

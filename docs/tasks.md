@@ -68,7 +68,7 @@ task's title) and in `state_search`.
 ### Command tasks: phone to PC
 
 `task_put({ command: { action, params }, target })` creates a task in status
-`queued` for the PC's [command runner](https://github.com/calasdan-sketch/onememory/blob/main/docs/RUNNER.md#command-tasks-the-task-board-in-front-of-the-runner).
+`queued` for the PC's [command runner](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md#command-tasks-the-task-board-in-front-of-the-runner).
 It does **not** run by itself: an admin must `task_approve({ id, command_hash })`
 (REST `POST /tasks/:id/approve` with `{ "command_hash": ... }`, admin scope; `rev` as
 `if_rev` also works), echoing the `command_hash` that `task_get` / `task_list` showed,
@@ -79,7 +79,7 @@ edit voids it, it expires (default 24 h), and it is single-use (removed in the w
 that marks the task running). A command task cannot be claimed; approve / revoke clear
 any lease on it. A namespace holds at most 100 queued command tasks. A write token can queue a task and nothing
 more; the runner's signing secret is never stored or exposed. Full rules, and what
-is deliberately not supported, in [RUNNER.md](https://github.com/calasdan-sketch/onememory/blob/main/docs/RUNNER.md#command-tasks-the-task-board-in-front-of-the-runner).
+is deliberately not supported, in [RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md#command-tasks-the-task-board-in-front-of-the-runner).
 
 ### Reserved tags
 
@@ -94,7 +94,7 @@ forging a "latest handoff", crowding real tasks off the board, or faking a lease
 or approval. Compatible by design: an existing note that already carries these
 tags can still have its title, body and *other* tags edited, and the
 `status:`, `surface:` and `owner:` tags are not reserved on their own (they mean
-nothing without `task` / `handoff`). `onememory import` (Markdown files) is a local
+nothing without `task` / `handoff`). `monomem import` (Markdown files) is a local
 admin command, not reachable with a token, so it restores such notes as they are
 (a restore from an export loses no tasks or handoffs); approvals are never imported.
 Any rejected file makes the command print a loud count and exit 1.
@@ -160,7 +160,7 @@ Use a stable `consumer` label per device or model (`phone`, `claude-code-pc`).
 
 ### Automatically at session start
 
-`onememory recall` (the Claude Code SessionStart hook, see
+`monomem recall` (the Claude Code SessionStart hook, see
 [sessionstart-hook.md](./sessionstart-hook.md)) now puts the open tasks (up to
 10) and the latest handoff **before** the recent notes, within the same size
 budget. Tasks and the handoff each get their own budget, so a long task list

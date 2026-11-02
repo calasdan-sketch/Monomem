@@ -26,9 +26,9 @@ export { PREVIEW_MAX_OLD, type SupersedeReplacementInput } from "./supersede-sha
 const TOKEN_DOMAIN = "supersede-v1";
 const SNIPPET_PREVIEW = 600;
 
-/** How long a confirmation code lives (seconds). ONEMEMORY_SUPERSEDE_TTL_SECONDS, 30 to 3600, default 600. */
+/** How long a confirmation code lives (seconds). MONOMEM_SUPERSEDE_TTL_SECONDS, 30 to 3600, default 600. */
 export function supersedeTtlSeconds(): number {
-  const n = Number((process.env.ONEMEMORY_SUPERSEDE_TTL_SECONDS ?? "").trim());
+  const n = Number((process.env.MONOMEM_SUPERSEDE_TTL_SECONDS ?? "").trim());
   return Number.isFinite(n) && n > 0 ? Math.min(Math.max(Math.floor(n), 1), 3600) : 600;
 }
 

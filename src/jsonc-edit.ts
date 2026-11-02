@@ -1,4 +1,4 @@
-// Surgical edits of a JSON configuration file, for `onememory setup`.
+// Surgical edits of a JSON configuration file, for `monomem setup`.
 //
 // Why not JSON.parse + JSON.stringify: Claude Code rewrites ~/.claude.json itself, and it holds a lot (history,
 // projects, numbers, other tools' servers). Re-serialising the whole file would reformat it, lose comments in a

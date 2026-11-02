@@ -2,9 +2,9 @@
 type: guide
 status: active
 ---
-# OneMemory — Infra & Ops Guide
+# Monomem — Infra & Ops Guide
 
-Setup and operations guide for exposing OneMemory to Claude's remote
+Setup and operations guide for exposing Monomem to Claude's remote
 surfaces (web, mobile) over the public internet. This document covers the
 infra side only — tunnel setup, auth verification, connector setup, and a
 smoke test. See the main [README](./README.md) for what the project is and
@@ -14,18 +14,18 @@ how to build/run it locally.
 
 | Name | Value |
 |---|---|
-| HTTP API port | `8790` (env `ONEMEMORY_PORT`) |
-| MCP-over-HTTP port | `8791` (env `ONEMEMORY_MCP_PORT`) |
+| HTTP API port | `8790` (env `MONOMEM_PORT`) |
+| MCP-over-HTTP port | `8791` (env `MONOMEM_MCP_PORT`) |
 | MCP-over-HTTP path | `/mcp` |
-| Bearer token env var | `ONEMEMORY_TOKEN` (auto-generated and persisted to `~/.onememory/.token` if unset; a from-source git checkout that already has `./data/state.db` keeps using `./data/`) |
-| DB path env var | `ONEMEMORY_DB_PATH` (defaults to `~/.onememory/state.db`, or `$ONEMEMORY_HOME/state.db`) |
+| Bearer token env var | `MONOMEM_TOKEN` (auto-generated and persisted to `~/.monomem/.token` if unset; a from-source git checkout that already has `./data/state.db` keeps using `./data/`) |
+| DB path env var | `MONOMEM_DB_PATH` (defaults to `~/.monomem/state.db`, or `$MONOMEM_HOME/state.db`) |
 
 Placeholders used below that are specific to *your* setup:
 
 | Placeholder | Meaning |
 |---|---|
-| `<TUNNEL_HOSTNAME>` | The public hostname the tunnel exposes, e.g. `onememory.yourdomain.com` |
-| `<ONEMEMORY_TOKEN>` | The bearer token value (from `ONEMEMORY_TOKEN` or the auto-generated `~/.onememory/.token` file) |
+| `<TUNNEL_HOSTNAME>` | The public hostname the tunnel exposes, e.g. `monomem.yourdomain.com` |
+| `<MONOMEM_TOKEN>` | The bearer token value (from `MONOMEM_TOKEN` or the auto-generated `~/.monomem/.token` file) |
 
 ---
 
@@ -77,7 +77,7 @@ Opens a browser. Log in with your Cloudflare account and pick the domain
 ### Step 3 — Create the named tunnel
 
 ```powershell
-cloudflared tunnel create onememory
+cloudflared tunnel create monomem
 ```
 
 Note the **Tunnel ID** it prints (a UUID). This also writes a credentials
@@ -104,7 +104,7 @@ a final rule with no hostname.
 ### Step 5 — Route DNS
 
 ```powershell
-cloudflared tunnel route dns onememory <TUNNEL_HOSTNAME>
+cloudflared tunnel route dns monomem <TUNNEL_HOSTNAME>
 ```
 
 Creates a CNAME in Cloudflare DNS pointing `<TUNNEL_HOSTNAME>` at the
@@ -114,7 +114,7 @@ tunnel. Cloudflare terminates TLS for you — the public URL is
 ### Step 6 — Test it manually
 
 ```powershell
-cloudflared tunnel run onememory
+cloudflared tunnel run monomem
 ```
 
 Leave it running, then from another machine (or your phone off wifi) hit
@@ -140,7 +140,7 @@ Restart-Service Cloudflared
 **Option B — Scheduled Task at logon (no elevation needed, weaker guarantee):**
 
 ```powershell
-schtasks /create /tn "CloudflaredTunnel-OneMemory" /tr "cloudflared tunnel run onememory" /sc onlogon /rl limited
+schtasks /create /tn "CloudflaredTunnel-Monomem" /tr "cloudflared tunnel run monomem" /sc onlogon /rl limited
 ```
 
 Caveat: this only starts the tunnel once you log into Windows, not at raw
@@ -159,7 +159,7 @@ telling anyone the endpoint is safe to use.
 ### What "done" looks like
 
 1. The MCP-over-HTTP server (`dist/src/mcp-http.js`) reads a bearer token
-   from `ONEMEMORY_TOKEN` (or the auto-generated `~/.onememory/.token` file)
+   from `MONOMEM_TOKEN` (or the auto-generated `~/.monomem/.token` file)
    and rejects any request whose `Authorization: Bearer <token>` header
    doesn't match, before touching the SQLite store or returning any MCP
    capability/tool list.
@@ -185,7 +185,7 @@ curl.exe -i http://localhost:8791/mcp
 curl.exe -i http://localhost:8791/mcp -H "Authorization: Bearer wrong-token-obviously"
 
 # 3. Correct token — must succeed
-curl.exe -i http://localhost:8791/mcp -H "Authorization: Bearer <ONEMEMORY_TOKEN>"
+curl.exe -i http://localhost:8791/mcp -H "Authorization: Bearer <MONOMEM_TOKEN>"
 ```
 
 Then repeat all three through the public tunnel URL
@@ -256,11 +256,11 @@ the repo root you're working in):
 ```json
 {
   "mcpServers": {
-    "onememory": {
+    "monomem": {
       "command": "node",
-      "args": ["/absolute/path/to/onememory/dist/src/mcp-stdio.js"],
+      "args": ["/absolute/path/to/monomem/dist/src/mcp-stdio.js"],
       "env": {
-        "ONEMEMORY_TOKEN": "<ONEMEMORY_TOKEN>"
+        "MONOMEM_TOKEN": "<MONOMEM_TOKEN>"
       }
     }
   }
@@ -270,7 +270,7 @@ the repo root you're working in):
 Or generate it with the CLI:
 
 ```powershell
-claude mcp add onememory -- node /absolute/path/to/onememory/dist/src/mcp-stdio.js
+claude mcp add monomem -- node /absolute/path/to/monomem/dist/src/mcp-stdio.js
 ```
 
 (`claude mcp add --help` shows the current flags for passing env vars.)
@@ -286,11 +286,11 @@ Same `mcpServers` shape as Code:
 ```json
 {
   "mcpServers": {
-    "onememory": {
+    "monomem": {
       "command": "node",
-      "args": ["/absolute/path/to/onememory/dist/src/mcp-stdio.js"],
+      "args": ["/absolute/path/to/monomem/dist/src/mcp-stdio.js"],
       "env": {
-        "ONEMEMORY_TOKEN": "<ONEMEMORY_TOKEN>"
+        "MONOMEM_TOKEN": "<MONOMEM_TOKEN>"
       }
     }
   }
@@ -310,7 +310,7 @@ Claude web only supports remote MCP servers added as a custom connector
 through the UI. As currently documented: **claude.ai → Settings →
 Connectors → Add custom connector**, then supply:
 
-- Name: `onememory` (or whatever you like)
+- Name: `monomem` (or whatever you like)
 - URL: `https://<TUNNEL_HOSTNAME>/mcp`
 - Auth: however the connector UI asks for the bearer token (a header field
   or an OAuth-style flow, depending on the current UI)
@@ -335,7 +335,7 @@ this once both halves are live — don't accept a partial pass.
 ### Preconditions (all must be true first)
 
 - [ ] Backend built and running: `npm run build && npm start` in
-      `onememory/` completes with no errors, and the process stays up.
+      `monomem/` completes with no errors, and the process stays up.
 - [ ] `npm run mcp:stdio` and `npm run mcp:http` both start cleanly.
 - [ ] cloudflared tunnel is running (Section 1) and
       `https://<TUNNEL_HOSTNAME>/health` responds from outside this
@@ -343,7 +343,7 @@ this once both halves are live — don't accept a partial pass.
 - [ ] Token auth verified with the three curl checks in Section 2 — all
       three gave the expected status code.
 - [ ] Claude Code has the `.mcp.json` entry from Section 3 and lists
-      `onememory` as a connected server (`claude mcp list`).
+      `monomem` as a connected server (`claude mcp list`).
 - [ ] Claude mobile has the custom connector from Section 3 added and
       showing as connected in its settings.
 
@@ -353,7 +353,7 @@ this once both halves are live — don't accept a partial pass.
    use the bridge's write tool to save a note with unmistakable, one-off
    content, e.g.:
 
-   > "Using the OneMemory MCP server, write a note titled
+   > "Using the Monomem MCP server, write a note titled
    > `smoke-test-<date>` with the body `bridge smoke test — written from
    > Claude Code desktop at <exact current time>`."
 
@@ -362,13 +362,13 @@ this once both halves are live — don't accept a partial pass.
 
 2. **Independently confirm the write landed**, not just that the tool
    claimed success — e.g. hit `https://<TUNNEL_HOSTNAME>/mcp` with curl
-   and the bearer token, or check `~/.onememory/state.db` for the new row
+   and the bearer token, or check `~/.monomem/state.db` for the new row
    directly. "The tool said it worked" is not evidence the shared store
    actually persisted it.
 
 3. **On Claude mobile**, start a brand-new conversation and ask:
 
-   > "Using the OneMemory connector, read back the note titled
+   > "Using the Monomem connector, read back the note titled
    > `smoke-test-<date>` and show me its exact contents."
 
 4. **Pass criteria — all of these, not just "it returned something":**
@@ -403,7 +403,7 @@ pull notes tagged `standup`"). Two ways, simplest first.
 The bridge's plain REST API is the surest path. In an **HTTP Request** node:
 
 - **Write a note** — Method `POST`, URL `https://<TUNNEL_HOSTNAME-or-localhost:8790>/notes`,
-  Authentication → Header Auth (or a Header parameter) `Authorization: Bearer <ONEMEMORY_TOKEN>`,
+  Authentication → Header Auth (or a Header parameter) `Authorization: Bearer <MONOMEM_TOKEN>`,
   Body (JSON):
 
   ```json
@@ -451,7 +451,7 @@ callable operations — the same tools Claude and Cursor use.
 
 ## 6. Running it always-on
 
-OneMemory is one Node process (`onememory start`: API on 8790, MCP on 8791). If
+Monomem is one Node process (`monomem start`: API on 8790, MCP on 8791). If
 it dies, your phone and every connector lose it, so run it under something that
 restarts it. The recipes below were written against the process's real
 behaviour (it exits 0 on SIGTERM and non-zero on a fatal error); the service
@@ -461,21 +461,21 @@ definitions themselves could not be run in the environment they were written in
 
 ### Linux: systemd
 
-`/etc/systemd/system/onememory.service` (adjust `User`, the `onememory` path
-from `which onememory`, and the data dir):
+`/etc/systemd/system/monomem.service` (adjust `User`, the `monomem` path
+from `which monomem`, and the data dir):
 
 ```ini
 [Unit]
-Description=OneMemory
+Description=Monomem
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=onememory
-Environment=ONEMEMORY_HOME=/var/lib/onememory
-# Optional: ONEMEMORY_TOKEN, ONEMEMORY_BIND, ports ... (see docs/configuration.md)
-EnvironmentFile=-/etc/onememory.env
-ExecStart=/usr/bin/onememory start
+User=monomem
+Environment=MONOMEM_HOME=/var/lib/monomem
+# Optional: MONOMEM_TOKEN, MONOMEM_BIND, ports ... (see docs/configuration.md)
+EnvironmentFile=-/etc/monomem.env
+ExecStart=/usr/bin/monomem start
 Restart=always
 RestartSec=3
 # SIGTERM ends parked live-waits at once and the process exits in well under a second
@@ -484,7 +484,7 @@ TimeoutStopSec=10
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/var/lib/onememory
+ReadWritePaths=/var/lib/monomem
 PrivateTmp=true
 
 [Install]
@@ -492,29 +492,29 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo useradd --system --home /var/lib/onememory --create-home onememory
-sudo systemctl daemon-reload && sudo systemctl enable --now onememory
-systemctl status onememory
-journalctl -u onememory -f
+sudo useradd --system --home /var/lib/monomem --create-home monomem
+sudo systemctl daemon-reload && sudo systemctl enable --now monomem
+systemctl status monomem
+journalctl -u monomem -f
 ```
 
 `Restart=always` brings it back after a crash or an out-of-memory kill; a clean
 `systemctl restart` drains parked waiters first (they get `timedOut: true`).
 
-### Windows: Task Scheduler for OneMemory itself
+### Windows: Task Scheduler for Monomem itself
 
 The tunnel recipe in section 1 only keeps *cloudflared* alive. This keeps
-OneMemory alive: it starts at logon and Task Scheduler restarts it if it exits.
-PowerShell (run once, normal user; adjust the path from `where.exe onememory`):
+Monomem alive: it starts at logon and Task Scheduler restarts it if it exits.
+PowerShell (run once, normal user; adjust the path from `where.exe monomem`):
 
 ```powershell
-$exe = (Get-Command onememory).Source
+$exe = (Get-Command monomem).Source
 $action   = New-ScheduledTaskAction -Execute $exe -Argument "start"
 $trigger  = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
             -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-Register-ScheduledTask -TaskName "OneMemory" -Action $action -Trigger $trigger -Settings $settings
-Start-ScheduledTask -TaskName "OneMemory"
+Register-ScheduledTask -TaskName "Monomem" -Action $action -Trigger $trigger -Settings $settings
+Start-ScheduledTask -TaskName "Monomem"
 ```
 
 Caveats: it starts when you log in, not at raw boot (use NSSM or a service
@@ -530,7 +530,7 @@ small always-on host (a VPS, Fly.io/Railway, or a Raspberry Pi) instead; a
 State is a single SQLite file plus, when at-rest encryption is on, the key.
 
 ```bash
-onememory backup --out ~/om-backup/2026-10-24
+monomem backup --out ~/om-backup/2026-10-24
 ```
 
 - Takes a consistent snapshot with SQLite `VACUUM INTO`, so it is **safe while
@@ -550,13 +550,13 @@ onememory backup --out ~/om-backup/2026-10-24
   `state.db-shm` the copy can be inconsistent.
 - Restore: stop the server, put `state.db` (and `.key` if you use encryption) in
   the data dir, delete any stale `state.db-wal` / `state.db-shm`, start it.
-- Schedule it (systemd timer, cron, or Task Scheduler running `onememory backup
+- Schedule it (systemd timer, cron, or Task Scheduler running `monomem backup
   --out <dated folder>`), and test a restore once.
-- The JSON route (`onememory export --format json`, admin token) is
+- The JSON route (`monomem export --format json`, admin token) is
   independent of the database file format; use both if you like.
 
 Other housekeeping that runs by itself: `audit.log` rotates at 5 MB keeping 5
-files (`ONEMEMORY_AUDIT_MAX_BYTES`, `ONEMEMORY_AUDIT_KEEP`; rotation is locked so several
+files (`MONOMEM_AUDIT_MAX_BYTES`, `MONOMEM_AUDIT_KEEP`; rotation is locked so several
 processes cannot lose lines), and the change log
 is pruned hourly (90-day retention) by the server, not just when the feed is read.
 
@@ -569,7 +569,7 @@ and send nothing until it ends. A proxy that cuts idle responses at 30 seconds
 (common for tunnels and corporate proxies) therefore kills a long wait: measured
 here, `wait=25` returned normally at 25.1s, `wait=55` died at exactly 30.0s behind
 a 30s proxy, and a direct connection or a 60s proxy held 55s. **Use 25.** If a
-wait dies, the symptom is a dropped connection, not an error from OneMemory.
+wait dies, the symptom is a dropped connection, not an error from Monomem.
 Each parked request holds one of 16 slots per token (32 per namespace scope, 64
 per process); when they run out you get a 429 that says which limit it was.
 
@@ -583,21 +583,21 @@ or a service manager and were not run.
 
 ```bash
 node -v                                  # (verified) must print v22.16 or newer
-npm install -g onememory-mcp                 # (not verified here: needs the npm registry)
-onememory start                          # (verified) creates ~/.onememory/.token and state.db, API :8790, MCP :8791
+npm install -g monomem                 # (not verified here: needs the npm registry)
+monomem start                          # (verified) creates ~/.monomem/.token and state.db, API :8790, MCP :8791
 curl localhost:8790/health               # (verified) {"status":"ok"}
-T=$(cat ~/.onememory/.token)             # (verified)
+T=$(cat ~/.monomem/.token)             # (verified)
 curl -s -H "Authorization: Bearer $T" "localhost:8790/changes?since=last&consumer=pc&wait=25"   # (verified) parks, then returns timedOut:true
 curl -s -H "Authorization: Bearer $T" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
   -X POST localhost:8791/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_since","arguments":{"since":"last","consumer":"pc","wait_seconds":25}}}'   # (verified)
-onememory backup --out ~/om-backup       # (verified) hot copy, works while the server runs
-onememory doctor                         # (verified) checks Node, database, token, hook
+monomem backup --out ~/om-backup       # (verified) hot copy, works while the server runs
+monomem doctor                         # (verified) checks Node, database, token, hook
 cloudflared tunnel --url http://localhost:8791   # (not verified here) quick tunnel, TESTING ONLY: the URL changes on restart
 ```
 
 Then: make it a service (section 6), set up a named tunnel and add Cloudflare
-Access (sections 1-2), schedule `onememory backup` (section 7), and run the three
+Access (sections 1-2), schedule `monomem backup` (section 7), and run the three
 auth checks from section 2 against the public URL before you trust it.
 
 Where to host (CAD, check current prices): your own PC with a free Cloudflare

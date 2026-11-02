@@ -1,4 +1,4 @@
-// `onememory uninstall`: --dry-run changes nothing; a full uninstall leaves every config byte-identical to before setup
+// `monomem uninstall`: --dry-run changes nothing; a full uninstall leaves every config byte-identical to before setup
 // (a file setup created is deleted); --purge deletes the data folder only after the final backup worked. Temp HOME only.
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -32,7 +32,7 @@ function sandbox(): { e: SetupEnv; home: string; om: string; gemini: string; cod
     gemini,
     codex: join(home, ".codex", "config.toml"),
     claude: join(home, ".claude", "settings.json"),
-    e: { home, platform: "linux", env: { HOME: home, ONEMEMORY_HOME: om }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "2.0.0", now: () => new Date("2026-10-31T12:00:00Z") },
+    e: { home, platform: "linux", env: { HOME: home, MONOMEM_HOME: om }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "2.0.0", now: () => new Date("2026-10-31T12:00:00Z") },
   };
 }
 const lines: string[] = [];
@@ -56,7 +56,7 @@ function snapshot(dir: string): Record<string, string> {
 async function setUp(s: ReturnType<typeof sandbox>): Promise<void> {
   const o = { ...DEFAULT_OPTIONS, noDoctor: true, noTestNote: true, yes: true, db: join(s.om, "state.db"), only: ["gemini", "codex", "claude-code"], hook: "yes" as const, capture: "yes" as const };
   assert.equal(await runSetup(s.e, io(), o), 0);
-  assert.match(readFileSync(s.gemini, "utf8"), /onememory/);
+  assert.match(readFileSync(s.gemini, "utf8"), /monomem/);
   assert.ok(existsSync(s.codex) && existsSync(s.claude));
 }
 
@@ -78,7 +78,7 @@ describe("uninstall", () => {
     db.close();
     assert.equal(await runUninstall(s.e, io(), opts()), 0);
     const post = snapshot(s.home);
-    for (const f of Object.keys(post)) if (/\.onememory-backup-/.test(f)) delete post[f]; // setup's copies stay unless --purge
+    for (const f of Object.keys(post)) if (/\.monomem-backup-/.test(f)) delete post[f]; // setup's copies stay unless --purge
     assert.deepEqual(post, pre);
     assert.equal(readFileSync(s.gemini, "utf8"), GEMINI);
     assert.ok(!existsSync(s.codex) && !existsSync(s.claude));
@@ -98,7 +98,7 @@ describe("uninstall", () => {
     assert.ok(!existsSync(s.om), "data folder deleted");
     assert.equal(readFileSync(s.gemini, "utf8"), GEMINI);
     assert.deepEqual(readdirSync(dirname(s.gemini)), ["settings.json"], "setup's backup copy deleted too");
-    const bak = join(s.home, "onememory-final-backup-20261031T120000Z");
+    const bak = join(s.home, "monomem-final-backup-20261031T120000Z");
     assert.ok(existsSync(join(bak, "spaces.json")) && existsSync(join(bak, "setup-history.json")));
     const restored = new Store(join(bak, "state.db"));
     assert.equal(restored.list({ limit: 5 }).notes[0].title, "precious");
@@ -109,7 +109,7 @@ describe("uninstall", () => {
     const s = sandbox();
     await setUp(s);
     new Store(join(s.om, "state.db")).close();
-    const bak = join(s.home, "onememory-final-backup-20261031T120000Z");
+    const bak = join(s.home, "monomem-final-backup-20261031T120000Z");
     mkdirSync(bak);
     writeFileSync(join(bak, "state.db"), "in the way"); // backups never overwrite
     assert.equal(await runUninstall(s.e, io(), opts({ purge: true })), 1);
@@ -120,14 +120,14 @@ describe("uninstall", () => {
     const s = sandbox();
     const cur = join(s.home, ".cursor", "mcp.json");
     mkdirSync(dirname(cur), { recursive: true });
-    const mine = '{ "mcpServers": { "onememory": { "command": "mine" } } }\n';
+    const mine = '{ "mcpServers": { "monomem": { "command": "mine" } } }\n';
     writeFileSync(cur, mine);
     mkdirSync(s.om, { recursive: true });
     writeFileSync(join(s.om, "capture-spool.jsonl"), "{}\n");
     lines.length = 0;
     assert.equal(await runUninstall(s.e, io(), opts({ purge: true, noBackup: true })), 0);
     assert.ok(!existsSync(s.om));
-    assert.ok(!readdirSync(s.home).some((f) => f.startsWith("onememory-final-backup")));
+    assert.ok(!readdirSync(s.home).some((f) => f.startsWith("monomem-final-backup")));
     assert.equal(readFileSync(cur, "utf8"), mine);
     assert.ok(lines.some((l) => l.includes("(left alone)") && l.includes(cur)));
   });

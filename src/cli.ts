@@ -1,50 +1,50 @@
 #!/usr/bin/env node
 import "./quiet-sqlite.js"; // first: hide the node:sqlite ExperimentalWarning
-import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as ONEMEMORY_*
+import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as MONOMEM_*
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { setProcessWriter } from "./actor.js";
-// onememory CLI: one command to run, check, or wire up the bridge.
-//   onememory [start]   start the API + dashboard AND MCP-over-HTTP (default)
-//   onememory mcp       start the MCP server over stdio (for Claude Code/Cursor/...)
-//   onememory doctor    check Node, database, and token
-//   onememory init      print the config snippet to wire it into your agent
-//   onememory help      show help
+// monomem CLI: one command to run, check, or wire up the bridge.
+//   monomem [start]   start the API + dashboard AND MCP-over-HTTP (default)
+//   monomem mcp       start the MCP server over stdio (for Claude Code/Cursor/...)
+//   monomem doctor    check Node, database, and token
+//   monomem init      print the config snippet to wire it into your agent
+//   monomem help      show help
 
 function usage(): void {
   console.log(
     [
-      "onememory <command>",
+      "monomem <command>",
       "",
       "  start     Start the API + dashboard AND MCP-over-HTTP (default).",
       "            When: always-on. Local by default (127.0.0.1); to reach it from a phone or claude.ai,",
       "            put your own authenticated tunnel in front of it (see INFRA.md).",
       "  mcp       Start the MCP server over stdio.",
-      "            When: wiring a local agent (Claude Code / Cursor / Copilot). See: onememory init",
+      "            When: wiring a local agent (Claude Code / Cursor / Copilot). See: monomem init",
       "  --version, -v   Print the installed version.",
       "  doctor    Check Node, database, token, namespace config, and the recall hook.",
       "            When: something isn't working, or after changing config.",
-      "  init      Print the config snippet to wire onememory into your agent.",
+      "  init      Print the config snippet to wire monomem into your agent.",
       "            When: you want to see the config before using it, or to copy it by hand.",
       "  uninstall [--dry-run] [--yes] [--purge] [--no-backup]",
-      "            Take OneMemory out of every app setup connected (same as setup --undo, for every setup run).",
+      "            Take Monomem out of every app setup connected (same as setup --undo, for every setup run).",
       "            --purge also deletes the data folder, after a final backup it names (unless --no-backup).",
       "  setup [--dry-run] [--yes] [--only claude-code,claude-desktop,cursor,codex,gemini,muse,vscode,zed] [--project] [--hook|--no-hook] [--capture|--no-capture] [--db <file>] [--undo]",
-      "            Connect onememory to Claude Code / Claude Desktop / Cursor for you. Shows the plan and the exact lines it will",
+      "            Connect monomem to Claude Code / Claude Desktop / Cursor for you. Shows the plan and the exact lines it will",
       "            change, saves a backup of each file first, writes only after you type y. An old \"claude-bridge\" entry is offered",
       "            for migration with your data kept. --dry-run only shows; --undo puts back what it changed.",
-      "            When: first install (npx onememory-mcp setup), or moving from claude-bridge.",
+      "            When: first install (npx monomem setup), or moving from claude-bridge.",
       "  reindex   Backfill semantic embeddings for notes missing them.",
       "            When: after enabling embeddings, or after changing the embedding model.",
       "  recall [--limit 10] [--written-by w] [--not-written-by w] [--include-distrusted]",
       "            SessionStart hook: print recent memory as hook JSON (fail-silent).",
       "            Notes from writers on the distrust list are left out unless --include-distrusted.",
       "            When: wired into Claude Code settings.json. See:",
-      "            https://github.com/calasdan-sketch/onememory/blob/main/docs/sessionstart-hook.md",
+      "            https://github.com/calasdan-sketch/monomem/blob/main/docs/sessionstart-hook.md",
       "  hook <session-start|user-prompt|post-tool|post-tool-failure|stop|subagent-stop|session-end|file-context> [--db <file>]",
       "            Automatic memory: the agent's lifecycle hooks (hook JSON on stdin). Records what the agent does, redacted,",
       "            on this machine only, and distills it into observations and a session summary. Always exits 0.",
-      "            Off switch: ONEMEMORY_CAPTURE=off. When: installed by `onememory setup --capture`.",
+      "            Off switch: MONOMEM_CAPTURE=off. When: installed by `monomem setup --capture`.",
       "            file-context (PreToolUse on Read) lists what memory knows about the file, once per session; it never",
       "            blocks or changes the Read.",
       "  never-show <id> [--undo]",
@@ -76,7 +76,7 @@ function usage(): void {
       "  backup [--out <dir>] [--include-approval-key] [--include-attest-key] | backup --prune-premigration",
       "            Consistent hot copy of the database (works while the server runs)",
       "            into <dir>/state.db, plus a copy of the encryption key (.key) if",
-      "            at-rest encryption is on. Default dir: ~/onememory-backup-<time>.",
+      "            at-rest encryption is on. Default dir: ~/monomem-backup-<time>.",
       "            WARNING: store the key SEPARATELY from the backup; a backup without",
       "            its key is unreadable, and one stored with it is not encrypted.",
       "            --include-attest-key also copies the signing key (.attest-key) so a restore keeps",
@@ -92,7 +92,7 @@ function usage(): void {
       "  watch [--consumer name] [--wait 25] [--namespace ns] [--written-by w] [--not-written-by w] [--include-distrusted] [--exec <program> [args...]]",
       "            Long-poll loop on this store: prints each new change as it happens.",
       "            With --exec, runs <program> (no shell) per batch with the changes as",
-      "            JSON on stdin and ONEMEMORY_CHANGE_COUNT in the environment.",
+      "            JSON on stdin and MONOMEM_CHANGE_COUNT in the environment.",
       "            When: you want a script or notifier to react to a phone/other-session write.",
       "  export --format md --dir <path> [--namespace ns] [--no-prune] [--force] [--include-distrusted]",
       "            Write one Markdown file per note (YAML front-matter) into",
@@ -105,16 +105,16 @@ function usage(): void {
       "  import --file backup.json [--no-dedupe] [--json] [--require-attestation]",
       "            Restore a JSON backup (streamed, so big files are fine). Notes whose attestation verifies against a",
       "            trusted key keep their original writer; everything else is stamped as imported by 'cli' and flagged",
-      "            imported_unverified. --require-attestation (or ONEMEMORY_IMPORT_REQUIRE_ATTESTATION=1) rejects those instead.",
+      "            imported_unverified. --require-attestation (or MONOMEM_IMPORT_REQUIRE_ATTESTATION=1) rejects those instead.",
       "  trust [list | identity | distrust <writer> [--namespace ns|*] | undistrust <writer> [--namespace ns|*]",
       "         | attester-add <public-key> --server-id id [--label text] [--not-after time] [--any-server]",
       "         | attester-remove <key-id> | attester-revoke <key-id> | attester-unrevoke <key-id>",
-      "         | export-key --out file | rotate] [--json]   (onememory trust --help)",
+      "         | export-key --out file | rotate] [--json]   (monomem trust --help)",
       "            The trust policy: writers whose notes are left out of every read (and never run),",
       "            and the other servers whose signed exports an import will believe. See docs/trust.md.",
       "  sync --git <repo-folder> [--remote name] [--encrypt] [--key-file f] [--dry-run] [--no-push] [--yes]",
       "            Keep your notes in step across your own computers through a PRIVATE git repository you own: fetch, merge,",
-      "            three-way merge into the database, write back, commit, push. No OneMemory server. --encrypt seals every",
+      "            three-way merge into the database, write back, commit, push. No Monomem server. --encrypt seals every",
       "            file before it is committed; the key stays on your computers and never goes in the repository.",
       "  import --claude [--dry-run] [--yes] [--update] [--project <folder>[,<folder>]] [--namespace ns] [--include-index]",
       "            Import what Claude Code already remembers: CLAUDE.md files (user, this folder or --project) and auto memory",
@@ -130,13 +130,13 @@ function usage(): void {
       "            reported and the losing version is saved under <dir>/.conflicts/.",
       "            Runs through the memory linter.",
       "  quarantine [list | approve <id> | reject <id>]",
-      "            Review writes the memory linter held (ONEMEMORY_LINT).",
+      "            Review writes the memory linter held (MONOMEM_LINT).",
       "  quality [--json] [--namespace ns]",
       "            What is worth a look: near-duplicates, stale notes with a newer twin, quarantined writes, notes",
       "            the linter flags, and captured rows about to decay. Each comes with the command that fixes it.",
       "  decay [--dry-run] [--namespace ns]",
-      "            Archive (never delete) captured observations idle ONEMEMORY_DECAY_DAYS (30) and summaries idle",
-      "            ONEMEMORY_DECAY_SUMMARY_DAYS (180). Never: your own notes, decisions, anything tagged \"pinned\".",
+      "            Archive (never delete) captured observations idle MONOMEM_DECAY_DAYS (30) and summaries idle",
+      "            MONOMEM_DECAY_SUMMARY_DAYS (180). Never: your own notes, decisions, anything tagged \"pinned\".",
       "            Also runs on its own in the expiry sweep and at the end of a captured session.",
       "  archive <id> | restore <id>",
       "            Soft-archive a note, or bring an archived one back (the undo for decay and archive).",
@@ -147,7 +147,7 @@ function usage(): void {
       "            status   Report whether at-rest encryption is on, the key",
       "                     path, and how many bodies are encrypted.",
       "            disable  Decrypt every body and remove the key file.",
-      "            When: running OneMemory as a shared / multi-agent store.",
+      "            When: running Monomem as a shared / multi-agent store.",
       "            See: docs/encryption-retention.md for the real tradeoffs.",
       "  supersede --old <ids> (--title T --body B [--tags a,b] [--confidence 0-1] | --new-id N)",
       "            Replace one or more notes with a newer one, SAFELY. It first shows exactly what would stop appearing in",
@@ -192,7 +192,7 @@ async function doctor(): Promise<void> {
   const { Store } = await import("./store.js");
   const ok = (m: string) => console.log("  [ok]   " + m);
   const warn = (m: string) => console.log("  [warn] " + m);
-  console.log("onememory doctor\n");
+  console.log("monomem doctor\n");
 
   const { nodeIsOk, MIN_NODE_TEXT, sqliteHasFts5 } = await import("./setup.js");
   if (nodeIsOk(process.versions.node)) {
@@ -210,28 +210,28 @@ async function doctor(): Promise<void> {
 
   const why =
     DATA_DIR_SOURCE === "env"
-      ? "ONEMEMORY_HOME"
+      ? "MONOMEM_HOME"
       : DATA_DIR_SOURCE === "checkout"
-        ? "git checkout with an existing ./data/state.db — kept as-is; set ONEMEMORY_HOME to move it"
+        ? "git checkout with an existing ./data/state.db — kept as-is; set MONOMEM_HOME to move it"
         : "default";
   ok(`data dir ${DATA_DIR} (${why})`);
   const { MAPPED_LEGACY_ENV } = await import("./legacy-env.js");
   if (MAPPED_LEGACY_ENV.length) {
     warn(
-      `old-style setting(s) ${MAPPED_LEGACY_ENV.join(", ")} (from claude-bridge) are being read as ONEMEMORY_*; they still work. ` +
-        "Rename them to ONEMEMORY_* when convenient (`onememory setup` does this for an old claude-bridge entry)."
+      `old-style setting(s) ${MAPPED_LEGACY_ENV.join(", ")} (from claude-bridge) are being read as MONOMEM_*; they still work. ` +
+        "Rename them to MONOMEM_* when convenient (`monomem setup` does this for an old claude-bridge entry)."
     );
   }
   if (insideNodeModules(DB_PATH) || insideNodeModules(DATA_DIR)) {
     warn(
       "your data is inside node_modules — npm update / npx cache cleanup will delete it. " +
-        "Set ONEMEMORY_HOME (or ONEMEMORY_DB_PATH) to a directory outside the package."
+        "Set MONOMEM_HOME (or MONOMEM_DB_PATH) to a directory outside the package."
     );
   }
   if (
     resolvePath(LEGACY_DATA_DIR) !== resolvePath(DATA_DIR) &&
     existsSync(`${LEGACY_DATA_DIR}/state.db`) &&
-    !process.env.ONEMEMORY_DB_PATH
+    !process.env.MONOMEM_DB_PATH
   ) {
     warn(`an old 1.0.x database is still at ${LEGACY_DATA_DIR} (migrated copy is in ${DATA_DIR}); delete it when you're happy`);
   }
@@ -254,7 +254,7 @@ async function doctor(): Promise<void> {
     if (r.total >= 2 && edges === 0) {
       warn(
         "notes but no similarity edges (store created before 1.1?) — run " +
-          "`onememory rebuild-edges` once to link existing notes"
+          "`monomem rebuild-edges` once to link existing notes"
       );
     }
   } catch (e) {
@@ -267,12 +267,12 @@ async function doctor(): Promise<void> {
   for (const b of Store.preMigrationBackups(DB_PATH)) {
     const mb = (b.bytes / 1e6).toFixed(1);
     if (/\.partial(-journal|-wal|-shm)?$/.test(b.path)) {
-      warn(`unfinished pre-upgrade copy ${b.path} (${mb} MB, ${b.age_days} day(s) old): a copy that was interrupted. It is safe to delete (onememory backup --prune-premigration).`);
+      warn(`unfinished pre-upgrade copy ${b.path} (${mb} MB, ${b.age_days} day(s) old): a copy that was interrupted. It is safe to delete (monomem backup --prune-premigration).`);
       continue;
     }
     warn(
       `pre-upgrade copy ${b.path} (${mb} MB, ${b.age_days} day(s) old). It still holds notes you may since have deleted or encrypted. ` +
-        "Keep it until you have checked the upgrade, then remove it: onememory backup --prune-premigration"
+        "Keep it until you have checked the upgrade, then remove it: monomem backup --prune-premigration"
     );
   }
   try {
@@ -298,7 +298,7 @@ async function doctor(): Promise<void> {
       if (scoped.length === 0) {
         warn(
           `${distrustCount} distrust rule(s) exist, but the only token is the primary one, which is always admin: an agent holding it can pass include_distrusted ` +
-            "and read the hidden notes. Give agents a write or read token (ONEMEMORY_TOKENS / tokens.json, see docs/token-namespaces.md) and keep the primary token off them."
+            "and read the hidden notes. Give agents a write or read token (MONOMEM_TOKENS / tokens.json, see docs/token-namespaces.md) and keep the primary token off them."
         );
       } else {
         ok(`${distrustCount} distrust rule(s); ${scoped.length} non-admin token(s) configured (keep the primary admin token off agents)`);
@@ -310,7 +310,7 @@ async function doctor(): Promise<void> {
   try {
     resolveToken();
     ok(
-      `bearer token present (${process.env.ONEMEMORY_TOKEN?.trim() ? "ONEMEMORY_TOKEN" : TOKEN_FILE})`
+      `bearer token present (${process.env.MONOMEM_TOKEN?.trim() ? "MONOMEM_TOKEN" : TOKEN_FILE})`
     );
   } catch (e) {
     warn("token: " + (e as Error).message);
@@ -326,7 +326,7 @@ async function doctor(): Promise<void> {
   } = await import("./namespace.js");
   const nsSource = namespaceConfigSource();
   if (nsSource) {
-    const nsWhere = nsSource === "env" ? "ONEMEMORY_SPACES" : `${DATA_DIR}/spaces.json`;
+    const nsWhere = nsSource === "env" ? "MONOMEM_SPACES" : `${DATA_DIR}/spaces.json`;
     const nsCfg = loadNamespaceConfig();
     if (!nsCfg) {
       warn(`namespace config present (${nsWhere}) but invalid -- resolution disabled`);
@@ -391,21 +391,21 @@ async function doctor(): Promise<void> {
     const entries = parsed?.hooks?.SessionStart;
     const wired =
       Array.isArray(entries) &&
-      /(onememory|cli\.js)[\s\S]{0,60}\b(recall|hook session-start)\b/.test(JSON.stringify(entries));
+      /(monomem|cli\.js)[\s\S]{0,60}\b(recall|hook session-start)\b/.test(JSON.stringify(entries));
     if (wired) {
       ok("SessionStart hook wired in ~/.claude/settings.json");
     } else {
       warn(
-        "~/.claude/settings.json has no onememory SessionStart hook — " +
-          "see https://github.com/calasdan-sketch/onememory/blob/main/docs/sessionstart-hook.md"
+        "~/.claude/settings.json has no monomem SessionStart hook — " +
+          "see https://github.com/calasdan-sketch/monomem/blob/main/docs/sessionstart-hook.md"
       );
     }
-    const captureWired = /(onememory|cli\.js)[\s\S]{0,60}\bhook post-tool\b/.test(JSON.stringify(parsed?.hooks ?? {}));
-    console.log(`  [info] ${captureWired ? "automatic memory hooks wired" : "automatic memory hooks not installed (onememory setup --capture)"}`);
+    const captureWired = /(monomem|cli\.js)[\s\S]{0,60}\bhook post-tool\b/.test(JSON.stringify(parsed?.hooks ?? {}));
+    console.log(`  [info] ${captureWired ? "automatic memory hooks wired" : "automatic memory hooks not installed (monomem setup --capture)"}`);
   } catch {
     warn(
       "~/.claude/settings.json not found or unreadable — hook not installed " +
-        "(see https://github.com/calasdan-sketch/onememory/blob/main/docs/sessionstart-hook.md)"
+        "(see https://github.com/calasdan-sketch/monomem/blob/main/docs/sessionstart-hook.md)"
     );
   }
 
@@ -429,7 +429,7 @@ async function doctor(): Promise<void> {
         s.close();
       }
     }
-    console.log(`  [info] capture: ${set.enabled ? "on" : "off (ONEMEMORY_CAPTURE / capture.json)"}; last event ${last ?? "never"}; spool ${spool} bytes; ${backlog} event(s) not yet distilled`);
+    console.log(`  [info] capture: ${set.enabled ? "on" : "off (MONOMEM_CAPTURE / capture.json)"}; last event ${last ?? "never"}; spool ${spool} bytes; ${backlog} event(s) not yet distilled`);
     if (spool >= SPOOL_MAX_BYTES) warn(`the capture spool is full (${spool} bytes): new events are dropped until a hook can open the database`);
     else if (spool > 0) warn(`${spool} bytes of captured events are waiting in the spool; the next hook that can open the database stores them`);
     if (backlog > DOCTOR_MAX_BACKLOG) {
@@ -447,17 +447,17 @@ async function doctor(): Promise<void> {
 }
 
 async function init(): Promise<void> {
-  // `onememory mcp` (the installed bin), not an absolute path into the
+  // `monomem mcp` (the installed bin), not an absolute path into the
   // package: that path changes on every update / npx cache refresh.
-  console.log("Wire onememory into your agent (local, over stdio):\n");
+  console.log("Wire monomem into your agent (local, over stdio):\n");
   console.log("Claude Code:");
-  console.log("  claude mcp add onememory -- onememory mcp\n");
+  console.log("  claude mcp add monomem -- monomem mcp\n");
   console.log("Claude Desktop / Cursor / Copilot — add to the MCP config:");
   console.log(
-    JSON.stringify({ mcpServers: { onememory: { command: "onememory", args: ["mcp"] } } }, null, 2)
+    JSON.stringify({ mcpServers: { monomem: { command: "monomem", args: ["mcp"] } } }, null, 2)
   );
   console.log(
-    "\nNot installed globally? Use npx instead: command \"npx\", args [\"-y\", \"onememory\", \"mcp\"]."
+    "\nNot installed globally? Use npx instead: command \"npx\", args [\"-y\", \"monomem\", \"mcp\"]."
   );
   console.log("See INSTALL.md for every client, and INFRA.md to reach your phone.");
 }
@@ -471,8 +471,8 @@ async function reindex(): Promise<void> {
 
   if (!embeddingsEnabled()) {
     console.error(
-      "Embeddings are off. Set ONEMEMORY_EMBEDDINGS=on (and, if needed, " +
-        "ONEMEMORY_EMBED_URL / ONEMEMORY_EMBED_MODEL) before reindexing."
+      "Embeddings are off. Set MONOMEM_EMBEDDINGS=on (and, if needed, " +
+        "MONOMEM_EMBED_URL / MONOMEM_EMBED_MODEL) before reindexing."
     );
     return;
   }
@@ -486,7 +486,7 @@ async function reindex(): Promise<void> {
     ? store.exportAll().map((n) => n.id) // gate-ok: local shell command (reindex): the operator owns the database file
     : store.noteIdsMissingVectors();
   console.error(
-    `onememory reindex${all ? " all" : ""}: ${ids.length} note(s) to embed (model ${cfg.model}).`
+    `monomem reindex${all ? " all" : ""}: ${ids.length} note(s) to embed (model ${cfg.model}).`
   );
 
   let done = 0;
@@ -519,7 +519,7 @@ async function recall(): Promise<void> {
     "./recall.js"
   ).catch((e: Error) => {
     console.error(
-      `onememory recall: failed to load recall module (${e.message}); returning empty context`
+      `monomem recall: failed to load recall module (${e.message}); returning empty context`
     );
     return undefined;
   });
@@ -547,7 +547,7 @@ async function recall(): Promise<void> {
       !a.startsWith("--not-written-by") &&
       a !== "--include-distrusted"
     ) {
-      console.error(`onememory recall: unknown option "${a}" ignored`);
+      console.error(`monomem recall: unknown option "${a}" ignored`);
     }
   }
   const numFlag = (name: string, fallback: number): number => {
@@ -557,7 +557,7 @@ async function recall(): Promise<void> {
     if (!Number.isFinite(n) || n <= 0) {
       // --budget-ms 0 (or garbage) used to silently become the default.
       console.error(
-        `onememory recall: ignoring invalid ${name} "${raw}" (using ${fallback})`
+        `monomem recall: ignoring invalid ${name} "${raw}" (using ${fallback})`
       );
       return fallback;
     }
@@ -576,7 +576,7 @@ async function recall(): Promise<void> {
   process.exit(0);
 }
 
-// The capture hooks: `onememory hook <event>` with the agent's hook JSON on stdin. FAIL-OPEN by design (see hook.ts):
+// The capture hooks: `monomem hook <event>` with the agent's hook JSON on stdin. FAIL-OPEN by design (see hook.ts):
 // prints nothing or one valid hook JSON object, and exits 0 whatever happens, including a module that fails to load.
 async function hookCmd(): Promise<void> {
   const event = process.argv[3] ?? "";
@@ -587,7 +587,7 @@ async function hookCmd(): Promise<void> {
     const i = args.indexOf("--db");
     out = await runHook(event, await readStdin(), i >= 0 && args[i + 1] ? { dbPath: args[i + 1] } : {});
   } catch (e) {
-    console.error(`onememory hook: ${(e as Error).message}`);
+    console.error(`monomem hook: ${(e as Error).message}`);
     out = event === "session-start" ? '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":""}}' : "";
   }
   if (out) process.stdout.write(out + "\n", () => process.exit(0));
@@ -707,7 +707,7 @@ async function consolidate(): Promise<void> {
   }
 }
 
-// `onememory relevant "message" [--limit 5] [--namespace ns]`: keyword
+// `monomem relevant "message" [--limit 5] [--namespace ns]`: keyword
 // extraction + permissive search over the local store. Prints the keywords
 // used (transparency) and the matching notes.
 async function relevant(): Promise<void> {
@@ -740,7 +740,7 @@ async function relevant(): Promise<void> {
   }
   const message = parts.join(" ");
   if (!message.trim()) {
-    console.error('Usage: onememory relevant "some natural language message" [--limit 5] [--namespace ns]');
+    console.error('Usage: monomem relevant "some natural language message" [--limit 5] [--namespace ns]');
     process.exit(1);
   }
   const store = new Store(DB_PATH);
@@ -809,7 +809,7 @@ async function rebuildEdges(): Promise<void> {
   const namespace = nsOpts ? nsOpts.namespace : undefined;
   if (nsOpts) {
     console.error(
-      `[onememory] namespace resolution ACTIVE: rebuilding namespace "${namespace}" only`
+      `[monomem] namespace resolution ACTIVE: rebuilding namespace "${namespace}" only`
     );
   }
 
@@ -937,7 +937,7 @@ function parseFlags(
 
 const str = (v: string | true | undefined): string | undefined => (typeof v === "string" ? v : undefined);
 
-// `onememory backup [--out dir]`: hot copy via VACUUM INTO (see backup.ts).
+// `monomem backup [--out dir]`: hot copy via VACUUM INTO (see backup.ts).
 async function backupCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
@@ -962,7 +962,7 @@ async function backupCmd(): Promise<void> {
   // Default in the home folder, never the current one: run inside a repo, a backup (notes + key) there could get committed.
   const { homedir } = await import("node:os");
   const { join } = await import("node:path");
-  const out = str(flags.out) ?? join(homedir(), `onememory-backup-${stamp}`);
+  const out = str(flags.out) ?? join(homedir(), `monomem-backup-${stamp}`);
   const store = new Store(DB_PATH);
   try {
     const r = backupStore(store, DB_PATH, out, {
@@ -998,7 +998,7 @@ async function backupCmd(): Promise<void> {
   }
 }
 
-// `onememory runner-status [--namespace ns] [--json]`
+// `monomem runner-status [--namespace ns] [--json]`
 async function runnerStatusCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
@@ -1040,7 +1040,7 @@ async function runnerStatusCmd(): Promise<void> {
   }
 }
 
-// `onememory watch [--consumer c] [--wait 25] [--namespace ns] [--exec prog args...]`
+// `monomem watch [--consumer c] [--wait 25] [--namespace ns] [--exec prog args...]`
 async function watchCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
@@ -1050,7 +1050,7 @@ async function watchCmd(): Promise<void> {
   const at = argv.indexOf("--exec");
   const exec = at >= 0 ? argv.slice(at + 1) : undefined;
   if (at >= 0 && (!exec || exec.length === 0)) {
-    console.error("--exec needs a program, e.g. --exec notify-send OneMemory");
+    console.error("--exec needs a program, e.g. --exec notify-send Monomem");
     process.exit(1);
   }
   const { flags } = parseFlags(at >= 0 ? argv.slice(0, at) : argv, { values: ["consumer", "wait", "namespace", "written-by", "not-written-by"], bools: ["include-distrusted"] });
@@ -1087,7 +1087,7 @@ async function watchCmd(): Promise<void> {
   }
 }
 
-// `onememory never-show <id> [--undo]`: keep a note out of the session-start context for good (it stays searchable).
+// `monomem never-show <id> [--undo]`: keep a note out of the session-start context for good (it stays searchable).
 async function neverShowCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
@@ -1095,7 +1095,7 @@ async function neverShowCmd(): Promise<void> {
   const args = process.argv.slice(3);
   const id = Number(args.find((a) => !a.startsWith("-")));
   if (!Number.isInteger(id) || id < 1) {
-    console.error("usage: onememory never-show <note id> [--undo]");
+    console.error("usage: monomem never-show <note id> [--undo]");
     process.exit(1);
   }
   const store = new Store(DB_PATH);
@@ -1105,13 +1105,13 @@ async function neverShowCmd(): Promise<void> {
       console.error(`no note with id ${id}`);
       process.exit(1);
     }
-    console.log(args.includes("--undo") ? `#${id} can be shown at session start again` : `#${id} will not be shown at session start again (undo: onememory never-show ${id} --undo)`);
+    console.log(args.includes("--undo") ? `#${id} can be shown at session start again` : `#${id} will not be shown at session start again (undo: monomem never-show ${id} --undo)`);
   } finally {
     store.close();
   }
 }
 
-// `onememory changes`: the change feed over the local store (full local
+// `monomem changes`: the change feed over the local store (full local
 // trust, like every CLI command). Prints every page.
 async function changes(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
@@ -1179,7 +1179,7 @@ async function changes(): Promise<void> {
   }
 }
 
-// `onememory export --format md --dir <path>` / `--format json [--out f]`.
+// `monomem export --format md --dir <path>` / `--format json [--out f]`.
 async function exportCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
@@ -1258,8 +1258,8 @@ async function exportCmd(): Promise<void> {
       return;
     }
     if (format !== "md" || !str(flags.dir)) {
-      console.error("Usage: onememory export --format md --dir <path> [--namespace ns] [--no-prune] [--force] [--include-distrusted]");
-      console.error("       onememory export --format json [--out file] [--attest]");
+      console.error("Usage: monomem export --format md --dir <path> [--namespace ns] [--no-prune] [--force] [--include-distrusted]");
+      console.error("       monomem export --format json [--out file] [--attest]");
       process.exit(1);
     }
     const { exportMarkdown } = await import("./sync.js");
@@ -1275,8 +1275,8 @@ async function exportCmd(): Promise<void> {
     for (const s of r.skipped ?? []) console.error(`skipped     ${s.file} — ${s.detail}`);
     if (r.skipped?.length) {
       console.error(
-        `${r.skipped.length} file(s) were edited outside OneMemory since the last sync and were NOT overwritten. ` +
-          "Run `onememory import` first, or re-run export with --force (the edited files are saved to .conflicts/)."
+        `${r.skipped.length} file(s) were edited outside Monomem since the last sync and were NOT overwritten. ` +
+          "Run `monomem import` first, or re-run export with --force (the edited files are saved to .conflicts/)."
       );
     }
   } finally {
@@ -1284,7 +1284,7 @@ async function exportCmd(): Promise<void> {
   }
 }
 
-// `onememory import --dir <path> [--dry-run]`: merge Markdown files back.
+// `monomem import --dir <path> [--dry-run]`: merge Markdown files back.
 async function importCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store, ValidationError } = await import("./store.js");
@@ -1297,7 +1297,7 @@ async function importCmd(): Promise<void> {
     const { runForeignImport, FOREIGN_SOURCES } = await import("./foreign-import.js");
     const from = str(flags.from) as (typeof FOREIGN_SOURCES)[number];
     if (!FOREIGN_SOURCES.includes(from)) {
-      console.error(`Usage: onememory import --from ${FOREIGN_SOURCES.join("|")} [--path p] [--dry-run] [--yes] [--namespace ns]`);
+      console.error(`Usage: monomem import --from ${FOREIGN_SOURCES.join("|")} [--path p] [--dry-run] [--yes] [--namespace ns]`);
       process.exit(1);
     }
     const { realEnv } = await import("./setup.js");
@@ -1331,13 +1331,13 @@ async function importCmd(): Promise<void> {
   if (str(flags.file)) {
     // Duplicate protection is ON unless --no-dedupe. It used to be `flags["dedupe"] === true`,
     // which passed an explicit `dedupe: false` whenever the flag was absent and so beat the
-    // store default -- `onememory import` twice still doubled every note.
+    // store default -- `monomem import` twice still doubled every note.
     await importJsonFile(str(flags.file)!, flags["no-dedupe"] !== true, flags.json === true, flags["require-attestation"] === true);
     return;
   }
   if (!str(flags.dir)) {
-    console.error("Usage: onememory import --dir <path> [--dry-run] [--allow-move]");
-    console.error("       onememory import --file backup.json [--no-dedupe] [--json] [--require-attestation]");
+    console.error("Usage: monomem import --dir <path> [--dry-run] [--allow-move]");
+    console.error("       monomem import --file backup.json [--no-dedupe] [--json] [--require-attestation]");
     process.exit(1);
   }
   const store = new Store(DB_PATH);
@@ -1375,7 +1375,7 @@ async function importCmd(): Promise<void> {
   }
 }
 
-// `onememory import --file backup.json`: restore a JSON backup (the shape of
+// `monomem import --file backup.json`: restore a JSON backup (the shape of
 // `export --format json` / GET /export). Attestations in it are checked
 // against the trusted attesters; see docs/trust.md.
 async function importJsonFile(file: string, dedupe: boolean, json: boolean, requireAttestation = false): Promise<void> {
@@ -1480,7 +1480,7 @@ async function importJsonFile(file: string, dedupe: boolean, json: boolean, requ
           (imported + (skipped || 0) > 0 || handled > 0
             ? "Nothing is rolled back. Fix the cause and run the SAME command again: notes already imported are skipped (recognised by title, body and created_at, which every export carries) rather than duplicated."
             : "Nothing was written.") +
-          (deferred ? " Run `onememory rebuild-edges` afterwards." : "")
+          (deferred ? " Run `monomem rebuild-edges` afterwards." : "")
       );
       process.exit(1);
     }
@@ -1498,11 +1498,11 @@ async function importJsonFile(file: string, dedupe: boolean, json: boolean, requ
       for (const [why, n] of Object.entries(a.reasons)) console.log(`  ${n} x ${printable(why)}`);
       for (const k of a.untrusted_keys) {
         // key_id / server_id come from the file: shown quoted and stripped of control characters, never as part of a command to paste.
-        console.log(`  key ${printable(k.key_id)} (server ${printable(k.server_id)}) signed ${k.notes} note(s) but is not trusted. To trust it you must get its public key from that server's admin (onememory trust identity there).`);
+        console.log(`  key ${printable(k.key_id)} (server ${printable(k.server_id)}) signed ${k.notes} note(s) but is not trusted. To trust it you must get its public key from that server's admin (monomem trust identity there).`);
       }
     }
-    if (deferred) console.log("The similarity graph was not rebuilt for this large import: run `onememory rebuild-edges` when convenient.");
-    if (total.quarantined.length) console.log(`${total.quarantined.length} note(s) held by the linter (onememory quarantine).`);
+    if (deferred) console.log("The similarity graph was not rebuilt for this large import: run `monomem rebuild-edges` when convenient.");
+    if (total.quarantined.length) console.log(`${total.quarantined.length} note(s) held by the linter (monomem quarantine).`);
     if (total.rejected.length) {
       console.error(`${total.rejected.length} note(s) rejected:`);
       for (const r of total.rejected.slice(0, 200)) console.error(`  ${printable(r.title)}: ${printable(r.error)}`);
@@ -1523,7 +1523,7 @@ async function importJsonFile(file: string, dedupe: boolean, json: boolean, requ
 function trustHelp(): void {
   console.log(
     [
-      "onememory trust: whom this store does not believe.",
+      "monomem trust: whom this store does not believe.",
       "",
       "  trust [list] [--json]                    the distrust list, trusted attesters, recent changes, this server's id",
       "  trust identity [--json]                  this server's id and public key (creates the signing key if needed)",
@@ -1548,7 +1548,7 @@ function trustHelp(): void {
   );
 }
 
-// `onememory trust ...`: the trust policy (docs/trust.md). Local, like every CLI command.
+// `monomem trust ...`: the trust policy (docs/trust.md). Local, like every CLI command.
 async function trustCmd(): Promise<void> {
   const args = process.argv.slice(3);
   if (args.some((a) => a === "--help" || a === "-h") || args[0] === "help") {
@@ -1596,7 +1596,7 @@ async function trustCmd(): Promise<void> {
           console.log(JSON.stringify(out, null, 2));
           return;
         }
-        console.log(`This server: ${identity.server_id}${identity.key_id ? ` (signing key ${identity.key_id})` : " (no signing key yet: `onememory trust identity` creates it)"}`);
+        console.log(`This server: ${identity.server_id}${identity.key_id ? ` (signing key ${identity.key_id})` : " (no signing key yet: `monomem trust identity` creates it)"}`);
         console.log(`Distrusted writers (${out.distrust.length}):`);
         for (const r of out.distrust) console.log(`  [${r.namespace}] ${r.writer}  (added ${r.added_at} by ${r.added_by})`);
         console.log(`Trusted attesters (${out.attesters.length}):`);
@@ -1618,7 +1618,7 @@ async function trustCmd(): Promise<void> {
       case "export-key": {
         const out = str(flags.out);
         if (!out) {
-          console.error("Usage: onememory trust export-key --out <file>");
+          console.error("Usage: monomem trust export-key --out <file>");
           process.exit(1);
         }
         const r = store.exportSigningKey(out!);
@@ -1633,24 +1633,24 @@ async function trustCmd(): Promise<void> {
             (r.old_key_id
               ? `The old PUBLIC key is recorded as a retired key of this server, so exports it signed still verify here. ` +
                 (r.old_key_file ? `The old private key was kept as ${r.old_key_file} (guard it or delete it).` : "The old private key was deleted.") +
-                "\nIf the old key LEAKED, also run: onememory trust attester-revoke " + r.old_key_id + " (and tell your peers to do the same).\n"
+                "\nIf the old key LEAKED, also run: monomem trust attester-revoke " + r.old_key_id + " (and tell your peers to do the same).\n"
               : "") +
             "Running servers and MCP processes pick up the new key at their next signed export; no restart is needed.\n" +
-            `Give the new public key to the peers that verify this server's exports:\n  onememory trust attester-add --public-key ${r.public_key} --server-id ${store.serverId()}\n` +
+            `Give the new public key to the peers that verify this server's exports:\n  monomem trust attester-add --public-key ${r.public_key} --server-id ${store.serverId()}\n` +
             (r.old_key_id ? "A peer keeps believing the old key until it removes it (attester-remove) or revokes it (attester-revoke); not_after only expires trust." : "")
         );
         return;
       }
       case "identity": {
         const i = store.identity();
-        show(i, `server_id:  ${i.server_id}\nkey_id:     ${i.key_id}\npublic_key: ${i.public_key}\n\nGive the public_key (and server_id) to the admin of the server that should believe this server's exports:\n  onememory trust attester-add --public-key ${i.public_key} --server-id ${i.server_id} --label "<name>"`);
+        show(i, `server_id:  ${i.server_id}\nkey_id:     ${i.key_id}\npublic_key: ${i.public_key}\n\nGive the public_key (and server_id) to the admin of the server that should believe this server's exports:\n  monomem trust attester-add --public-key ${i.public_key} --server-id ${i.server_id} --label "<name>"`);
         return;
       }
       case "distrust":
       case "undistrust": {
         const writer = str(flags.writer) ?? rest[1];
         if (!writer) {
-          console.error(`Usage: onememory trust ${action} <writer> --namespace <ns|*>   (writer: a token label or <server_id>/<label>; --writer <w> or -- <w> if it starts with "-")`);
+          console.error(`Usage: monomem trust ${action} <writer> --namespace <ns|*>   (writer: a token label or <server_id>/<label>; --writer <w> or -- <w> if it starts with "-")`);
           process.exit(1);
         }
         const ns = str(flags.namespace);
@@ -1664,7 +1664,7 @@ async function trustCmd(): Promise<void> {
           show(
             { ...r, matched_notes: matched },
             `Distrusting "${r.writer}" in [${r.namespace}]: its notes are now left out of every read and never run (${matched} existing note(s) match` +
-              `${matched === 0 ? " - none yet: check the spelling against the written_by of a note (`onememory recall --include-distrusted`): labels are exact and case-sensitive" : ""}).`
+              `${matched === 0 ? " - none yet: check the spelling against the written_by of a note (`monomem recall --include-distrusted`): labels are exact and case-sensitive" : ""}).`
           );
         } else {
           const removed = store.distrustRemove(ns!, writer);
@@ -1675,7 +1675,7 @@ async function trustCmd(): Promise<void> {
       case "attester-add": {
         const key = str(flags["public-key"]) ?? rest[1];
         if (!key) {
-          console.error("Usage: onememory trust attester-add <public-key> --server-id <id> [--label <text>] [--not-after <ISO time>] [--any-server]   (a key starting with \"-\": --public-key <key>)");
+          console.error("Usage: monomem trust attester-add <public-key> --server-id <id> [--label <text>] [--not-after <ISO time>] [--any-server]   (a key starting with \"-\": --public-key <key>)");
           process.exit(1);
         }
         const r = store.attesterAdd({
@@ -1696,17 +1696,17 @@ async function trustCmd(): Promise<void> {
       case "attester-remove": {
         const id = str(flags["key-id"]) ?? rest[1];
         if (!id) {
-          console.error("Usage: onememory trust attester-remove <key-id>");
+          console.error("Usage: monomem trust attester-remove <key-id>");
           process.exit(1);
         }
         const removed = store.attesterRemove(id);
-        show({ removed }, removed ? `Removed key ${id}.` : `Key ${id} was not on the list (a key set in ONEMEMORY_TRUSTED_ATTESTERS is removed there).`);
+        show({ removed }, removed ? `Removed key ${id}.` : `Key ${id} was not on the list (a key set in MONOMEM_TRUSTED_ATTESTERS is removed there).`);
         return;
       }
       case "attester-revoke": {
         const id = str(flags["key-id"]) ?? rest[1];
         if (!id) {
-          console.error("Usage: onememory trust attester-revoke <key-id> [--reason <text>]");
+          console.error("Usage: monomem trust attester-revoke <key-id> [--reason <text>]");
           process.exit(1);
         }
         const r = store.attesterRevoke(id, str(flags.reason) ?? "");
@@ -1716,7 +1716,7 @@ async function trustCmd(): Promise<void> {
       case "attester-unrevoke": {
         const id = str(flags["key-id"]) ?? rest[1];
         if (!id) {
-          console.error("Usage: onememory trust attester-unrevoke <key-id>");
+          console.error("Usage: monomem trust attester-unrevoke <key-id>");
           process.exit(1);
         }
         const removed = store.attesterUnrevoke(id);
@@ -1738,7 +1738,7 @@ async function trustCmd(): Promise<void> {
   }
 }
 
-// `onememory quarantine [list | approve <id> | reject <id>]`.
+// `monomem quarantine [list | approve <id> | reject <id>]`.
 async function quarantineCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store, ValidationError } = await import("./store.js");
@@ -1765,7 +1765,7 @@ async function quarantineCmd(): Promise<void> {
     }
     const id = Number(idRaw);
     if ((action !== "approve" && action !== "reject") || !Number.isInteger(id)) {
-      console.error("Usage: onememory quarantine [list | approve <id> | reject <id>]");
+      console.error("Usage: monomem quarantine [list | approve <id> | reject <id>]");
       process.exit(1);
     }
     if (action === "reject") {
@@ -1790,7 +1790,7 @@ async function quarantineCmd(): Promise<void> {
   }
 }
 
-// `onememory decay [--dry-run] [--namespace ns]`: archive (never delete) idle captured rows now; --dry-run only lists them.
+// `monomem decay [--dry-run] [--namespace ns]`: archive (never delete) idle captured rows now; --dry-run only lists them.
 async function decayCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store, decayConfig } = await import("./store.js");
@@ -1801,7 +1801,7 @@ async function decayCmd(): Promise<void> {
   try {
     const cfg = decayConfig();
     if (cfg.days === 0) {
-      console.log("Decay is off (ONEMEMORY_DECAY_DAYS=0).");
+      console.log("Decay is off (MONOMEM_DECAY_DAYS=0).");
       return;
     }
     if (flags["dry-run"]) {
@@ -1811,23 +1811,23 @@ async function decayCmd(): Promise<void> {
         return;
       }
       for (const r of rows) console.log(`#${r.id} [${r.namespace}] ${r.obs_type || r.kind}: ${r.title}  (idle ${r.idleDays} days)`);
-      console.log(`${rows.length} row(s) would be archived. Run \`onememory decay\` to archive them; \`onememory restore <id>\` brings one back.`);
+      console.log(`${rows.length} row(s) would be archived. Run \`monomem decay\` to archive them; \`monomem restore <id>\` brings one back.`);
       return;
     }
     const n = store.sweepDecay(Date.now(), namespaces);
-    console.log(`Archived ${n} idle captured row(s). Nothing was deleted: \`onememory restore <id>\` brings one back.`);
+    console.log(`Archived ${n} idle captured row(s). Nothing was deleted: \`monomem restore <id>\` brings one back.`);
   } finally {
     store.close();
   }
 }
 
-// `onememory archive <id>` / `onememory restore <id>`: the same soft archive and restore as POST /notes/:id/archive|restore.
+// `monomem archive <id>` / `monomem restore <id>`: the same soft archive and restore as POST /notes/:id/archive|restore.
 async function archiveCmd(action: "archive" | "restore"): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store, ValidationError } = await import("./store.js");
   const id = Number(process.argv[3]);
   if (!Number.isInteger(id)) {
-    console.error(`Usage: onememory ${action} <id>`);
+    console.error(`Usage: monomem ${action} <id>`);
     process.exit(1);
   }
   const store = new Store(DB_PATH);
@@ -1838,7 +1838,7 @@ async function archiveCmd(action: "archive" | "restore"): Promise<void> {
       process.exit(1);
     }
     const note = action === "archive" ? store.archive(id) : store.restore(id);
-    console.log(`${action === "archive" ? "Archived" : "Restored"} #${id} "${note?.title}".${action === "archive" ? ` Undo: onememory restore ${id}` : ""}`);
+    console.log(`${action === "archive" ? "Archived" : "Restored"} #${id} "${note?.title}".${action === "archive" ? ` Undo: monomem restore ${id}` : ""}`);
   } catch (e) {
     if (e instanceof ValidationError) {
       console.error(`Error: ${e.message}`);
@@ -1850,7 +1850,7 @@ async function archiveCmd(action: "archive" | "restore"): Promise<void> {
   }
 }
 
-// `onememory quality [--json] [--namespace ns]`: what in the store is worth a look, with the command that fixes each.
+// `monomem quality [--json] [--namespace ns]`: what in the store is worth a look, with the command that fixes each.
 async function qualityCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
@@ -1879,7 +1879,7 @@ async function qualityCmd(): Promise<void> {
 }
 
 /**
- * `onememory encrypt <enable|status|disable>` -- at-rest body encryption.
+ * `monomem encrypt <enable|status|disable>` -- at-rest body encryption.
  *
  * enable  creates the AES-256-GCM key (if absent) and encrypts every
  *         plaintext body in place. disable decrypts them and removes the key.
@@ -1893,13 +1893,13 @@ async function encryptCmd(): Promise<void> {
   const { dirname } = await import("node:path");
   const { existsSync, renameSync, rmSync } = await import("node:fs");
   // ONE key resolver: the same directory the Store itself looks in (beside
-  // the database), so ONEMEMORY_DB_PATH pointing elsewhere cannot split the
+  // the database), so MONOMEM_DB_PATH pointing elsewhere cannot split the
   // key from the data.
   const keyDir = dirname(DB_PATH);
   const [action] = process.argv.slice(3);
 
   if (action !== "enable" && action !== "status" && action !== "disable") {
-    console.error("Usage: onememory encrypt <enable|status|disable>");
+    console.error("Usage: monomem encrypt <enable|status|disable>");
     process.exit(1);
   }
 
@@ -1942,7 +1942,7 @@ async function encryptCmd(): Promise<void> {
         console.log(
           `WARNING: ${copies.length} pre-upgrade copy(ies) of this database exist and were made BEFORE encryption, so their note bodies are PLAINTEXT:\n` +
             copies.map((c) => `         ${c.path}`).join("\n") +
-            "\n         Remove them once you are happy with the upgrade: onememory backup --prune-premigration"
+            "\n         Remove them once you are happy with the upgrade: monomem backup --prune-premigration"
         );
       }
     } finally {
@@ -1986,7 +1986,7 @@ async function encryptCmd(): Promise<void> {
   console.log("Key file removed. Keyword search again covers full body text.");
 }
 
-/** `onememory supersede ...` and `onememory history ...` (see supersede-cli.ts). */
+/** `monomem supersede ...` and `monomem history ...` (see supersede-cli.ts). */
 async function supersedeCmd(kind: "supersede" | "history"): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
@@ -2031,14 +2031,14 @@ function terminalIO(): import("./setup.js").SetupIO {
   };
 }
 
-// `onememory sync --git <repo>`: see sync-git.ts.
+// `monomem sync --git <repo>`: see sync-git.ts.
 async function syncCmd(): Promise<void> {
   const { flags } = parseFlags(process.argv.slice(3), {
     values: ["git", "remote", "key-file"],
     bools: ["encrypt", "dry-run", "no-push", "yes"],
   });
   if (!str(flags.git)) {
-    console.error("Usage: onememory sync --git <repo-folder> [--remote name] [--encrypt] [--key-file f] [--dry-run] [--no-push] [--yes]");
+    console.error("Usage: monomem sync --git <repo-folder> [--remote name] [--encrypt] [--key-file f] [--dry-run] [--no-push] [--yes]");
     process.exit(1);
   }
   const { DB_PATH, DATA_DIR } = await import("./config.js");
@@ -2058,7 +2058,7 @@ async function syncCmd(): Promise<void> {
   });
 }
 
-// `onememory setup`: see setup.ts.
+// `monomem setup`: see setup.ts.
 async function setupCmd(): Promise<void> {
   const { runSetup, realEnv, DEFAULT_OPTIONS } = await import("./setup.js");
   const { flags } = parseFlags(process.argv.slice(3), {
@@ -2097,7 +2097,7 @@ async function setupCmd(): Promise<void> {
   });
 }
 
-// `onememory uninstall`: see uninstall.ts.
+// `monomem uninstall`: see uninstall.ts.
 async function uninstallCmd(): Promise<void> {
   const { realEnv } = await import("./setup.js");
   const { runUninstall } = await import("./uninstall.js");
@@ -2132,7 +2132,7 @@ async function main(): Promise<void> {
     const { nodeIsOk, MIN_NODE_TEXT } = await import("./setup.js");
     if (!nodeIsOk(process.versions.node)) {
       console.error(
-        `OneMemory needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${process.versions.node}.\n` +
+        `Monomem needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${process.versions.node}.\n` +
           "  Fix: install Node 22.16+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n" +
           "  Nothing was changed. (Can't upgrade Node? Docker works too: see INSTALL.md.)"
       );
@@ -2152,7 +2152,7 @@ async function main(): Promise<void> {
   if (!dry && !["help", "--help", "-h", "init", "bench", "setup", "uninstall", "hook"].includes(cmd)) (await import("./config.js")).prepareDataDir();
   // Fixed writer marker for notes this process writes with no token behind
   // them (written_by): the long-running server's own jobs, the stdio MCP
-  // server, or an `onememory ...` command run by the machine owner.
+  // server, or an `monomem ...` command run by the machine owner.
   setProcessWriter(
     cmd === "start" || cmd === "serve" ? "server" : cmd === "mcp" || cmd === "mcp:stdio" ? "stdio" : cmd === "hook" ? "capture" : "cli"
   );
@@ -2247,7 +2247,7 @@ async function main(): Promise<void> {
     case "bench": {
       const args = process.argv.slice(3);
       if (args.includes("--longmemeval") || args.includes("--locomo")) {
-        // Imported before anything loads config.js: it moves ONEMEMORY_HOME to a temp folder first.
+        // Imported before anything loads config.js: it moves MONOMEM_HOME to a temp folder first.
         const { retrievalMain } = await import("./bench/retrieval.js");
         process.exitCode = await retrievalMain(args);
         break;

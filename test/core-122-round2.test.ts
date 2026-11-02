@@ -29,12 +29,12 @@ let dir: string;
 let savedKeyFile: string | undefined;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "om-core122-"));
-  savedKeyFile = process.env.ONEMEMORY_KEY_FILE;
-  delete process.env.ONEMEMORY_KEY_FILE;
+  savedKeyFile = process.env.MONOMEM_KEY_FILE;
+  delete process.env.MONOMEM_KEY_FILE;
 });
 afterEach(() => {
-  if (savedKeyFile === undefined) delete process.env.ONEMEMORY_KEY_FILE;
-  else process.env.ONEMEMORY_KEY_FILE = savedKeyFile;
+  if (savedKeyFile === undefined) delete process.env.MONOMEM_KEY_FILE;
+  else process.env.MONOMEM_KEY_FILE = savedKeyFile;
   rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
@@ -79,7 +79,7 @@ describe("1: key stranded by a crashed `encrypt disable`", () => {
     s.close();
     renameSync(join(dir, ".key"), join(dir, `.key.disabling-${DEAD_PID}`));
     const r = spawnSync(process.execPath, ["--no-warnings", CLI, "encrypt", "disable"], {
-      env: { ...process.env, ONEMEMORY_HOME: dir, HOME: dir },
+      env: { ...process.env, MONOMEM_HOME: dir, HOME: dir },
       encoding: "utf8",
     });
     assert.equal(r.status, 0, r.stderr + r.stdout);
@@ -188,12 +188,12 @@ describe("4: auth tarpit", () => {
   });
 
   test("REST: wrong tokens get slower, a valid token is never delayed", async () => {
-    const prev = process.env.ONEMEMORY_TARPIT_STEP_MS;
-    process.env.ONEMEMORY_TARPIT_STEP_MS = "60";
+    const prev = process.env.MONOMEM_TARPIT_STEP_MS;
+    process.env.MONOMEM_TARPIT_STEP_MS = "60";
     const store = new Store(join(dir, "state.db"));
     const server = createApiServer(store, [{ token: TOK, scope: "admin", label: "r" }]);
-    if (prev === undefined) delete process.env.ONEMEMORY_TARPIT_STEP_MS;
-    else process.env.ONEMEMORY_TARPIT_STEP_MS = prev;
+    if (prev === undefined) delete process.env.MONOMEM_TARPIT_STEP_MS;
+    else process.env.MONOMEM_TARPIT_STEP_MS = prev;
     await new Promise<void>((r) => server.listen(0, r));
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     try {
@@ -220,7 +220,7 @@ describe("4: auth tarpit", () => {
 describe("5: low items", () => {
   test("stdio ignores blank / whitespace-only lines (still answers real parse errors)", async () => {
     const child = spawn(process.execPath, ["--no-warnings", STDIO], {
-      env: { ...process.env, ONEMEMORY_HOME: dir, HOME: dir },
+      env: { ...process.env, MONOMEM_HOME: dir, HOME: dir },
       stdio: ["pipe", "pipe", "ignore"],
     });
     try {
@@ -249,7 +249,7 @@ describe("5: low items", () => {
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 5}`);
     db.close();
     const r = spawnSync(process.execPath, ["--no-warnings", CLI, "doctor"], {
-      env: { ...process.env, ONEMEMORY_HOME: dir, HOME: dir },
+      env: { ...process.env, MONOMEM_HOME: dir, HOME: dir },
       encoding: "utf8",
     });
     const out = r.stdout + r.stderr;

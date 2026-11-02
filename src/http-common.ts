@@ -23,10 +23,10 @@ export class PayloadTooLargeError extends Error {}
  * is not a backup, so restore gets a cap sized for months of notes.
  *
  * Still finite: an unbounded request body is a memory-exhaustion vector, and
- * /import is admin-scoped. Override with ONEMEMORY_IMPORT_MAX_BYTES.
+ * /import is admin-scoped. Override with MONOMEM_IMPORT_MAX_BYTES.
  */
 export const IMPORT_BODY_BYTES = (() => {
-  const raw = process.env.ONEMEMORY_IMPORT_MAX_BYTES;
+  const raw = process.env.MONOMEM_IMPORT_MAX_BYTES;
   const n = raw ? Number(raw) : NaN;
   // Default 256MB; clamp to [1MB, 2GB] so a typo can't disable it entirely.
   if (!Number.isFinite(n)) return 256 * 1024 * 1024;
@@ -77,13 +77,13 @@ export function exitOnListenError(server: Server, port: number, envVar: string, 
   return server.on("error", (e: NodeJS.ErrnoException) => {
     if (e.code === "EADDRINUSE") {
       console.error(
-        `[onememory] ${what} port ${port} is already in use -- is OneMemory (or something else) already running? ` +
+        `[monomem] ${what} port ${port} is already in use -- is Monomem (or something else) already running? ` +
           `Stop it, or pick another port with ${envVar}=<port>.`
       );
     } else if (e.code === "EACCES") {
-      console.error(`[onememory] no permission to listen on ${what} port ${port}; pick another with ${envVar}=<port>.`);
+      console.error(`[monomem] no permission to listen on ${what} port ${port}; pick another with ${envVar}=<port>.`);
     } else {
-      console.error(`[onememory] ${what} server failed to listen on port ${port}: ${e.message}`);
+      console.error(`[monomem] ${what} server failed to listen on port ${port}: ${e.message}`);
     }
     process.exit(1);
   });

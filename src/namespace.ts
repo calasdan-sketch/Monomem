@@ -9,7 +9,7 @@
 // resolved namespace plus any namespaces it has been granted read access to.
 //
 // The feature is strictly opt-in and fail-open: if no namespace config is
-// present (neither ONEMEMORY_SPACES nor <data dir>/spaces.json), everything behaves
+// present (neither MONOMEM_SPACES nor <data dir>/spaces.json), everything behaves
 // exactly as before -- model-supplied namespaces keep working. Resolution
 // only activates when configured.
 
@@ -42,15 +42,15 @@ export interface ServerNamespaceOpts {
   /** One-directional read grants, as in NamespaceConfig.reads_from. */
   readsFrom?: Record<string, string[]>;
   /**
-   * Which MCP tools to register, overriding ONEMEMORY_TOOLS. `"all"` registers
+   * Which MCP tools to register, overriding MONOMEM_TOOLS. `"all"` registers
    * every tool. Used by the benchmark harness, which measures the whole
    * surface and must not depend on the ambient environment.
    */
   tools?: "all" | readonly string[];
 }
 
-const SPACES_ENV = "ONEMEMORY_SPACES";
-const SPACE_OVERRIDE_ENV = "ONEMEMORY_SPACE";
+const SPACES_ENV = "MONOMEM_SPACES";
+const SPACE_OVERRIDE_ENV = "MONOMEM_SPACE";
 
 /**
  * How paths compare on a platform. Windows and macOS filesystems are
@@ -118,7 +118,7 @@ function canonicalDir(dir: string, f: PathFlavor): string {
  * `opts.platform` overrides the host platform (tests).
  *
  * Resolution order:
- *   1. ONEMEMORY_SPACE env var, if set and non-empty -- the explicit
+ *   1. MONOMEM_SPACE env var, if set and non-empty -- the explicit
  *      operator override always wins.
  *   2. The longest matching path pattern in cfg.spaces (compared by
  *      normalized pattern length, longest first).
@@ -156,7 +156,7 @@ export function resolveNamespace(
   for (const m of matches.slice(1)) {
     if (m.length === top.length && m.namespace !== top.namespace) {
       throw new Error(
-        `onememory namespace overlap: "${m.pattern}" and "${top.pattern}" both match ` +
+        `monomem namespace overlap: "${m.pattern}" and "${top.pattern}" both match ` +
           `"${cwd}" at equal depth but map to different namespaces ` +
           `("${m.namespace}" vs "${top.namespace}"). Disambiguate the spaces config.`
       );
@@ -196,7 +196,7 @@ export function namespaceConfigSource(): "env" | "file" | null {
 }
 
 /**
- * Load the namespace config: ONEMEMORY_SPACES (a JSON string) wins if set,
+ * Load the namespace config: MONOMEM_SPACES (a JSON string) wins if set,
  * otherwise <data dir>/spaces.json. Returns null when neither is present (feature
  * disabled -- legacy behavior). Invalid JSON or an invalid shape is logged
  * LOUDLY and returns null (fail-open to legacy behavior, never a silent
@@ -212,13 +212,13 @@ export function loadNamespaceConfig(): NamespaceConfig | null {
     parsed = JSON.parse(text);
   } catch {
     // eslint-disable-next-line no-console
-    console.error(`[onememory] ignoring namespace config (${where}): not valid JSON`);
+    console.error(`[monomem] ignoring namespace config (${where}): not valid JSON`);
     return null;
   }
   if (!isNamespaceConfig(parsed)) {
     // eslint-disable-next-line no-console
     console.error(
-      `[onememory] ignoring namespace config (${where}): expected ` +
+      `[monomem] ignoring namespace config (${where}): expected ` +
         `{ "spaces": { "<dir>": "<namespace>" }, "default_namespace": "<namespace>", ` +
         `"reads_from": { "<namespace>": ["<namespace>"] } }`
     );
@@ -272,7 +272,7 @@ export function canRead(
 
 /**
  * Configured space directory patterns (trailing `*` stripped) that do not
- * exist on disk -- surfaced by `onememory doctor` as warnings, since a
+ * exist on disk -- surfaced by `monomem doctor` as warnings, since a
  * space pointing at a missing directory usually means a typo or a path
  * that only exists on another machine.
  */

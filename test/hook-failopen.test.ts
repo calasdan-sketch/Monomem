@@ -1,4 +1,4 @@
-// `onememory hook <event>` is fail-open: whatever goes wrong it exits 0, prints nothing or one valid hook JSON object,
+// `monomem hook <event>` is fail-open: whatever goes wrong it exits 0, prints nothing or one valid hook JSON object,
 // and keeps the (redacted) event in the spool instead of losing it or blocking the agent.
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -15,7 +15,7 @@ const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.js")
 const SECRET = "AKIAIOSFODNN7EXAMPLE";
 
 function hook(home: string, event: string, stdin: string, env: Record<string, string> = {}) {
-  return spawnSync(process.execPath, [CLI, "hook", event], { input: stdin, env: { ...process.env, ONEMEMORY_HOME: home, ...env }, encoding: "utf8", timeout: 20_000 });
+  return spawnSync(process.execPath, [CLI, "hook", event], { input: stdin, env: { ...process.env, MONOMEM_HOME: home, ...env }, encoding: "utf8", timeout: 20_000 });
 }
 const payload = (o: Record<string, unknown> = {}): string =>
   JSON.stringify({ session_id: "sess-1", cwd: "C:/work/app", tool_name: "Bash", tool_input: { command: `echo ${SECRET}` }, tool_response: { stdout: "ok" }, ...o });
@@ -115,14 +115,14 @@ describe("hook fail-open", () => {
     }
   });
 
-  test("ONEMEMORY_CAPTURE=off records nothing; session-start still answers", () => {
+  test("MONOMEM_CAPTURE=off records nothing; session-start still answers", () => {
     const home = mkdtempSync(join(tmpdir(), "om-hook-o-"));
     try {
       new Store(join(home, "state.db")).close();
-      assert.equal(hook(home, "post-tool", payload(), { ONEMEMORY_CAPTURE: "off" }).status, 0);
+      assert.equal(hook(home, "post-tool", payload(), { MONOMEM_CAPTURE: "off" }).status, 0);
       writeFileSync(join(home, "capture.json"), JSON.stringify({ capture: "off" }));
       assert.equal(hook(home, "post-tool", payload()).status, 0);
-      const s = hook(home, "session-start", payload(), { ONEMEMORY_CAPTURE: "off" });
+      const s = hook(home, "session-start", payload(), { MONOMEM_CAPTURE: "off" });
       assert.match(s.stdout, /SessionStart/);
       const raw = new DatabaseSync(join(home, "state.db"), { readOnly: true });
       assert.equal((raw.prepare("SELECT COUNT(*) AS n FROM capture_events").get() as { n: number }).n, 0);

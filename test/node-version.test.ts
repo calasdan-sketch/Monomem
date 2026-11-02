@@ -1,11 +1,11 @@
-// Which Node versions OneMemory accepts.
+// Which Node versions Monomem accepts.
 //
 // TWO capabilities are needed and they arrived at different times, so a single
 // ">= x.y" rule is wrong:
 //
 //   1. `node:sqlite` importable with no flag -- notes are stored through it.
 //      src/config.ts imports it at the top level, so a miss is a load-time
-//      crash: ERR_UNKNOWN_BUILTIN_MODULE, before any OneMemory code runs.
+//      crash: ERR_UNKNOWN_BUILTIN_MODULE, before any Monomem code runs.
 //   2. SQLite built WITH FTS5 -- every search goes through an FTS5 table, so a
 //      miss is ERR_SQLITE_ERROR "no such module: fts5" on the first query.
 //

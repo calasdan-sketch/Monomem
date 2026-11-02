@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { applyOps, getPath, JsonEditError, parseDoc, removeArrayItem, detectEol, detectIndent, isStrictJson } from "../src/jsonc-edit.js";
 
 const ENTRY = { command: "node", args: ["C:\\Program Files\\x\\cli.js", "mcp"], env: { A: "1" } };
-const SET = [{ op: "set" as const, path: ["mcpServers"], key: "onememory", value: ENTRY }];
+const SET = [{ op: "set" as const, path: ["mcpServers"], key: "monomem", value: ENTRY }];
 
 function servers(text: string): Record<string, unknown> {
   return (JSON.parse(text.replace(/^\uFEFF/, "")) as { mcpServers: Record<string, unknown> }).mcpServers;
@@ -16,7 +16,7 @@ describe("jsonc-edit: what it must not change", () => {
     const after = applyOps(before, SET);
     assert.ok(after.startsWith('{\n  "numStartups": 12,\n  "mcpServers": {\n    "other": { "command": "x" },\n'));
     assert.ok(after.endsWith('  },\n  "tail": [1, 2,   3]\n}\n'));
-    assert.deepEqual(Object.keys(servers(after)), ["other", "onememory"]);
+    assert.deepEqual(Object.keys(servers(after)), ["other", "monomem"]);
   });
 
   test("numbers keep the way they were written (1.0, huge ids)", () => {
@@ -39,7 +39,7 @@ describe("jsonc-edit: what it must not change", () => {
   test("trailing commas are respected, not turned into errors", () => {
     const before = '{\n  "mcpServers": {\n    "a": { "command": "x" },\n  },\n}\n';
     const after = applyOps(before, SET);
-    assert.ok(after.includes('"onememory"'));
+    assert.ok(after.includes('"monomem"'));
     assert.ok(parseDoc(after));
   });
 
@@ -54,43 +54,43 @@ describe("jsonc-edit: what it must not change", () => {
     const before = '\uFEFF{\n  "mcpServers": {}\n}\n';
     const after = applyOps(before, SET);
     assert.equal(after.charCodeAt(0), 0xfeff);
-    assert.deepEqual(Object.keys(servers(after)), ["onememory"]);
+    assert.deepEqual(Object.keys(servers(after)), ["monomem"]);
   });
 
   test("tabs stay tabs, four spaces stay four spaces", () => {
     assert.equal(detectIndent('{\n\t"a": 1\n}'), "\t");
     assert.equal(detectIndent('{\n    "a": 1\n}'), "    ");
     const tabbed = applyOps('{\n\t"mcpServers": {\n\t\t"a": 1\n\t}\n}\n', SET);
-    assert.ok(/\n\t\t"onememory": \{\n\t\t\t"command"/.test(tabbed));
+    assert.ok(/\n\t\t"monomem": \{\n\t\t\t"command"/.test(tabbed));
     const four = applyOps('{\n    "mcpServers": {\n        "a": 1\n    }\n}\n', SET);
-    assert.ok(/\n        "onememory": \{\n            "command"/.test(four));
+    assert.ok(/\n        "monomem": \{\n            "command"/.test(four));
   });
 
   test("a one-line file stays valid", () => {
     const after = applyOps('{"mcpServers":{"a":{"command":"x"}},"z":1}', SET);
-    assert.deepEqual(Object.keys(servers(after)), ["a", "onememory"]);
+    assert.deepEqual(Object.keys(servers(after)), ["a", "monomem"]);
     assert.equal((JSON.parse(after) as { z: number }).z, 1);
   });
 
   test("a missing, empty or whitespace-only file becomes a valid config", () => {
     for (const before of ["", "  \n", "{}", "{\n}\n"]) {
       const after = applyOps(before, SET);
-      assert.deepEqual(servers(after).onememory, ENTRY);
+      assert.deepEqual(servers(after).monomem, ENTRY);
     }
   });
 
   test("a missing mcpServers object is created at the top level", () => {
     const after = applyOps('{\n  "theme": "dark"\n}\n', SET);
     assert.equal((JSON.parse(after) as { theme: string }).theme, "dark");
-    assert.deepEqual(servers(after).onememory, ENTRY);
+    assert.deepEqual(servers(after).monomem, ENTRY);
   });
 
   test("a nested path (a project's own servers) is created when missing", () => {
     const before = '{ "projects": { "/p": { "allowedTools": [] } } }';
-    const after = applyOps(before, [{ op: "set", path: ["projects", "/p", "mcpServers"], key: "onememory", value: ENTRY }]);
+    const after = applyOps(before, [{ op: "set", path: ["projects", "/p", "mcpServers"], key: "monomem", value: ENTRY }]);
     const j = JSON.parse(after) as { projects: Record<string, { allowedTools: unknown[]; mcpServers: Record<string, unknown> }> };
     assert.deepEqual(j.projects["/p"].allowedTools, []);
-    assert.deepEqual(j.projects["/p"].mcpServers.onememory, ENTRY);
+    assert.deepEqual(j.projects["/p"].mcpServers.monomem, ENTRY);
   });
 
   test("keys with odd characters and escapes survive", () => {
@@ -122,9 +122,9 @@ describe("jsonc-edit: removing and renaming", () => {
 
   test("renaming keeps the position and replaces the value", () => {
     const before = '{\n  "mcpServers": {\n    "a": 1,\n    "old": { "command": "n" },\n    "c": 3\n  }\n}\n';
-    const after = applyOps(before, [{ op: "rename", path: ["mcpServers"], key: "old", newKey: "onememory", value: ENTRY }]);
-    assert.deepEqual(Object.keys(servers(after)), ["a", "onememory", "c"]);
-    assert.deepEqual(servers(after).onememory, ENTRY);
+    const after = applyOps(before, [{ op: "rename", path: ["mcpServers"], key: "old", newKey: "monomem", value: ENTRY }]);
+    assert.deepEqual(Object.keys(servers(after)), ["a", "monomem", "c"]);
+    assert.deepEqual(servers(after).monomem, ENTRY);
   });
 
   test("renaming onto an existing name is refused", () => {
@@ -133,8 +133,8 @@ describe("jsonc-edit: removing and renaming", () => {
 
   test("a rename can be reversed to give back the original value", () => {
     const before = '{"mcpServers": {"claude-bridge": {"command": "n"}}}';
-    const fwd = applyOps(before, [{ op: "rename", path: ["mcpServers"], key: "claude-bridge", newKey: "onememory", value: ENTRY }]);
-    const back = applyOps(fwd, [{ op: "rename", path: ["mcpServers"], key: "onememory", newKey: "claude-bridge", value: { command: "n" } }]);
+    const fwd = applyOps(before, [{ op: "rename", path: ["mcpServers"], key: "claude-bridge", newKey: "monomem", value: ENTRY }]);
+    const back = applyOps(fwd, [{ op: "rename", path: ["mcpServers"], key: "monomem", newKey: "claude-bridge", value: { command: "n" } }]);
     assert.deepEqual(JSON.parse(back), JSON.parse(before));
   });
 });
@@ -178,7 +178,7 @@ describe("jsonc-edit: refusing what it cannot place", () => {
     assert.throws(() => applyOps('{"mcpServers": []}', SET), /not an object/);
   });
   test("the same key twice in the object we edit is refused", () => {
-    assert.throws(() => applyOps('{"mcpServers": {"onememory": 1, "onememory": 2}}', SET), /more than once/);
+    assert.throws(() => applyOps('{"mcpServers": {"monomem": 1, "monomem": 2}}', SET), /more than once/);
   });
   test("text after the document is refused", () => {
     assert.throws(() => parseDoc('{"a":1} x'), JsonEditError);
@@ -206,9 +206,9 @@ describe("jsonc-edit: a real-sized ~/.claude.json", () => {
     const t0 = Date.now();
     const out = applyOps(text, SET);
     assert.ok(Date.now() - t0 < 5000, `took ${Date.now() - t0} ms`);
-    assert.equal(out.length - text.length, out.indexOf('"onememory"') > 0 ? out.length - text.length : 0);
-    assert.equal(JSON.stringify(Object.keys(servers(out))), '["a","onememory"]');
-    const back = applyOps(out, [{ op: "remove", path: ["mcpServers"], key: "onememory" }]);
+    assert.equal(out.length - text.length, out.indexOf('"monomem"') > 0 ? out.length - text.length : 0);
+    assert.equal(JSON.stringify(Object.keys(servers(out))), '["a","monomem"]');
+    const back = applyOps(out, [{ op: "remove", path: ["mcpServers"], key: "monomem" }]);
     assert.equal(back, text, "adding then removing gives the original text back exactly");
   });
 });

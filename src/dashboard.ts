@@ -9,7 +9,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>onememory</title>
+<title>monomem</title>
 <style>
   :root{--bg:#0c0f16;--panel:#141926;--line:#232a3b;--ink:#e8ecf5;--dim:#93a0bd;
     --accent:#4f8cff;--danger:#ff5d6c;--ok:#35d0a5}
@@ -61,10 +61,10 @@ export const DASHBOARD_HTML = `<!doctype html>
   <button class="ghost" onclick="toggleNew()">+ New</button>
   <button class="ghost" onclick="load()">Refresh</button>
   <button class="ghost" onclick="loadChanges()" title="What changed in the last 24 hours">Changes</button>
-  <button class="ghost" onclick="loadSessions()" title="Agent sessions OneMemory recorded, each with its timeline">Sessions</button>
+  <button class="ghost" onclick="loadSessions()" title="Agent sessions Monomem recorded, each with its timeline">Sessions</button>
   <button class="ghost" onclick="loadReview()" title="Notes written by agents that you have not looked at yet">Review</button>
   <button class="ghost" onclick="loadQuality()" title="Duplicates, stale twins, held writes, linter findings and rows about to decay (admin token)">Quality</button>
-  <button class="ghost" onclick="loadMeter()" title="What OneMemory costs you: tokens injected and saved, local-model tokens, database size">Meter</button>
+  <button class="ghost" onclick="loadMeter()" title="What Monomem costs you: tokens injected and saved, local-model tokens, database size">Meter</button>
   <label class="chk" title="Also show notes written by writers an admin distrusts (marked DISTRUSTED)"><input type="checkbox" id="inc" onchange="load()"> distrusted</label>
 </header>
 <main>
@@ -94,8 +94,8 @@ export const DASHBOARD_HTML = `<!doctype html>
 
 <div id="gate" class="gate">
   <h1>one<span style="color:var(--accent)">memory</span></h1>
-  <p class="muted">Paste your OneMemory token to view the store.</p>
-  <input id="tok" type="password" placeholder="ONEMEMORY_TOKEN" onkeydown="if(event.key==='Enter')saveTok()">
+  <p class="muted">Paste your Monomem token to view the store.</p>
+  <input id="tok" type="password" placeholder="MONOMEM_TOKEN" onkeydown="if(event.key==='Enter')saveTok()">
   <button onclick="saveTok()">Open</button>
   <p id="gate_err" class="err"></p>
 </div>
@@ -289,7 +289,7 @@ function loadSessions(){
         "<div class='meta'>"+when(s.started_at)+(s.ended_at ? " to "+when(s.ended_at) : " &middot; open")+" &middot; "+esc(s.namespace)+
         " &middot; "+esc(s.cwd)+" &middot; "+Number(s.prompt_count||0)+" prompts, "+Number(s.event_count||0)+" events</div></div>"+
         "<button class='ghost' data-sid='"+esc(s.id)+"' onclick='loadSession(this.getAttribute(&quot;data-sid&quot;))'>Timeline</button></div></div>";
-    }).join("") : "<p class='muted'>No sessions recorded yet (onememory setup --capture installs the hooks).</p>";
+    }).join("") : "<p class='muted'>No sessions recorded yet (monomem setup --capture installs the hooks).</p>";
   }).catch(function(e){ incRefused(e); document.getElementById("list").innerHTML = "<p class='err'>"+esc(e.message)+"</p>"; });
 }
 // One session: the summary on top, then prompts and observations merged oldest first.
@@ -358,7 +358,7 @@ function neverShow(id, on){
   }).then(load).catch(function(e){ alert(e.message); });
 }
 
-// ---- Meter: what OneMemory costs you (GET /stats -> meter). Numbers only. ----
+// ---- Meter: what Monomem costs you (GET /stats -> meter). Numbers only. ----
 function loadMeter(){
   VIEW = "meter";
   var ns = document.getElementById("ns").value.trim();
@@ -405,7 +405,7 @@ function doExport(){
     var blob = new Blob([JSON.stringify(j, null, 2)], { type:"application/json" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "onememory-export.json"; a.click();
+    a.download = "monomem-export.json"; a.click();
   }).catch(function(e){ alert(e.message); });
 }
 

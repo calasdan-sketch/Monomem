@@ -1,19 +1,19 @@
-# Switching to OneMemory from claude-mem, mem0 or basic-memory
+# Switching to Monomem from claude-mem, mem0 or basic-memory
 
-`onememory import --from <tool>` copies another memory tool's notes into OneMemory. It works the same way as
+`monomem import --from <tool>` copies another memory tool's notes into Monomem. It works the same way as
 `import --claude`:
 
 - It runs only on this computer and sends nothing anywhere. It **reads** the other tool's data and never changes or deletes it.
-- Start with `--dry-run`. It shows what would be imported and writes nothing. It does not even create the OneMemory data folder.
+- Start with `--dry-run`. It shows what would be imported and writes nothing. It does not even create the Monomem data folder.
 - Anything that looks like a password or token is skipped. It is counted, but it is never shown or stored.
-- Every note goes through the memory linter. Text that reads like an instruction to an AI is held in `onememory quarantine` for you to approve or reject.
+- Every note goes through the memory linter. Text that reads like an instruction to an AI is held in `monomem quarantine` for you to approve or reject.
 - Each note keeps the other tool's id in its `source` field (`import:claude-mem:obs:42`, `import:mem0:<id>`,
   `import:basic-memory:<permalink>`). If you run the import again, it adds only what is new.
 - Notes are written by `import:<tool>` and tagged `imported:<tool>`. `--namespace ns` puts them in a namespace of your choice.
 
 ```sh
-onememory import --from claude-mem --dry-run
-onememory import --from claude-mem            # asks before writing; --yes skips the question
+monomem import --from claude-mem --dry-run
+monomem import --from claude-mem            # asks before writing; --yes skips the question
 ```
 
 Get everything across first and check it. Remove the old tool only after that.
@@ -22,10 +22,10 @@ Get everything across first and check it. Remove the old tool only after that.
 
 **What is read.** claude-mem keeps its data in a SQLite database: `~/.claude-mem/claude-mem.db`, or
 `$CLAUDE_MEM_DATA_DIR/claude-mem.db` when that variable is set. If you moved the data folder in `~/.claude-mem/settings.json`,
-pass `--path <folder>/claude-mem.db`. OneMemory opens the file read only, so it is safe to run while claude-mem's worker is
+pass `--path <folder>/claude-mem.db`. Monomem opens the file read only, so it is safe to run while claude-mem's worker is
 still running.
 
-| claude-mem | OneMemory |
+| claude-mem | Monomem |
 |---|---|
 | `observations` row | a row of kind `observation`; `obs_type` is its type (bugfix, feature, decision, discovery, change, ...) |
 | `title`, `subtitle`, `narrative`, `text`, `facts` | title and body |
@@ -36,14 +36,14 @@ still running.
 | `created_at_epoch` | the original creation date |
 | `memory_session_id` | session `claude-mem:<id>` |
 
-A model wrote claude-mem's observations and summaries. OneMemory does not have a separate "written by a model" label yet. Use
+A model wrote claude-mem's observations and summaries. Monomem does not have a separate "written by a model" label yet. Use
 the `imported:claude-mem` tag and the writer `import:claude-mem` to tell these rows apart from your own notes. Raw
 `user_prompts` are not imported. They are your own typed prompts, not memories.
 
 **Export first (optional).** The database file is the export. To keep a copy, stop the worker first (step 1 below). Then copy
 `claude-mem.db` somewhere safe.
 
-**Uninstall claude-mem cleanly.** OneMemory does not delete claude-mem's files for you. Do these steps yourself, in this order:
+**Uninstall claude-mem cleanly.** Monomem does not delete claude-mem's files for you. Do these steps yourself, in this order:
 
 1. **Stop the worker and remove the plugin.** Run `npx claude-mem uninstall`. It stops the worker service on its port, removes
    the plugin and its marketplace and cache folders, and takes its entries out of `~/.claude/settings.json`. You can also remove
@@ -60,7 +60,7 @@ the `imported:claude-mem` tag and the writer `import:claude-mem` to tell these r
    Chroma vector data in `~/.claude-mem/chroma`, `settings.json` and its logs. If you use claude-mem's cloud sync or the
    Docker/Postgres runtime, follow its own teardown steps for those as well. Delete `~/.claude-mem` only after you have
    checked the import.
-5. **Set up OneMemory's automatic memory** (`onememory setup`), so new sessions are captured again.
+5. **Set up Monomem's automatic memory** (`monomem setup`), so new sessions are captured again.
 
 ## From mem0
 
@@ -69,7 +69,7 @@ mem0 has no file of its own, so first export your memories as JSON. With the Pyt
 accepts a plain list of memories, or `{ "results": [...] }` / `{ "memories": [...] }`.
 
 ```sh
-onememory import --from mem0 --path mem0.json --namespace personal --dry-run
+monomem import --from mem0 --path mem0.json --namespace personal --dry-run
 ```
 
 Each memory becomes one note. Its `memory` (or `text`) is the body, `created_at` is kept, `metadata.categories` (or
@@ -82,7 +82,7 @@ basic-memory's notes are Markdown files, in `~/basic-memory` by default. Point `
 somewhere else.
 
 ```sh
-onememory import --from basic-memory --path ~/basic-memory --dry-run
+monomem import --from basic-memory --path ~/basic-memory --dry-run
 ```
 
 Each `.md` file becomes one note. The note gets the front matter `title` (or the first heading, or the file name), its `tags` (`[a, b]`, `a, b` or a

@@ -122,7 +122,7 @@ export async function* streamBackupNotes(file: string, stats?: { scalars: number
             }
             depth++;
             if (streaming && depth === arrDepth) atStart = true;
-            if (depth > MAX_STREAM_DEPTH) throw new StreamJsonError(`the JSON is nested more than ${MAX_STREAM_DEPTH} levels deep: not a OneMemory backup`);
+            if (depth > MAX_STREAM_DEPTH) throw new StreamJsonError(`the JSON is nested more than ${MAX_STREAM_DEPTH} levels deep: not a Monomem backup`);
             if (streaming && !collecting && depth === arrDepth + 1) {
               collecting = true;
               seg = i;
@@ -162,7 +162,7 @@ export async function* streamBackupNotes(file: string, stats?: { scalars: number
       if (collecting) {
         const piece = seg >= 0 ? chunk.slice(seg) : chunk;
         size += piece.length;
-        if (size > MAX_STREAM_ELEMENT_CHARS) throw new StreamJsonError("a note in the file is larger than 8 MB: not a OneMemory backup");
+        if (size > MAX_STREAM_ELEMENT_CHARS) throw new StreamJsonError("a note in the file is larger than 8 MB: not a Monomem backup");
         parts.push(piece);
       }
       for (const n of ready) yield n;

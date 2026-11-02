@@ -62,13 +62,13 @@ describe("capture settings", () => {
     try {
       writeFileSync(join(dir, "capture.json"), JSON.stringify({ capture: "off", exclude: ["**/secret"], skip_tools: ["TodoWrite"] }));
       assert.equal(captureSettings(dir, {}).enabled, false);
-      const s = captureSettings(dir, { ONEMEMORY_CAPTURE: "on" });
+      const s = captureSettings(dir, { MONOMEM_CAPTURE: "on" });
       assert.equal(s.enabled, true);
       assert.deepEqual(s.exclude, ["**/secret"]);
-      assert.deepEqual(captureSettings(dir, { ONEMEMORY_CAPTURE_SKIP_TOOLS: "A, B" }).skipTools, ["A", "B"]);
+      assert.deepEqual(captureSettings(dir, { MONOMEM_CAPTURE_SKIP_TOOLS: "A, B" }).skipTools, ["A", "B"]);
       const base = { session_id: "s", cwd: "/home/me/app", event: "post-tool" as const, tool: "Read", input: "", output: "", ok: true, bytes: 0, at: "" };
       assert.equal(shouldCapture(base, s), true);
-      assert.equal(shouldCapture({ ...base, tool: "mcp__onememory__state_read" }, s), false);
+      assert.equal(shouldCapture({ ...base, tool: "mcp__monomem__state_read" }, s), false);
       assert.equal(shouldCapture({ ...base, tool: "TodoWrite" }, s), false);
       assert.equal(shouldCapture({ ...base, cwd: "/home/me/secret" }, s), false);
     } finally {

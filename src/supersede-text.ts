@@ -1,4 +1,4 @@
-// The words OneMemory shows a person before it replaces a memory (1.6.0).
+// The words Monomem shows a person before it replaces a memory (1.6.0).
 //
 // Everything here is plain language on purpose: a person reads this on a terminal, in a chat window or in a dashboard and
 // must be able to say "yes, that is what I meant" without knowing what a "namespace", "rev" or "token" is.
@@ -155,7 +155,7 @@ export function previewText(input: {
   if (flags.lower_confidence) {
     flagLines.push(
       "RED FLAG: the new note says the writer is LESS sure than the writer of the note it replaces. A less sure note is about to hide a more sure one. " +
-        "An administrator must say yes to this warning as well. (Confidence is only what the writer claims; OneMemory does not check it.)"
+        "An administrator must say yes to this warning as well. (Confidence is only what the writer claims; Monomem does not check it.)"
     );
   }
   if (flags.other_writers.length > 0) {

@@ -1,4 +1,4 @@
-// onememory recall — Claude Code SessionStart hook.
+// monomem recall — Claude Code SessionStart hook.
 // Prints the most recent notes as a hook JSON payload so the agent gets
 // memory context before its first message. Designed to FAIL SILENT:
 // any failure (missing/corrupt DB, timeout, thrown error) resolves to a
@@ -102,7 +102,7 @@ export function buildHookOutput(additionalContext: string): string {
  *
  * Three outcomes:
  *  - { kind: "disabled" } — no namespace config present (neither
- *    ONEMEMORY_SPACES nor data/spaces.json). The feature is off: recall
+ *    MONOMEM_SPACES nor data/spaces.json). The feature is off: recall
  *    unscoped, exactly as before.
  *  - { kind: "resolved", namespace } — config present and the cwd resolved
  *    to a namespace. Recall is scoped to that namespace only.
@@ -124,7 +124,7 @@ export async function resolveRecallNamespace(cwd: string = process.cwd()): Promi
     source = namespaceConfigSource();
   } catch (e) {
     console.error(
-      "onememory recall: NAMESPACE RESOLUTION FAILED — could not determine the " +
+      "monomem recall: NAMESPACE RESOLUTION FAILED — could not determine the " +
         `namespace config source (${(e as Error).message}). Refusing to fall back ` +
         "to unscoped recall; returning empty context."
     );
@@ -139,8 +139,8 @@ export async function resolveRecallNamespace(cwd: string = process.cwd()): Promi
     const resolved = resolveStartupNamespace(cwd);
     if (!resolved || !resolved.namespace.trim()) {
       console.error(
-        "onememory recall: NAMESPACE RESOLUTION FAILED — a namespace config is " +
-          "present but invalid (see the [onememory] config warning above). " +
+        "monomem recall: NAMESPACE RESOLUTION FAILED — a namespace config is " +
+          "present but invalid (see the [monomem] config warning above). " +
           "Refusing to fall back to unscoped recall; returning empty context."
       );
       return { kind: "unresolvable" };
@@ -148,7 +148,7 @@ export async function resolveRecallNamespace(cwd: string = process.cwd()): Promi
     return { kind: "resolved", namespace: resolved.namespace };
   } catch (e) {
     console.error(
-      "onememory recall: NAMESPACE RESOLUTION FAILED — namespaces are configured " +
+      "monomem recall: NAMESPACE RESOLUTION FAILED — namespaces are configured " +
         `but the working directory "${cwd}" could not be resolved ` +
         `(${(e as Error).message}). Refusing to fall back to unscoped recall; ` +
         "returning empty context."
@@ -188,13 +188,13 @@ async function fetchRecentNotes(opts: RecallOptions): Promise<RecallData> {
   // The hook runs on every session start and must never be the thing that
   // upgrades a database (a schema migration is one-way and takes a backup copy):
   // against a file from an older release it stays quiet until a normal
-  // onememory command or server has migrated it.
+  // monomem command or server has migrated it.
   const dbFile = opts.dbPath ?? DB_PATH;
   const onDisk = Store.peekSchemaVersion(dbFile);
   if (onDisk !== null && onDisk >= 1 && onDisk < SCHEMA_VERSION) {
     console.error(
-      `onememory recall: the database is at schema v${onDisk} (this release uses v${SCHEMA_VERSION}); ` +
-        "not upgrading it from the hook. Run any `onememory` command (for example `onememory doctor`) to upgrade it."
+      `monomem recall: the database is at schema v${onDisk} (this release uses v${SCHEMA_VERSION}); ` +
+        "not upgrading it from the hook. Run any `monomem` command (for example `monomem doctor`) to upgrade it."
     );
     return { memory: "", board: "" };
   }
@@ -221,7 +221,7 @@ async function fetchRecentNotes(opts: RecallOptions): Promise<RecallData> {
       if (notice) board = [notice, board].filter(Boolean).join("\n\n");
     } catch (e) {
       // The board is a bonus: never let it cost the recent-notes recall.
-      console.error("onememory recall: task board skipped: " + (e as Error).message);
+      console.error("monomem recall: task board skipped: " + (e as Error).message);
     }
     return { memory, board };
   } finally {
@@ -256,14 +256,14 @@ export async function runRecall(opts: RecallOptions = {}): Promise<string> {
 
     const data = await Promise.race([fetchRecentNotes(opts), timer]);
     if (data === null) {
-      console.error("onememory recall: hard timeout, returning empty context");
+      console.error("monomem recall: hard timeout, returning empty context");
       return buildHookOutput("");
     }
     const elapsed = Date.now() - started;
     if (elapsed > budgetMs && budgetMs > 0) {
       // Soft budget exceeded after the fetch; keep it simple and return
       // what we have — recency fetch is one cheap query.
-      console.error(`onememory recall: budget ${budgetMs}ms exceeded (${elapsed}ms)`);
+      console.error(`monomem recall: budget ${budgetMs}ms exceeded (${elapsed}ms)`);
     }
     // The hook injects note content pre-prompt — the highest-leverage
     // prompt-injection position. Prepend the same untrusted-data banner the
@@ -274,7 +274,7 @@ export async function runRecall(opts: RecallOptions = {}): Promise<string> {
     if (summary.length > RECALL_MAX_CHARS) summary = summary.slice(0, RECALL_MAX_CHARS - 1) + "…";
     return buildHookOutput(summary ? UNTRUSTED_BANNER + summary : "");
   } catch (e) {
-    console.error("onememory recall failed: " + (e as Error).message);
+    console.error("monomem recall failed: " + (e as Error).message);
     return buildHookOutput("");
   }
 }

@@ -1,6 +1,6 @@
 # The command runner — controlling your PC from your phone
 
-OneMemory on its own is a mailbox. You can drop a note in it from anywhere,
+Monomem on its own is a mailbox. You can drop a note in it from anywhere,
 but nothing at home opens the mail. The runner is the other half: a small loop
 on your PC that watches for command notes, runs the ones it trusts, and writes
 the answer back where your phone can read it.
@@ -10,14 +10,14 @@ at home, and you want it to do something.
 
 ## Install: from the repo
 
-The runner is **not** part of the published `onememory-mcp` package. A plain
+The runner is **not** part of the published `monomem` package. A plain
 memory install contains no runner code and does not serve the signing page.
-Run it from a clone of this repository (a separate `onememory-runner` package
+Run it from a clone of this repository (a separate `monomem-runner` package
 is coming soon):
 
 ```
-git clone https://github.com/calasdan-sketch/onememory.git
-cd onememory
+git clone https://github.com/calasdan-sketch/monomem.git
+cd monomem
 npm ci
 npm run build
 ```
@@ -32,7 +32,7 @@ only. After updating:
   cached page). An old copy signs v1 and every command is silently ignored.
 - Results and the heartbeat are now signed too. Use the page's
   **Check a result** box to confirm a reply really came from your PC.
-- The API only serves `/sign` when `ONEMEMORY_ENABLE_SIGN_PAGE=1` is set.
+- The API only serves `/sign` when `MONOMEM_ENABLE_SIGN_PAGE=1` is set.
   `scripts\api.cmd` sets it for you.
 - Allowlist entries must use full program paths (see below). An entry the
   runner refuses is named in its console output at startup.
@@ -89,7 +89,7 @@ allowlist names, and that should not come with admin rights by default.
 start at all.
 
 ```
-setx ONEMEMORY_RUNNER_SECRET "a-long-random-string-you-keep-private"
+setx MONOMEM_RUNNER_SECRET "a-long-random-string-you-keep-private"
 ```
 
 **2. Say what it's allowed to do.** Copy `data/runner-allow.example.json` to
@@ -109,7 +109,7 @@ To have it running all the time, use `scripts\install-runner-task.ps1`
 ## Sending a command from your phone
 
 Open `https://<your-tunnel>/sign` on the phone. The API serves this page
-only when it is started with `ONEMEMORY_ENABLE_SIGN_PAGE=1` (`scripts\api.cmd`
+only when it is started with `MONOMEM_ENABLE_SIGN_PAGE=1` (`scripts\api.cmd`
 does that); otherwise `/sign` is a 404. You can also open `docs/sign.html`
 as a local file. Enter your runner secret once, pick an
 action, and it signs the command on the device — the secret is used there and
@@ -154,13 +154,13 @@ through the API with a store token, so:
 - The token you use on the phone must be able to **write** to `commands`
   and **read** `results` and `runner`.
 - If the API process has namespace resolution turned on
-  (`ONEMEMORY_SPACES`, `ONEMEMORY_SPACE`, or `data/spaces.json`), every note
+  (`MONOMEM_SPACES`, `MONOMEM_SPACE`, or `data/spaces.json`), every note
   it writes is forced into **that process's own namespace**, whatever the
   page asks for, and reads are limited to it plus its read grants. Commands
   posted from the phone then never land in `commands` and the runner never
   sees them. Namespaces are decided **per API process, not per token**: run
   the API that serves the phone without namespace resolution, or with
-  `ONEMEMORY_SPACE=commands` and a read grant on `results` and `runner`.
+  `MONOMEM_SPACE=commands` and a read grant on `results` and `runner`.
 
 ## The raw format
 
@@ -180,7 +180,7 @@ Post a note to the `commands` namespace whose body is the signed command.
 ```
 
 The signature is HMAC-SHA256 with your secret over the text
-`onememory-cmd-v2`, a newline, and the command's fields (`v`, `cmd_id`,
+`monomem-cmd-v2`, a newline, and the command's fields (`v`, `cmd_id`,
 `action`, `params`, `target`, `issued_at`, `nonce`) as JSON with keys sorted
 and no spaces. Control characters are refused in every field.
 
@@ -219,7 +219,7 @@ Approving a command task from your phone does not wake the PC. If the PC is
 off or asleep, the task stays approved and waits. Nothing is lost and nothing
 runs early; the runner takes it on its first poll after waking. The catch is
 the approval clock: an approval lapses (24 h by default,
-`ONEMEMORY_APPROVAL_TTL_SECONDS`), and an expired one needs an admin to
+`MONOMEM_APPROVAL_TTL_SECONDS`), and an expired one needs an admin to
 approve again.
 
 The store tells you instead of leaving you guessing:
@@ -227,7 +227,7 @@ The store tells you instead of leaving you guessing:
 ```
 runner_status()                       # MCP, read scope
 GET /runner/status[?namespace=ns]     # REST, read token
-onememory runner-status [--json]      # CLI on the machine holding the store
+monomem runner-status [--json]      # CLI on the machine holding the store
 ```
 
 It returns the runner's state (`online`, `stale` or `never_seen`), a `targets` list with the same
@@ -241,11 +241,11 @@ tasks the counts are "at least" (`truncated: true`).
 
 **What counts as waiting.** The same rule the runner uses to pick tasks, shared in the code
 (`classifyQueuedCommand`): the task is in the one namespace this runner serves
-(`ONEMEMORY_RUNNER_TASK_NAMESPACE`), is addressed to this runner (`target` = its machine name),
+(`MONOMEM_RUNNER_TASK_NAMESPACE`), is addressed to this runner (`target` = its machine name),
 carries an approval whose signature checks out, is not leased, and is not expired. A command for another
 machine, or in another namespace, is not "waiting" and never triggers the offline notice. The runner
 publishes its machine name, task namespace and beat interval in its heartbeat; the server reads them from
-there (and falls back to its own `ONEMEMORY_RUNNER_ID` / `ONEMEMORY_RUNNER_TASK_NAMESPACE`). A runner
+there (and falls back to its own `MONOMEM_RUNNER_ID` / `MONOMEM_RUNNER_TASK_NAMESPACE`). A runner
 that has never been seen and has no such settings on the server counts nothing: there is nothing to say
 which machine the commands are for. Expired approvals are shown even when the runner is online, because
 they need a person to approve again. (The runner's rate window is a runtime limit and is not part of the
@@ -266,14 +266,14 @@ someone who can write the database file can still fake it; to prove a heartbeat,
 "Check a result" with the word `heartbeat`. It is shown to any caller who can read a namespace, because
 one runner serves the whole store; only its age and state are shown.
 
-The runner counts as stale after `ONEMEMORY_RUNNER_STALE_SECONDS` without a heartbeat (default `600`),
-and never less than three of its own beat intervals, so setting `ONEMEMORY_RUNNER_HEARTBEAT_MS` above
+The runner counts as stale after `MONOMEM_RUNNER_STALE_SECONDS` without a heartbeat (default `600`),
+and never less than three of its own beat intervals, so setting `MONOMEM_RUNNER_HEARTBEAT_MS` above
 200000 does not cause a permanent false "offline". Results are cached for 5 seconds while nothing in the
 store changes.
 
 ### Per-runner status (1.4.0)
 
-With more than one PC, `runner_status`, `GET /runner/status` and `onememory runner-status` report each
+With more than one PC, `runner_status`, `GET /runner/status` and `monomem runner-status` report each
 runner on its own line. The top-level `runner`, `waiting_total`, `expiring_soon_total` and
 `expired_total` fields keep their old meaning for older clients: `runner` describes the most worrying
 runner that has commands waiting (a stale or never-seen one beats an online one), else the freshest.
@@ -287,7 +287,7 @@ A runner older than 1.3.4 writes its heartbeat with no writer marker, and one sh
 not believe a heartbeat that cannot show it came from the runner process, so such a PC would read as
 offline. The fix is only to update the runner on that PC (`npm install` the new version and restart it;
 no setting changes, and its approved tasks are untouched). As a stopgap while you roll that out, set
-`ONEMEMORY_RUNNER_ACCEPT_LEGACY=1` on the **server**: marker-less heartbeats then count again, with
+`MONOMEM_RUNNER_ACCEPT_LEGACY=1` on the **server**: marker-less heartbeats then count again, with
 the old caveat that anyone able to write a note with an empty writer could forge one (library callers
 and rows from before schema v13 have no writer). Remove it once every runner is current.
 
@@ -322,23 +322,23 @@ do not grow forever. Unclaimed commands are never pruned, however old.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `ONEMEMORY_RUNNER_SECRET` | *(required)* | Signing secret. No secret, no start. |
-| `ONEMEMORY_RUNNER_ALLOW` | *(file)* | Allowlist as JSON, instead of the file. |
-| `ONEMEMORY_RUNNER_NAMESPACE` | `commands` | Where it looks for commands. |
-| `ONEMEMORY_RUNNER_RESULTS_NAMESPACE` | `results` | Where answers are written. |
-| `ONEMEMORY_RUNNER_POLL_MS` | `30000` | How often it checks. |
-| `ONEMEMORY_RUNNER_FRESHNESS_MS` | `300000` | How old a command may be. |
-| `ONEMEMORY_RUNNER_TIMEOUT_MS` | `120000` | Hard limit on any one command. |
-| `ONEMEMORY_RUNNER_HEARTBEAT_MS` | `180000` | Heartbeat refresh. |
-| `ONEMEMORY_RUNNER_MAX_PER_POLL` | `10` | Commands run per poll; the rest wait. |
-| `ONEMEMORY_RUNNER_MAX_PER_WINDOW` | `60` | Flood ceiling per window. |
-| `ONEMEMORY_RUNNER_WINDOW_MS` | `600000` | Length of that window. |
-| `ONEMEMORY_RUNNER_MAX_REJECTS_PER_POLL` | `200` | Unverified notes examined per poll. |
-| `ONEMEMORY_ENABLE_SIGN_PAGE` | *(off)* | Set to `1` on the **API** process to serve `/sign`. |
-| `ONEMEMORY_RUNNER_RETENTION_DAYS` | `30` | Delete handled notes older than this. `0` keeps everything. |
-| `ONEMEMORY_RUNNER_PRUNE_EVERY_MS` | `3600000` | Minimum gap between cleanup sweeps. |
-| `ONEMEMORY_RUNNER_STALE_SECONDS` | `600` | Heartbeat age after which `runner_status` reports the runner stale (30 s - 7 d, and never less than three beat intervals). Set on the **API/MCP** process. |
-| `ONEMEMORY_RUNNER_ID` | machine name | This runner's name, matched against a command's `target`. |
+| `MONOMEM_RUNNER_SECRET` | *(required)* | Signing secret. No secret, no start. |
+| `MONOMEM_RUNNER_ALLOW` | *(file)* | Allowlist as JSON, instead of the file. |
+| `MONOMEM_RUNNER_NAMESPACE` | `commands` | Where it looks for commands. |
+| `MONOMEM_RUNNER_RESULTS_NAMESPACE` | `results` | Where answers are written. |
+| `MONOMEM_RUNNER_POLL_MS` | `30000` | How often it checks. |
+| `MONOMEM_RUNNER_FRESHNESS_MS` | `300000` | How old a command may be. |
+| `MONOMEM_RUNNER_TIMEOUT_MS` | `120000` | Hard limit on any one command. |
+| `MONOMEM_RUNNER_HEARTBEAT_MS` | `180000` | Heartbeat refresh. |
+| `MONOMEM_RUNNER_MAX_PER_POLL` | `10` | Commands run per poll; the rest wait. |
+| `MONOMEM_RUNNER_MAX_PER_WINDOW` | `60` | Flood ceiling per window. |
+| `MONOMEM_RUNNER_WINDOW_MS` | `600000` | Length of that window. |
+| `MONOMEM_RUNNER_MAX_REJECTS_PER_POLL` | `200` | Unverified notes examined per poll. |
+| `MONOMEM_ENABLE_SIGN_PAGE` | *(off)* | Set to `1` on the **API** process to serve `/sign`. |
+| `MONOMEM_RUNNER_RETENTION_DAYS` | `30` | Delete handled notes older than this. `0` keeps everything. |
+| `MONOMEM_RUNNER_PRUNE_EVERY_MS` | `3600000` | Minimum gap between cleanup sweeps. |
+| `MONOMEM_RUNNER_STALE_SECONDS` | `600` | Heartbeat age after which `runner_status` reports the runner stale (30 s - 7 d, and never less than three beat intervals). Set on the **API/MCP** process. |
+| `MONOMEM_RUNNER_ID` | machine name | This runner's name, matched against a command's `target`. |
 
 ## Honest limits
 
@@ -375,8 +375,8 @@ token to do both in one call.
 
 Switch it on at the PC by naming the namespace the runner should watch:
 
-    setx ONEMEMORY_RUNNER_TASK_NAMESPACE "tasks"
-    setx ONEMEMORY_RUNNER_ID "DANITA"
+    setx MONOMEM_RUNNER_TASK_NAMESPACE "tasks"
+    setx MONOMEM_RUNNER_ID "DANITA"
 
 It is **off** until you do. The task must be created in that same namespace
 (`namespace: "tasks"` in `task_put`; with namespace resolution on, the API
@@ -386,11 +386,11 @@ writes into its own namespace, so put your runner's namespace there).
 
 1. The task lives in exactly the runner's task namespace. If namespace
    resolution sent it elsewhere, the runner never sees it (it fails closed).
-2. `target` equals this runner's own id (`ONEMEMORY_RUNNER_ID`, else the
+2. `target` equals this runner's own id (`MONOMEM_RUNNER_ID`, else the
    machine name). Tasks for other machines are left alone.
 3. An admin approved it. The approval is a MAC, made with a secret that lives
    only inside the store, over the namespace, the task id, a one-time nonce and
-   an expiry (default 24 h, `ONEMEMORY_APPROVAL_TTL_SECONDS`) and a hash of the command, params and target.
+   an expiry (default 24 h, `MONOMEM_APPROVAL_TTL_SECONDS`) and a hash of the command, params and target.
    `task_approve` must echo the `command_hash` (or `rev`) the admin read. Editing any of those (through
    `task_put` or by hand) voids it; copying the approval tag to another task
    fails; a write token cannot write the approval tag at all (the `task.*` tags
@@ -404,7 +404,7 @@ writes into its own namespace, so put your runner's namespace there).
 
 Queue hygiene: the runner selects approved tasks in SQL and pages through all of
 them, a namespace holds at most 100 queued command tasks
-(`ONEMEMORY_TASK_COMMAND_QUOTA`), and a command task cannot be claimed; approve
+(`MONOMEM_TASK_COMMAND_QUOTA`), and a command task cannot be claimed; approve
 and revoke clear any lease. The runner never overrides a lease held by someone else.
 
 The runner signs the command with **its own** secret in memory. The secret is

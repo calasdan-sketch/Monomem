@@ -59,8 +59,8 @@ export async function qualityReport(store: Store, namespaces?: string[]): Promis
       namespace: old.namespace,
       ids: [old.id, keep.id],
       detail: `#${old.id} ${quote(old.title)} and #${keep.id} ${quote(keep.title)} look the same (score ${c.score.toFixed(3)})`,
-      fix: `onememory supersede --old ${old.id} --new-id ${keep.id}`,
-      alt: `onememory consolidate --namespace ${old.namespace} --dry-run`,
+      fix: `monomem supersede --old ${old.id} --new-id ${keep.id}`,
+      alt: `monomem consolidate --namespace ${old.namespace} --dry-run`,
     });
   }
 
@@ -80,7 +80,7 @@ export async function qualityReport(store: Store, namespaces?: string[]): Promis
         namespace: n.namespace,
         ids: [n.id, fresh.id],
         detail: `#${n.id} ${quote(n.title)} is stale and #${fresh.id} ${quote(fresh.title)} is a newer note on the same subject: check whether it replaces it`,
-        fix: `onememory supersede --old ${n.id} --new-id ${fresh.id}`,
+        fix: `monomem supersede --old ${n.id} --new-id ${fresh.id}`,
       });
       break;
     }
@@ -93,8 +93,8 @@ export async function qualityReport(store: Store, namespaces?: string[]): Promis
       ids: [],
       quarantine_id: q.id,
       detail: `${q.op === "update" ? `update of #${q.target_id}` : "new note"} ${quote(q.title ?? "(title unchanged)")} held: ${describeFindings(q.reasons)}`,
-      fix: `onememory quarantine approve ${q.id}`,
-      alt: `onememory quarantine reject ${q.id}`,
+      fix: `monomem quarantine approve ${q.id}`,
+      alt: `monomem quarantine reject ${q.id}`,
     });
   }
 
@@ -109,8 +109,8 @@ export async function qualityReport(store: Store, namespaces?: string[]): Promis
       namespace: n.namespace,
       ids: [n.id],
       detail: `#${n.id} ${quote(n.title)}: ${describeFindings(found)}`,
-      fix: `onememory archive ${n.id}`,
-      alt: `onememory restore ${n.id}`,
+      fix: `monomem archive ${n.id}`,
+      alt: `monomem restore ${n.id}`,
     });
   }
 
@@ -120,7 +120,7 @@ export async function qualityReport(store: Store, namespaces?: string[]): Promis
       namespace: d.namespace,
       ids: [d.id],
       detail: `${d.obs_type || d.kind} #${d.id} ${quote(d.title)} not updated or read for ${d.idleDays} days`,
-      fix: `onememory decay${namespaces?.length === 1 ? ` --namespace ${namespaces[0]}` : ""}`,
+      fix: `monomem decay${namespaces?.length === 1 ? ` --namespace ${namespaces[0]}` : ""}`,
       alt: `add the tag "pinned" to keep it`,
     });
   }

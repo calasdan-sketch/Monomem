@@ -7,9 +7,9 @@
 //   - file overlap: how many of the files you have uncommitted changes in a captured row is linked to (note_files),
 //   - recency (last updated first),
 // and then the search's own access boost and staleness penalty (search-service.ts rankHits). The pack is: a short
-// deterministic project profile (projectProfile, ONEMEMORY_PROFILE_TOKENS, off with ONEMEMORY_PROFILE=off), the latest
+// deterministic project profile (projectProfile, MONOMEM_PROFILE_TOKENS, off with MONOMEM_PROFILE=off), the latest
 // session summary, the ordinary notes in the familiar "Recent memory" shape, then one compact index line per remaining
-// row (`#id [type] title (date, ~N tok)`) until ONEMEMORY_RECALL_TOKENS (default 1500, at ~4 characters a token) is
+// row (`#id [type] title (date, ~N tok)`) until MONOMEM_RECALL_TOKENS (default 1500, at ~4 characters a token) is
 // used, and a footer saying what this stands in for. Distrusted writers are left out (or flagged when asked for) by the
 // store's own read filters; the caller (recall.ts) adds the UNTRUSTED banner and resolves the namespace fail-closed.
 // Every note / index line carries a short "why shown" tag ({files,kw,recent,decision Nd}, explained once in a legend);
@@ -61,21 +61,21 @@ export interface InjectOptions {
   cwd?: string;
   /** Test hook: use these instead of asking git. */
   signals?: ContextSignals;
-  /** Token budget (default ONEMEMORY_RECALL_TOKENS or 1500). */
+  /** Token budget (default MONOMEM_RECALL_TOKENS or 1500). */
   tokens?: number;
   /** The agent session this context is for: its sizes go to the meter (meter.ts). Omitted = not metered. */
   sessionId?: string;
 }
 
-/** The profile's share of the budget (ONEMEMORY_PROFILE_TOKENS, default 300); 0 = off (ONEMEMORY_PROFILE=off). */
+/** The profile's share of the budget (MONOMEM_PROFILE_TOKENS, default 300); 0 = off (MONOMEM_PROFILE=off). */
 export function profileTokens(env: NodeJS.ProcessEnv = process.env): number {
-  if (/^(off|0|false|no)$/i.test((env.ONEMEMORY_PROFILE ?? "").trim())) return 0;
-  const n = Number(env.ONEMEMORY_PROFILE_TOKENS);
-  return env.ONEMEMORY_PROFILE_TOKENS !== undefined && Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_PROFILE_TOKENS;
+  if (/^(off|0|false|no)$/i.test((env.MONOMEM_PROFILE ?? "").trim())) return 0;
+  const n = Number(env.MONOMEM_PROFILE_TOKENS);
+  return env.MONOMEM_PROFILE_TOKENS !== undefined && Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_PROFILE_TOKENS;
 }
 
 export function recallTokens(env: NodeJS.ProcessEnv = process.env): number {
-  const n = Number(env.ONEMEMORY_RECALL_TOKENS);
+  const n = Number(env.MONOMEM_RECALL_TOKENS);
   return Number.isFinite(n) && n >= 100 ? Math.floor(n) : DEFAULT_RECALL_TOKENS;
 }
 
@@ -107,7 +107,7 @@ export function indexLine(n: NoteRecord, why = ""): string {
 
 export const WHY_LEGEND =
   "Why shown, in {}: files = linked to files you changed, kw = matches your branch, changed files or recent work, recent = among the newest, " +
-  `decision = a recorded decision; Nd = age in days. Hide one for good: tag it "${NEVER_SHOW_TAG}" (onememory never-show <id>).`;
+  `decision = a recorded decision; Nd = age in days. Hide one for good: tag it "${NEVER_SHOW_TAG}" (monomem never-show <id>).`;
 
 /** Add (on) or remove the never-show tag; the updated note, or null when there is no such note. */
 export function setNeverShow(store: Store, id: number, on: boolean): NoteRecord | null {

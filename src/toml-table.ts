@@ -1,4 +1,4 @@
-// Just enough TOML for `setup` to own ONE table in Codex's ~/.codex/config.toml ([mcp_servers.onememory]): render it,
+// Just enough TOML for `setup` to own ONE table in Codex's ~/.codex/config.toml ([mcp_servers.monomem]): render it,
 // find it, replace or append it, take it out. Every byte outside that table stays as it was. This is not a TOML parser.
 // ponytail: headers are found line by line, so a line starting with "[" inside a multi-line string would be misread;
 // fine for Codex config files, switch to a real TOML parser if that ever matters.
@@ -63,7 +63,7 @@ export function removeTable(text: string, table: readonly string[]): string {
   return text.slice(0, start) + text.slice(at.end);
 }
 
-/** "onememory" is configured in some form: its own table, or `onememory = { ... }` under [mcp_servers]. */
+/** "monomem" is configured in some form: its own table, or `monomem = { ... }` under [mcp_servers]. */
 export function hasServer(text: string, name: string): boolean {
   return !!findTable(text, ["mcp_servers", name]) || new RegExp(`^\\s*(?:mcp_servers\\.)?"?${name}"?\\s*=\\s*\\{`, "m").test(text);
 }

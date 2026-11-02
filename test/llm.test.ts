@@ -57,16 +57,16 @@ describe("LLM summarizer", () => {
     process.stderr.write = (() => true) as typeof process.stderr.write;
     try {
       assert.equal(llmConfig({}), null);
-      assert.equal(llmConfig({ ONEMEMORY_LLM_URL: base }), null, "a model is required too");
-      assert.equal(llmConfig({ ONEMEMORY_LLM_URL: "https://api.example.com", ONEMEMORY_LLM_MODEL: "m" }), null);
-      assert.equal(llmConfig({ ONEMEMORY_LLM_URL: "http://192.168.1.5:11434", ONEMEMORY_LLM_MODEL: "m" }), null);
-      assert.equal(llmConfig({ ONEMEMORY_LLM_URL: "http://localhost.evil.com", ONEMEMORY_LLM_MODEL: "m" }), null);
-      assert.equal(llmConfig({ ONEMEMORY_LLM_URL: "file:///etc/passwd", ONEMEMORY_LLM_MODEL: "m" }), null);
-      assert.equal(llmConfig({ ONEMEMORY_LLM_URL: "not a url", ONEMEMORY_LLM_MODEL: "m" }), null);
-      assert.equal(llmConfig({ ONEMEMORY_LLM_URL: "https://api.example.com/v1", ONEMEMORY_LLM_MODEL: "m", ONEMEMORY_LLM_ALLOW_REMOTE: "1" })!.endpoint, "https://api.example.com/v1/chat/completions");
-      const c = llmConfig({ ONEMEMORY_LLM_URL: "http://127.0.0.1:11434/", ONEMEMORY_LLM_MODEL: "qwen", ONEMEMORY_LLM_TIMEOUT_MS: "5000" })!;
+      assert.equal(llmConfig({ MONOMEM_LLM_URL: base }), null, "a model is required too");
+      assert.equal(llmConfig({ MONOMEM_LLM_URL: "https://api.example.com", MONOMEM_LLM_MODEL: "m" }), null);
+      assert.equal(llmConfig({ MONOMEM_LLM_URL: "http://192.168.1.5:11434", MONOMEM_LLM_MODEL: "m" }), null);
+      assert.equal(llmConfig({ MONOMEM_LLM_URL: "http://localhost.evil.com", MONOMEM_LLM_MODEL: "m" }), null);
+      assert.equal(llmConfig({ MONOMEM_LLM_URL: "file:///etc/passwd", MONOMEM_LLM_MODEL: "m" }), null);
+      assert.equal(llmConfig({ MONOMEM_LLM_URL: "not a url", MONOMEM_LLM_MODEL: "m" }), null);
+      assert.equal(llmConfig({ MONOMEM_LLM_URL: "https://api.example.com/v1", MONOMEM_LLM_MODEL: "m", MONOMEM_LLM_ALLOW_REMOTE: "1" })!.endpoint, "https://api.example.com/v1/chat/completions");
+      const c = llmConfig({ MONOMEM_LLM_URL: "http://127.0.0.1:11434/", MONOMEM_LLM_MODEL: "qwen", MONOMEM_LLM_TIMEOUT_MS: "5000" })!;
       assert.deepEqual(c, { endpoint: "http://127.0.0.1:11434/v1/chat/completions", model: "qwen", timeoutMs: 5000 });
-      assert.equal(llmConfig({ ONEMEMORY_LLM_URL: "http://[::1]:8080", ONEMEMORY_LLM_MODEL: "m" })!.endpoint, "http://[::1]:8080/v1/chat/completions");
+      assert.equal(llmConfig({ MONOMEM_LLM_URL: "http://[::1]:8080", MONOMEM_LLM_MODEL: "m" })!.endpoint, "http://[::1]:8080/v1/chat/completions");
     } finally {
       process.stderr.write = err;
     }
@@ -87,7 +87,7 @@ describe("LLM summarizer", () => {
     const before = s.read(id)!;
     seen.length = 0;
     reply = answer(`Title: ISO week parsing\nAsked to accept ISO weeks; edited src/date.ts; tests pass. ${SECRET}`);
-    assert.equal(await llmSummarize(s, "s1", { ONEMEMORY_LLM_URL: base, ONEMEMORY_LLM_MODEL: "tiny" }), true);
+    assert.equal(await llmSummarize(s, "s1", { MONOMEM_LLM_URL: base, MONOMEM_LLM_MODEL: "tiny" }), true);
     assert.equal(seen.length, 1, "one batched call");
     assert.equal(seen[0].url, "/v1/chat/completions");
     assert.equal(seen[0].body.model, "tiny");
@@ -114,7 +114,7 @@ describe("LLM summarizer", () => {
     const s = new Store(":memory:");
     const id = session(s);
     const keep = s.read(id)!.body;
-    const env = { ONEMEMORY_LLM_URL: base, ONEMEMORY_LLM_MODEL: "tiny", ONEMEMORY_LLM_TIMEOUT_MS: "1000" };
+    const env = { MONOMEM_LLM_URL: base, MONOMEM_LLM_MODEL: "tiny", MONOMEM_LLM_TIMEOUT_MS: "1000" };
     const cases: Array<typeof reply> = [
       (_q, _b, res) => void res.writeHead(500).end("boom"),
       (_q, _b, res) => void res.writeHead(200, { "content-type": "application/json" }).end("{not json"),
@@ -140,7 +140,7 @@ describe("LLM summarizer", () => {
     try {
       const db = join(dir, "state.db");
       new Store(db).close();
-      const env = { ONEMEMORY_LLM_URL: base, ONEMEMORY_LLM_MODEL: "tiny" };
+      const env = { MONOMEM_LLM_URL: base, MONOMEM_LLM_MODEL: "tiny" };
       reply = answer("Wired title\nThe body.");
       seen.length = 0;
       const p = { session_id: "h1", cwd: "/w" };
@@ -172,7 +172,7 @@ describe("LLM summarizer", () => {
     try {
       const db = join(dir, "state.db");
       new Store(db).close();
-      const env = { ONEMEMORY_LLM_URL: base, ONEMEMORY_LLM_MODEL: "tiny" };
+      const env = { MONOMEM_LLM_URL: base, MONOMEM_LLM_MODEL: "tiny" };
       const slow = answer("Detached title\nThe body.");
       reply = (req, body, res) => void setTimeout(() => slow(req, body, res), 1500);
       const p = { session_id: "d1", cwd: "/w" };

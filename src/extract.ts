@@ -25,7 +25,7 @@ export const OBS_TYPES = ["bugfix", "feature", "refactor", "change", "discovery"
 export type ObsType = (typeof OBS_TYPES)[number];
 
 /** The source label every capture-written note carries. */
-export const CAPTURE_SOURCE = "onememory capture";
+export const CAPTURE_SOURCE = "monomem capture";
 /** Events read per distill pass (a very long session is distilled over several stops). */
 const BATCH = 2000;
 /** An unfinished session with no event for this long is treated as ended (its process crashed or was closed). */

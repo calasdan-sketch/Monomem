@@ -1,10 +1,10 @@
-// `onememory bench`: run the benchmark. Also what `npm run bench` calls.
+// `monomem bench`: run the benchmark. Also what `npm run bench` calls.
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PACKAGE_VERSION } from "../config.js";
 import { loadKnownGaps, loadScenarios, runScenario, type KnownGap } from "./engine.js";
-import { OneMemoryAdapter } from "./onememory-adapter.js";
+import { MonomemAdapter } from "./monomem-adapter.js";
 import { buildReport, renderTable, type Report } from "./report.js";
 import { SUITES, type MemoryAdapter, type Scenario, type Suite } from "./types.js";
 
@@ -18,7 +18,7 @@ export interface BenchOptions {
   only?: string[];
   /** Treat known gaps as failures too. */
   strictGaps?: boolean;
-  /** Test a different system: pass your own adapter. Default: OneMemory. */
+  /** Test a different system: pass your own adapter. Default: Monomem. */
   adapter?: MemoryAdapter;
   /** Called after each scenario, for progress output. */
   onResult?: (id: string, status: string) => void;
@@ -39,13 +39,13 @@ export async function runBench(opts: BenchOptions = {}): Promise<{ report: Repor
   if (opts.only?.length) scenarios = scenarios.filter((s) => opts.only!.some((p) => s.id.startsWith(p)));
   if (scenarios.length === 0) throw new Error("no scenarios match that selection");
   const seed = opts.seed ?? 1;
-  const adapter = opts.adapter ?? new OneMemoryAdapter();
+  const adapter = opts.adapter ?? new MonomemAdapter();
 
   // The benchmark must not read your own configuration (tokens, encryption key, retention, staleness thresholds):
-  // hide every ONEMEMORY_* variable while it runs, then put them back.
+  // hide every MONOMEM_* variable while it runs, then put them back.
   const saved: Record<string, string> = {};
   for (const k of Object.keys(process.env)) {
-    if (k.startsWith("ONEMEMORY_")) {
+    if (k.startsWith("MONOMEM_")) {
       saved[k] = process.env[k] as string;
       delete process.env[k];
     }
@@ -67,7 +67,7 @@ export async function runBench(opts: BenchOptions = {}): Promise<{ report: Repor
 }
 
 export const BENCH_USAGE = [
-  "onememory bench [options]",
+  "monomem bench [options]",
   "",
   "  Run the provenance benchmark against a throwaway store (your own data is never touched):",
   "  stale memory, contradiction recovery, permission isolation, provenance retention, memory poisoning.",
@@ -82,10 +82,10 @@ export const BENCH_USAGE = [
   "  --verbose            Show every failing check, including the known gaps, with expected vs actual.",
   "  --help               This text.",
   "",
-  "onememory bench --longmemeval | --locomo [--data file] [--limit N] [--mode keyword|hybrid]",
+  "monomem bench --longmemeval | --locomo [--data file] [--limit N] [--mode keyword|hybrid]",
   "                [--granularity session|turn] [--json]",
   "",
-  "  Retrieval benchmark on LongMemEval-S or LoCoMo (downloaded once to ~/.cache/onememory-bench unless --data):",
+  "  Retrieval benchmark on LongMemEval-S or LoCoMo (downloaded once to ~/.cache/monomem-bench unless --data):",
   "  recall@5/10, recall_all@10, nDCG@10, MRR per question type, search latency, indexing time. No LLM.",
 ].join("\n");
 
@@ -119,7 +119,7 @@ export async function benchMain(argv: string[], out: (s: string) => void = conso
       } else if (a === "--only") (o.only ??= []).push(take(i++, a));
       else if (a === "--dir") o.dir = resolve(take(i++, a));
       else if (a === "--") continue;
-      else throw new Error(`unknown option ${a} (try: onememory bench --help)`);
+      else throw new Error(`unknown option ${a} (try: monomem bench --help)`);
     }
     const { report } = await runBench(o);
     out(json ? JSON.stringify(report, null, 2) : renderTable(report, { verbose }));

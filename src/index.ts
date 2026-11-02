@@ -1,6 +1,6 @@
-// Entry point: boots the HTTP/JSON API on ONEMEMORY_PORT (default 8790).
+// Entry point: boots the HTTP/JSON API on MONOMEM_PORT (default 8790).
 import "./quiet-sqlite.js"; // first: hide the node:sqlite ExperimentalWarning
-import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as ONEMEMORY_*
+import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as MONOMEM_*
 import { Store } from "./store.js";
 import { createApiServer } from "./api.js";
 import { exitOnListenError } from "./http-common.js";
@@ -15,15 +15,15 @@ const store = new Store(DB_PATH);
 const nsOpts = resolveStartupNamespace(process.cwd());
 if (nsOpts) {
   // eslint-disable-next-line no-console
-  console.error(`[onememory] namespace resolution ACTIVE: namespace="${nsOpts.namespace}"`);
+  console.error(`[monomem] namespace resolution ACTIVE: namespace="${nsOpts.namespace}"`);
 }
 const server = createApiServer(store, tokens, nsOpts ?? undefined);
 
-exitOnListenError(server, API_PORT, "ONEMEMORY_PORT", "API").listen(API_PORT, BIND_HOST, () => {
+exitOnListenError(server, API_PORT, "MONOMEM_PORT", "API").listen(API_PORT, BIND_HOST, () => {
   // eslint-disable-next-line no-console
-  console.error(`[onememory] API listening on http://${BIND_HOST}:${API_PORT}`);
+  console.error(`[monomem] API listening on http://${BIND_HOST}:${API_PORT}`);
   // eslint-disable-next-line no-console
-  console.error(`[onememory] DB: ${DB_PATH}`);
+  console.error(`[monomem] DB: ${DB_PATH}`);
 });
 
 function shutdown(): void {

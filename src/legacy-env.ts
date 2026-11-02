@@ -1,25 +1,46 @@
-// Side-effect module: OneMemory used to be called claude-bridge, and its settings were CLAUDE_BRIDGE_* variables
-// (CLAUDE_BRIDGE_DB_PATH, CLAUDE_BRIDGE_TOKEN, ...). Anyone who moved to OneMemory with the old variables still set
-// would otherwise start on an EMPTY database without a word. So every CLAUDE_BRIDGE_<NAME> is read as
-// ONEMEMORY_<NAME>. The new name always wins when both are set. Nothing is ever written back to the environment
-// of other programs: this only fills in missing ONEMEMORY_* values for this process.
+// Side-effect module: this package has been renamed twice, and each rename left settings behind in people's
+// shells, shell profiles and MCP client configs.
+//
+//   claude-bridge  ->  CLAUDE_BRIDGE_*
+//   OneMemory      ->  ONEMEMORY_*
+//   Monomem        ->  MONOMEM_*        (current)
+//
+// Anyone who upgrades with an old variable still set would otherwise start on an EMPTY database without a word,
+// which for a memory tool is the worst possible failure. So every CLAUDE_BRIDGE_<NAME> and ONEMEMORY_<NAME> is
+// read as MONOMEM_<NAME>. The newest name always wins when more than one is set. Nothing is ever written back to
+// the environment of other programs: this only fills in missing MONOMEM_* values for this process.
+//
+// The chain is applied oldest-first so a shell that still has CLAUDE_BRIDGE_DB_PATH set, and nothing newer,
+// still lands on MONOMEM_DB_PATH.
 //
 // Imported first by every entry point and by config.ts, before anything reads process.env.
 
-const LEGACY_PREFIX = "CLAUDE_BRIDGE_";
-const NEW_PREFIX = "ONEMEMORY_";
+/** The name in use now. */
+const CURRENT_PREFIX = "MONOMEM_";
+/** Retired names, NEWEST FIRST: when someone has both set, the later one wins. */
+const LEGACY_PREFIXES = ["ONEMEMORY_", "CLAUDE_BRIDGE_"] as const;
 
-/** Copy each CLAUDE_BRIDGE_<NAME> to the matching new name where that is unset. Returns the old names that were mapped. */
+/**
+ * Copy each retired <PREFIX><NAME> to MONOMEM_<NAME> where that is unset.
+ * Returns the retired names that were actually used (for `doctor`).
+ *
+ * Each legacy name maps STRAIGHT to the current one rather than hopping along
+ * the chain. Hopping would set the intermediate ONEMEMORY_* as a side effect
+ * and report a variable as "used" even when the current name was already set
+ * and won -- which is misleading in `doctor`, since nothing was taken from it.
+ */
 export function applyLegacyEnv(env: NodeJS.ProcessEnv = process.env): string[] {
   const mapped: string[] = [];
-  for (const key of Object.keys(env)) {
-    if (!key.startsWith(LEGACY_PREFIX) || key.length === LEGACY_PREFIX.length) continue;
-    const value = env[key];
-    if (value === undefined || value === "") continue;
-    const next = NEW_PREFIX + key.slice(LEGACY_PREFIX.length);
-    if (env[next] === undefined || env[next] === "") {
-      env[next] = value;
-      mapped.push(key);
+  for (const from of LEGACY_PREFIXES) {
+    for (const key of Object.keys(env)) {
+      if (!key.startsWith(from) || key.length === from.length) continue;
+      const value = env[key];
+      if (value === undefined || value === "") continue;
+      const next = CURRENT_PREFIX + key.slice(from.length);
+      if (env[next] === undefined || env[next] === "") {
+        env[next] = value;
+        mapped.push(key);
+      }
     }
   }
   return mapped;

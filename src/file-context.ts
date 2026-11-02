@@ -1,5 +1,5 @@
-// `onememory hook file-context`: Claude Code's PreToolUse hook on Read. Just before the agent reads a file, tell it what
-// OneMemory already knows about that file: the newest observations, summaries and notes linked to the path (note_files),
+// `monomem hook file-context`: Claude Code's PreToolUse hook on Read. Just before the agent reads a file, tell it what
+// Monomem already knows about that file: the newest observations, summaries and notes linked to the path (note_files),
 // one compact index line each, so it can open the relevant ones with memory_get instead of re-learning them.
 //
 // ADVISORY ONLY: the output never carries a permissionDecision (no deny, no allow, no rewritten input), so the Read runs
@@ -21,7 +21,7 @@ export async function fileContextHook(payload: Record<string, unknown>, opts: Ho
   try {
     return await fileContext(payload, opts);
   } catch (e) {
-    process.stderr.write(`onememory hook file-context: ${(e as Error).message}\n`);
+    process.stderr.write(`monomem hook file-context: ${(e as Error).message}\n`);
     return "";
   }
 }
@@ -63,7 +63,7 @@ async function fileContext(payload: Record<string, unknown>, opts: HookOptions):
     const { indexLine } = await import("./context-inject.js");
     const { UNTRUSTED_BANNER } = await import("./security.js");
     const text =
-      `OneMemory has earlier memory about ${rel} (advisory; read the file as usual):\n` +
+      `Monomem has earlier memory about ${rel} (advisory; read the file as usual):\n` +
       notes.map((n) => indexLine(n)).join("\n") +
       `\nOpen any with memory_get ids=[${notes.map((n) => n.id).join(",")}]`;
     return JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: UNTRUSTED_BANNER + text } });

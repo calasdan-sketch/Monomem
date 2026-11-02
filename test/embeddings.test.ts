@@ -76,16 +76,16 @@ describe("embed() failure paths all return null (never throw)", () => {
 
 describe("runSearch semantic / hybrid / fallback", () => {
   let store: Store;
-  const SAVE = process.env.ONEMEMORY_EMBEDDINGS;
+  const SAVE = process.env.MONOMEM_EMBEDDINGS;
 
   beforeEach(() => {
-    process.env.ONEMEMORY_EMBEDDINGS = "on";
+    process.env.MONOMEM_EMBEDDINGS = "on";
     store = new Store(":memory:");
   });
   afterEach(() => {
     globalThis.fetch = realFetch;
-    if (SAVE === undefined) delete process.env.ONEMEMORY_EMBEDDINGS;
-    else process.env.ONEMEMORY_EMBEDDINGS = SAVE;
+    if (SAVE === undefined) delete process.env.MONOMEM_EMBEDDINGS;
+    else process.env.MONOMEM_EMBEDDINGS = SAVE;
     store.close();
   });
 
@@ -139,27 +139,27 @@ describe("runSearch semantic / hybrid / fallback", () => {
   });
 });
 
-describe("ONEMEMORY_EMBEDDINGS=auto", () => {
-  const SAVE = { e: process.env.ONEMEMORY_EMBEDDINGS, t: process.env.ONEMEMORY_EMBED_TIMEOUT_MS };
+describe("MONOMEM_EMBEDDINGS=auto", () => {
+  const SAVE = { e: process.env.MONOMEM_EMBEDDINGS, t: process.env.MONOMEM_EMBED_TIMEOUT_MS };
   afterEach(() => {
     globalThis.fetch = realFetch;
     resetEmbeddingsAuto();
-    for (const [k, v] of [["ONEMEMORY_EMBEDDINGS", SAVE.e], ["ONEMEMORY_EMBED_TIMEOUT_MS", SAVE.t]] as const) {
+    for (const [k, v] of [["MONOMEM_EMBEDDINGS", SAVE.e], ["MONOMEM_EMBED_TIMEOUT_MS", SAVE.t]] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
     }
   });
 
   test("on, with a short timeout unless one is set", () => {
-    process.env.ONEMEMORY_EMBEDDINGS = "auto";
-    delete process.env.ONEMEMORY_EMBED_TIMEOUT_MS;
+    process.env.MONOMEM_EMBEDDINGS = "auto";
+    delete process.env.MONOMEM_EMBED_TIMEOUT_MS;
     const c = embeddingsConfig();
     assert.equal(c.enabled, true);
     assert.equal(c.auto, true);
     assert.equal(c.timeoutMs, 5000);
-    process.env.ONEMEMORY_EMBED_TIMEOUT_MS = "12000";
+    process.env.MONOMEM_EMBED_TIMEOUT_MS = "12000";
     assert.equal(embeddingsConfig().timeoutMs, 12000);
-    process.env.ONEMEMORY_EMBEDDINGS = "on";
+    process.env.MONOMEM_EMBEDDINGS = "on";
     assert.equal(embeddingsConfig().auto, undefined);
   });
 
@@ -189,7 +189,7 @@ describe("ONEMEMORY_EMBEDDINGS=auto", () => {
   });
 
   test("search with auto and no backend is plain keyword search", async () => {
-    process.env.ONEMEMORY_EMBEDDINGS = "auto";
+    process.env.MONOMEM_EMBEDDINGS = "auto";
     const s = new Store(":memory:");
     const a = s.create({ title: "alpha", body: "we deploy on fly" });
     s.create({ title: "beta", body: "unrelated" });

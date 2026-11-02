@@ -12,7 +12,7 @@
 // It also runs standalone when invoked directly (node dist/src/mcp-http.js).
 
 import "./quiet-sqlite.js"; // first: hide the node:sqlite ExperimentalWarning
-import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as ONEMEMORY_*
+import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as MONOMEM_*
 import { createServer, IncomingMessage, Server, ServerResponse } from "node:http";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -147,7 +147,7 @@ export function createMcpHttpServer(
         sendJson(res, 413, { error: "payload too large" });
         return;
       }
-      console.error("[onememory] mcp error:", (e as Error).message);
+      console.error("[monomem] mcp error:", (e as Error).message);
       sendJson(res, 500, { error: "internal error" });
     }
   });
@@ -166,14 +166,14 @@ async function runStandalone(): Promise<void> {
   const nsOpts = resolveStartupNamespace(process.cwd());
   if (nsOpts) {
     console.error(
-      `[onememory] namespace resolution ACTIVE: namespace="${nsOpts.namespace}"`
+      `[monomem] namespace resolution ACTIVE: namespace="${nsOpts.namespace}"`
     );
   }
   const httpServer = createMcpHttpServer(store, tokens, nsOpts ?? undefined);
 
-  exitOnListenError(httpServer, MCP_HTTP_PORT, "ONEMEMORY_MCP_PORT", "MCP").listen(MCP_HTTP_PORT, BIND_HOST, () => {
+  exitOnListenError(httpServer, MCP_HTTP_PORT, "MONOMEM_MCP_PORT", "MCP").listen(MCP_HTTP_PORT, BIND_HOST, () => {
     console.error(
-      `[onememory] MCP HTTP/SSE server listening on http://${BIND_HOST}:${MCP_HTTP_PORT}/mcp`
+      `[monomem] MCP HTTP/SSE server listening on http://${BIND_HOST}:${MCP_HTTP_PORT}/mcp`
     );
   });
 

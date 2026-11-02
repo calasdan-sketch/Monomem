@@ -28,7 +28,7 @@ function env(): { root: string; e: SetupEnv; db: string } {
   return {
     root,
     db: join(root, "data", "state.db"),
-    e: { home, platform: "linux", env: { HOME: home, ONEMEMORY_HOME: join(root, "om") }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "1.7.0", now: () => new Date("2026-10-25T12:00:00Z") },
+    e: { home, platform: "linux", env: { HOME: home, MONOMEM_HOME: join(root, "om") }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "1.7.0", now: () => new Date("2026-10-25T12:00:00Z") },
   };
 }
 function io(): SetupIO & { all: () => string } {
@@ -36,7 +36,7 @@ function io(): SetupIO & { all: () => string } {
   return { interactive: false, out: (x) => void l.push(x), err: (x) => void l.push(x), ask: async () => "", all: () => l.join("\n") };
 }
 const opts = (o: Partial<SetupOptions> = {}): SetupOptions => ({ ...DEFAULT_OPTIONS, noDoctor: true, noTestNote: true, ...o });
-const SET = [{ op: "set" as const, path: ["mcpServers"], key: "onememory", value: { command: "node" } }];
+const SET = [{ op: "set" as const, path: ["mcpServers"], key: "monomem", value: { command: "node" } }];
 
 describe("review: old Node gets a plain message, not a stack trace", () => {
   test("a fake old Node version prints the fix and changes nothing", () => {
@@ -44,7 +44,7 @@ describe("review: old Node gets a plain message, not a stack trace", () => {
     const root = tmp();
     const shim = join(root, "shim.mjs");
     writeFileSync(shim, `Object.defineProperty(process.versions, "node", { value: "22.1.0" });\nawait import(${JSON.stringify("file://" + CLI.replace(/\\/g, "/"))});\n`);
-    const r = spawnSync(process.execPath, [shim, "setup", "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: root, USERPROFILE: root, ONEMEMORY_HOME: join(root, "om") } });
+    const r = spawnSync(process.execPath, [shim, "setup", "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: root, USERPROFILE: root, MONOMEM_HOME: join(root, "om") } });
     assert.equal(r.status, 1);
     // 22.1.0 has no `node:sqlite` at all, so it is refused; the floor is 22.16.0.
     assert.match(r.stderr, /needs Node.js 22.16.0 or newer.*Node 22\.1\.0/s);
@@ -55,7 +55,7 @@ describe("review: old Node gets a plain message, not a stack trace", () => {
     const root = tmp();
     const shim = join(root, "shim.mjs");
     writeFileSync(shim, `Object.defineProperty(process.versions, "node", { value: "22.1.0" });\nawait import(${JSON.stringify("file://" + CLI.replace(/\\/g, "/"))});\n`);
-    const r = spawnSync(process.execPath, [shim, "help"], { encoding: "utf8", env: { ...process.env, HOME: root, ONEMEMORY_HOME: join(root, "om") } });
+    const r = spawnSync(process.execPath, [shim, "help"], { encoding: "utf8", env: { ...process.env, HOME: root, MONOMEM_HOME: join(root, "om") } });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /setup/);
   });
@@ -66,20 +66,20 @@ describe("review: a file with only comments keeps them", () => {
     const before = "// my notes\r\n/* keep me */\r\n";
     const after = applyOps(before, SET);
     assert.ok(after.startsWith(before), "the comments are still the first bytes");
-    assert.deepEqual(JSON.parse(after.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, "")), { mcpServers: { onememory: { command: "node" } } });
+    assert.deepEqual(JSON.parse(after.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, "")), { mcpServers: { monomem: { command: "node" } } });
     assert.match(after, /\r\n/);
     assert.doesNotMatch(after.replace(/\r\n/g, ""), /\n/, "line endings stay CRLF");
   });
   test("a comment without a final newline still gets a valid file", () => {
     const after = applyOps("// hi", SET);
     assert.ok(after.startsWith("// hi"));
-    assert.ok(JSON.parse(after.replace(/\/\/.*/g, "")).mcpServers.onememory);
+    assert.ok(JSON.parse(after.replace(/\/\/.*/g, "")).mcpServers.monomem);
   });
   test("an empty file and a BOM-only file still work", () => {
-    assert.ok(JSON.parse(applyOps("", SET)).mcpServers.onememory);
+    assert.ok(JSON.parse(applyOps("", SET)).mcpServers.monomem);
     const b = applyOps("\uFEFF", SET);
     assert.ok(b.startsWith("\uFEFF"));
-    assert.ok(JSON.parse(b.slice(1)).mcpServers.onememory);
+    assert.ok(JSON.parse(b.slice(1)).mcpServers.monomem);
   });
 });
 
@@ -95,7 +95,7 @@ describe("review: a dangling symlink is refused", { skip: process.platform === "
     const { e } = env();
     const f = join(e.home, "sub", ".claude.json");
     writeChange(e, { client: "claude-code", label: "x", file: f, before: null, ops: SET, lines: [], inverse: [] });
-    assert.ok(JSON.parse(readFileSync(f, "utf8")).mcpServers.onememory);
+    assert.ok(JSON.parse(readFileSync(f, "utf8")).mcpServers.monomem);
   });
 });
 
@@ -124,9 +124,9 @@ describe("review: the diff on screen hides more secrets", () => {
     assert.doesNotMatch(redact('"SOME_VENDOR_ID": "abc123"'), /abc123/);
   });
   test("paths, ports and the like stay readable so the diff is useful", () => {
-    assert.equal(redact('"ONEMEMORY_DB_PATH": "C:\\\\x\\\\state.db"'), '"ONEMEMORY_DB_PATH": "C:\\\\x\\\\state.db"');
-    assert.equal(redact('"ONEMEMORY_PORT": "8080"'), '"ONEMEMORY_PORT": "8080"');
-    assert.equal(redact('"ONEMEMORY_HOME": "/h"'), '"ONEMEMORY_HOME": "/h"');
+    assert.equal(redact('"MONOMEM_DB_PATH": "C:\\\\x\\\\state.db"'), '"MONOMEM_DB_PATH": "C:\\\\x\\\\state.db"');
+    assert.equal(redact('"MONOMEM_PORT": "8080"'), '"MONOMEM_PORT": "8080"');
+    assert.equal(redact('"MONOMEM_HOME": "/h"'), '"MONOMEM_HOME": "/h"');
     assert.equal(redact('"command": "node"'), '"command": "node"');
   });
   test("passwords inside URLs are masked", () => {
@@ -156,8 +156,8 @@ describe("review: only our own hook counts as 'already installed'", () => {
     const x = withSettings('{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"node \\"/a/dist/src/cli.js\\" recall --budget-ms 800"}]}]}}');
     assert.equal(planHook(x.e, opts()).already, true);
   });
-  test("an npx-style onememory recall line is recognised", () => {
-    const x = withSettings('{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"npx -y onememory-mcp@1.7.0 recall"}]}]}}');
+  test("an npx-style monomem recall line is recognised", () => {
+    const x = withSettings('{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"npx -y monomem@1.7.0 recall"}]}]}}');
     assert.equal(planHook(x.e, opts()).already, true);
   });
   test("an unrelated hook gets ours added next to it", () => {
@@ -176,7 +176,7 @@ describe("review: setup with nothing to do is short", () => {
     assert.equal(await runSetup(x.e, io(), opts({ yes: true, db: x.db, hook: "no", only: ["claude-code"] })), 0);
     const o = io();
     assert.equal(await runSetup(x.e, o, opts({ yes: true, db: x.db, hook: "no", only: ["claude-code"] })), 0);
-    assert.match(o.all(), /Nothing to change: OneMemory is already connected/);
+    assert.match(o.all(), /Nothing to change: Monomem is already connected/);
     assert.doesNotMatch(o.all(), /What I will do/);
     assert.doesNotMatch(o.all(), /The exact change/);
   });
@@ -193,7 +193,7 @@ describe("review: dry runs create nothing", () => {
   const run = (root: string, ...args: string[]) =>
     spawnSync(process.execPath, [CLI, ...args], {
       encoding: "utf8",
-      env: { ...process.env, HOME: join(root, "h"), USERPROFILE: join(root, "h"), ONEMEMORY_HOME: join(root, "om"), ONEMEMORY_DB_PATH: join(root, "om", "state.db") },
+      env: { ...process.env, HOME: join(root, "h"), USERPROFILE: join(root, "h"), MONOMEM_HOME: join(root, "om"), MONOMEM_DB_PATH: join(root, "om", "state.db") },
     });
   test("import --claude --dry-run leaves the data folder absent", () => {
     const root = tmp();
@@ -236,20 +236,20 @@ describe("review: a hostile repository cannot make sync follow links", { skip: !
     return { code, text: l.join("\n") };
   };
   test("a symlinked plain vault folder is refused", async () => {
-    const t = repoWithLink("onememory");
+    const t = repoWithLink("monomem");
     const r = await go(t.root, t.repo, false);
     assert.equal(r.code, 1);
     assert.match(r.text, /will not follow/);
     assert.deepEqual(readFileSync(join(t.outside, "secret.md"), "utf8"), "---\ntitle: x\n---\nbody\n", "target untouched");
   });
   test("a symlinked sealed vault folder is refused", async () => {
-    const t = repoWithLink("onememory-enc");
+    const t = repoWithLink("monomem-enc");
     const r = await go(t.root, t.repo, true);
     assert.equal(r.code, 1);
     assert.match(r.text, /will not follow/);
   });
   test("a symlink named like the OTHER mode's folder is refused too", async () => {
-    const t = repoWithLink("onememory-enc");
+    const t = repoWithLink("monomem-enc");
     const r = await go(t.root, t.repo, false);
     assert.equal(r.code, 1);
     assert.match(r.text, /will not follow/);
@@ -257,13 +257,13 @@ describe("review: a hostile repository cannot make sync follow links", { skip: !
   test("a .enc entry that is a link is skipped, not read", async () => {
     const root = tmp();
     const repo = join(root, "repo");
-    mkdirSync(join(repo, "onememory-enc"), { recursive: true });
+    mkdirSync(join(repo, "monomem-enc"), { recursive: true });
     spawnSync("git", ["init", "-q", "-b", "main"], { cwd: repo, env: GITENV });
     const first = await go(root, repo, true); // creates the key
     assert.equal(first.code, 0, first.text);
     const target = join(root, "target.txt");
     writeFileSync(target, "not a sealed file");
-    symlinkSync(target, join(repo, "onememory-enc", "a".repeat(32) + ".enc"));
+    symlinkSync(target, join(repo, "monomem-enc", "a".repeat(32) + ".enc"));
     const r = await go(root, repo, true);
     assert.doesNotMatch(r.text, /could not open the sealed file/);
     assert.equal(r.code, 0, r.text);

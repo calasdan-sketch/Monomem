@@ -14,7 +14,7 @@ import { waitForChanges, parseWait, activeWaiters, WaitBusyError, WAIT_MAX_SECON
 import { createMcpServer } from "../src/mcp-server-core.js";
 import { createApiServer } from "../src/api.js";
 
-process.env.ONEMEMORY_WAIT_POLL_MS = "50"; // fast cross-process fallback for tests
+process.env.MONOMEM_WAIT_POLL_MS = "50"; // fast cross-process fallback for tests
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const listeners = (s: Store): number => (s as unknown as { changeListeners: Set<unknown> }).changeListeners.size;
@@ -217,7 +217,7 @@ describe("waitForChanges", () => {
   });
 
   test("per-token cap: extra waiters are refused, other tokens are not, slots come back", async () => {
-    process.env.ONEMEMORY_WAIT_MAX_PER_TOKEN = "2";
+    process.env.MONOMEM_WAIT_MAX_PER_TOKEN = "2";
     try {
       const store = new Store(":memory:");
       prime(store, "w");
@@ -235,12 +235,12 @@ describe("waitForChanges", () => {
       assert.equal(again.timedOut, true);
       store.close();
     } finally {
-      delete process.env.ONEMEMORY_WAIT_MAX_PER_TOKEN;
+      delete process.env.MONOMEM_WAIT_MAX_PER_TOKEN;
     }
   });
 
   test("global cap protects the process", async () => {
-    process.env.ONEMEMORY_WAIT_MAX_TOTAL = "2";
+    process.env.MONOMEM_WAIT_MAX_TOTAL = "2";
     try {
       const store = new Store(":memory:");
       prime(store, "w");
@@ -256,7 +256,7 @@ describe("waitForChanges", () => {
       assert.equal(activeWaiters(), 0);
       store.close();
     } finally {
-      delete process.env.ONEMEMORY_WAIT_MAX_TOTAL;
+      delete process.env.MONOMEM_WAIT_MAX_TOTAL;
     }
   });
 
@@ -336,7 +336,7 @@ describe("memory_since wait_seconds (MCP)", () => {
   });
 
   test("busy cap is a tool error, not a hang", async () => {
-    process.env.ONEMEMORY_WAIT_MAX_PER_TOKEN = "1";
+    process.env.MONOMEM_WAIT_MAX_PER_TOKEN = "1";
     try {
       const store = new Store(":memory:");
       const gone = new AbortController();
@@ -355,7 +355,7 @@ describe("memory_since wait_seconds (MCP)", () => {
       await client.close();
       store.close();
     } finally {
-      delete process.env.ONEMEMORY_WAIT_MAX_PER_TOKEN;
+      delete process.env.MONOMEM_WAIT_MAX_PER_TOKEN;
     }
   });
 });
@@ -435,7 +435,7 @@ describe("REST GET /changes?wait=", () => {
   });
 
   test("429 when the token already has its maximum parked requests", async () => {
-    process.env.ONEMEMORY_WAIT_MAX_PER_TOKEN = "1";
+    process.env.MONOMEM_WAIT_MAX_PER_TOKEN = "1";
     try {
       await fetch(`${base}/changes?since=last&consumer=cap`, h());
       const ac = new AbortController();
@@ -450,7 +450,7 @@ describe("REST GET /changes?wait=", () => {
       await first;
       assert.ok(await settled(() => activeWaiters() === 0));
     } finally {
-      delete process.env.ONEMEMORY_WAIT_MAX_PER_TOKEN;
+      delete process.env.MONOMEM_WAIT_MAX_PER_TOKEN;
     }
   });
 

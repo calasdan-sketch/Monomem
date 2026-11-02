@@ -1,4 +1,4 @@
-// `onememory setup`: every test runs against a temporary HOME / APPDATA. No real configuration is ever read or written.
+// `monomem setup`: every test runs against a temporary HOME / APPDATA. No real configuration is ever read or written.
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, lstatSync } from "node:fs";
@@ -45,7 +45,7 @@ function sandbox(over: Partial<SetupEnv> = {}, envVars: NodeJS.ProcessEnv = {}) 
   const e: SetupEnv = {
     home,
     platform: "linux",
-    env: { HOME: home, ONEMEMORY_HOME: join(root, "om-home"), ...envVars },
+    env: { HOME: home, MONOMEM_HOME: join(root, "om-home"), ...envVars },
     cwd: proj,
     nodeVersion: "24.4.1",
     execPath: "/usr/local/bin/node",
@@ -136,31 +136,31 @@ describe("setup: the entry it writes", () => {
     assert.deepEqual(en.args, [CLI, "mcp"]);
   });
   test("from the npx cache it uses a version-pinned npx, not a path that will be deleted", () => {
-    const s = sandbox({ cliPath: "/home/x/.npm/_npx/abc123/node_modules/onememory-mcp/dist/src/cli.js" });
+    const s = sandbox({ cliPath: "/home/x/.npm/_npx/abc123/node_modules/monomem/dist/src/cli.js" });
     const en = buildServerEntry(s.e, { command: "auto" });
     assert.equal(en.command, "npx");
-    assert.deepEqual(en.args, ["-y", "onememory-mcp@1.7.0", "mcp"]);
+    assert.deepEqual(en.args, ["-y", "monomem@1.7.0", "mcp"]);
   });
   test("on Windows npx is wrapped in cmd /c", () => {
-    const s = sandbox({ platform: "win32", cliPath: "C:\\Users\\testuser\\AppData\\Local\\npm-cache\\_npx\\1\\node_modules\\onememory-mcp\\dist\\src\\cli.js" });
+    const s = sandbox({ platform: "win32", cliPath: "C:\\Users\\testuser\\AppData\\Local\\npm-cache\\_npx\\1\\node_modules\\monomem\\dist\\src\\cli.js" });
     const en = buildServerEntry(s.e, { command: "auto" });
     assert.equal(en.command, "cmd");
-    assert.deepEqual(en.args, ["/c", "npx", "-y", "onememory-mcp@1.7.0", "mcp"]);
+    assert.deepEqual(en.args, ["/c", "npx", "-y", "monomem@1.7.0", "mcp"]);
   });
   test("--command node forces the path form even from the npx cache", () => {
     const s = sandbox({ cliPath: "/x/_npx/1/cli.js" });
     assert.equal(buildServerEntry(s.e, { command: "node" }).command, "/usr/local/bin/node");
   });
   test("a Windows path with spaces and an 8.3 name is kept exactly as given", () => {
-    const s = sandbox({ platform: "win32", execPath: "C:\\Program Files\\nodejs\\node.exe", cliPath: "C:\\PROGRA~1\\My Tools\\onememory\\dist\\src\\cli.js" });
+    const s = sandbox({ platform: "win32", execPath: "C:\\Program Files\\nodejs\\node.exe", cliPath: "C:\\PROGRA~1\\My Tools\\monomem\\dist\\src\\cli.js" });
     const en = buildServerEntry(s.e, { command: "auto" });
     assert.equal(en.command, "C:\\Program Files\\nodejs\\node.exe");
-    assert.deepEqual(en.args, ["C:\\PROGRA~1\\My Tools\\onememory\\dist\\src\\cli.js", "mcp"]);
+    assert.deepEqual(en.args, ["C:\\PROGRA~1\\My Tools\\monomem\\dist\\src\\cli.js", "mcp"]);
     // and it survives being written into a config and read back
     const file = join(s.root, "c.json");
     writeFileSync(file, "{}");
-    writeChange(s.e, { client: "cursor", label: "t", file, before: "{}", ops: [{ op: "set", path: ["mcpServers"], key: "onememory", value: en }], lines: [], inverse: [] });
-    assert.deepEqual(json(file).mcpServers.onememory.args, en.args);
+    writeChange(s.e, { client: "cursor", label: "t", file, before: "{}", ops: [{ op: "set", path: ["mcpServers"], key: "monomem", value: en }], lines: [], inverse: [] });
+    assert.deepEqual(json(file).mcpServers.monomem.args, en.args);
   });
   test("the hook command is shell-safe: bare node, forward slashes, quoted path", () => {
     const s = sandbox({ platform: "win32", cliPath: "C:\\Users\\Jane Doe\\x\\dist\\src\\cli.js" });
@@ -175,15 +175,15 @@ describe("setup: recognising the old claude-bridge entry", () => {
     assert.equal(classifyEntry("memory", { command: "node", args: ["C:\\Users\\testuser\\my-agent\\claude-bridge\\dist\\src\\mcp-stdio.js"] }), "legacy");
     assert.equal(classifyEntry("m", { command: "node", env: { CLAUDE_BRIDGE_DB_PATH: "x" } }), "legacy");
   });
-  test("OneMemory in any name is recognised; other servers are left alone", () => {
-    assert.equal(classifyEntry("onememory", {}), "onememory");
-    assert.equal(classifyEntry("mem", { command: "npx", args: ["-y", "onememory-mcp", "mcp"] }), "onememory");
+  test("Monomem in any name is recognised; other servers are left alone", () => {
+    assert.equal(classifyEntry("monomem", {}), "monomem");
+    assert.equal(classifyEntry("mem", { command: "npx", args: ["-y", "monomem", "mcp"] }), "monomem");
     assert.equal(classifyEntry("github", { command: "npx", args: ["-y", "@x/github"] }), "other");
   });
   test("migrating renames CLAUDE_BRIDGE_ variables, keeps the database path and any extra setting", () => {
     const s = sandbox();
     const m = migrateEntry(s.e, { command: "auto" }, { type: "stdio", command: "node", args: ["x"], env: { CLAUDE_BRIDGE_DB_PATH: "C:\\Users\\testuser\\data\\state.db", FOO: "1" }, timeout: 5000 }, true);
-    assert.equal(m.entry.env!.ONEMEMORY_DB_PATH, "C:\\Users\\testuser\\data\\state.db");
+    assert.equal(m.entry.env!.MONOMEM_DB_PATH, "C:\\Users\\testuser\\data\\state.db");
     assert.equal(m.entry.env!.FOO, "1");
     assert.equal(m.entry.env!.CLAUDE_BRIDGE_DB_PATH, undefined);
     assert.equal(m.entry.timeout, 5000);
@@ -196,7 +196,7 @@ describe("setup: recognising the old claude-bridge entry", () => {
     mkdirSync(join(old, "data"), { recursive: true });
     writeFileSync(join(old, "data", "state.db"), "x");
     const m = migrateEntry(s.e, { command: "auto" }, { command: "node", args: [join(old, "dist", "src", "mcp-stdio.js")] }, false);
-    assert.equal(m.entry.env!.ONEMEMORY_DB_PATH, join(old, "data", "state.db"));
+    assert.equal(m.entry.env!.MONOMEM_DB_PATH, join(old, "data", "state.db"));
     assert.match(m.notes.join(" "), /found one at/);
   });
   test("with nothing to find it warns that the new store starts empty", () => {
@@ -215,8 +215,8 @@ describe("setup: looking before changing", () => {
     assert.equal(await runSetup(s.e, io, opts({ dryRun: true, db: s.db })), 0);
     const text = io.all();
     assert.match(text, /What I will do:/);
-    assert.match(text, /add the "onememory" memory server/);
-    assert.match(text, /\+\s+"onememory": \{/);
+    assert.match(text, /add the "monomem" memory server/);
+    assert.match(text, /\+\s+"monomem": \{/);
     assert.match(text, /Dry run: nothing was changed/);
     assert.equal(readFileSync(ccFile(s.home), "utf8"), REAL_CLAUDE_JSON);
     assert.deepEqual(listBackups(ccFile(s.home)), []);
@@ -269,7 +269,7 @@ describe("setup: looking before changing", () => {
 });
 
 describe("setup: making the change", () => {
-  test("adds onememory, keeps everything else byte for byte, saves a backup, writes a test note", async () => {
+  test("adds monomem, keeps everything else byte for byte, saves a backup, writes a test note", async () => {
     const s = sandbox();
     write(ccFile(s.home), REAL_CLAUDE_JSON);
     const io = makeIO();
@@ -279,9 +279,9 @@ describe("setup: making the change", () => {
     assert.ok(after.includes('"history": [1, 2, 3]'));
     const j = json(ccFile(s.home));
     assert.equal(j.mcpServers.other.command, "npx");
-    assert.equal(j.mcpServers.onememory.command, "/usr/local/bin/node");
-    assert.equal(j.mcpServers.onememory.type, "stdio");
-    assert.deepEqual(j.mcpServers.onememory.env, { ONEMEMORY_DB_PATH: s.db });
+    assert.equal(j.mcpServers.monomem.command, "/usr/local/bin/node");
+    assert.equal(j.mcpServers.monomem.type, "stdio");
+    assert.deepEqual(j.mcpServers.monomem.env, { MONOMEM_DB_PATH: s.db });
     const b = listBackups(ccFile(s.home));
     assert.equal(b.length, 1);
     assert.equal(readFileSync(b[0], "utf8"), REAL_CLAUDE_JSON, "the backup is the original, byte for byte");
@@ -297,7 +297,7 @@ describe("setup: making the change", () => {
     }
     assert.match(io.all(), /test note written, read back and cleaned up/);
     assert.match(io.all(), /\/mcp/);
-    assert.match(io.all(), /onememory setup --undo/);
+    assert.match(io.all(), /monomem setup --undo/);
   });
   test("running it again changes nothing and makes no new backup", async () => {
     const s = sandbox();
@@ -342,7 +342,7 @@ describe("setup: making the change", () => {
     write(ccFile(s.home), REAL_CLAUDE_JSON);
     const io = makeIO(["y", "n"]);
     assert.equal(await runSetup(s.e, io, opts({ db: s.db, noTestNote: true })), 0);
-    assert.ok(json(ccFile(s.home)).mcpServers.onememory);
+    assert.ok(json(ccFile(s.home)).mcpServers.monomem);
     assert.match(io.asked[0], /Type y/);
   });
   test("Claude Desktop and Cursor are configured when present, each in its own file", async () => {
@@ -352,9 +352,9 @@ describe("setup: making the change", () => {
     const io = makeIO();
     assert.equal(await runSetup(s.e, io, opts({ yes: true, db: s.db, noTestNote: true })), 0);
     const desk = json(join(s.home, ".config", "Claude", "claude_desktop_config.json"));
-    assert.deepEqual(Object.keys(desk.mcpServers), ["files", "onememory"]);
-    assert.equal(desk.mcpServers.onememory.type, undefined, "Desktop entries carry no type");
-    assert.ok(json(join(s.home, ".cursor", "mcp.json")).mcpServers.onememory);
+    assert.deepEqual(Object.keys(desk.mcpServers), ["files", "monomem"]);
+    assert.equal(desk.mcpServers.monomem.type, undefined, "Desktop entries carry no type");
+    assert.ok(json(join(s.home, ".cursor", "mcp.json")).mcpServers.monomem);
   });
   test("a CRLF file with a BOM keeps both", async () => {
     const s = sandbox();
@@ -379,7 +379,7 @@ describe("setup: making the change", () => {
     symlinkSync(real, ccFile(s.home));
     await runSetup(s.e, makeIO(), opts({ yes: true, db: s.db, noTestNote: true }));
     assert.ok(lstatSync(ccFile(s.home)).isSymbolicLink(), "still a link");
-    assert.ok(json(real).mcpServers.onememory, "the target holds the entry");
+    assert.ok(json(real).mcpServers.monomem, "the target holds the entry");
     assert.equal(listBackups(real).length, 1, "the backup sits beside the target");
   });
   test("a database that cannot be opened stops BEFORE any config is touched", async () => {
@@ -403,14 +403,14 @@ describe("setup: making the change", () => {
     assert.match(io.all(), /newer than this version/);
     assert.equal(readFileSync(ccFile(s.home), "utf8"), REAL_CLAUDE_JSON);
   });
-  test("it runs onememory doctor when asked (a real child process)", async () => {
-    const s = sandbox({ env: { HOME: "", ONEMEMORY_HOME: "" } as NodeJS.ProcessEnv });
-    s.e.env = { ...process.env, HOME: s.home, USERPROFILE: s.home, ONEMEMORY_HOME: join(s.root, "om-home") };
+  test("it runs monomem doctor when asked (a real child process)", async () => {
+    const s = sandbox({ env: { HOME: "", MONOMEM_HOME: "" } as NodeJS.ProcessEnv });
+    s.e.env = { ...process.env, HOME: s.home, USERPROFILE: s.home, MONOMEM_HOME: join(s.root, "om-home") };
     write(ccFile(s.home), REAL_CLAUDE_JSON);
     s.e.execPath = process.execPath;
     const io = makeIO();
     assert.equal(await runSetup(s.e, io, { ...opts({ yes: true, db: s.db, noTestNote: true }), noDoctor: false }), 0);
-    assert.match(io.all(), /onememory doctor:/);
+    assert.match(io.all(), /monomem doctor:/);
     // Whatever Node is running this suite -- 22 and 24 are both supported, so
     // do not hard-code one of them here.
     assert.match(io.all(), new RegExp(`Node ${process.versions.node.replace(/\./g, "\\.")}`));
@@ -440,9 +440,9 @@ describe("setup: undo", () => {
     assert.equal(await runSetup(s.e, io, opts({ undo: true })), 0);
     const j = json(ccFile(s.home));
     assert.equal(j.numStartups, 13, "their change is kept");
-    assert.equal(j.mcpServers.onememory, undefined, "ours is gone");
+    assert.equal(j.mcpServers.monomem, undefined, "ours is gone");
     assert.equal(j.mcpServers.other.command, "npx");
-    assert.match(io.all(), /only the OneMemory change was taken out/);
+    assert.match(io.all(), /only the Monomem change was taken out/);
   });
   test("a file that setup created is removed again", async () => {
     const s = sandbox();
@@ -513,7 +513,7 @@ describe("setup: moving from claude-bridge", () => {
     return out.sort();
   };
 
-  test("the old entry is replaced by onememory with the same database; notes survive; a verified safety copy is made", async () => {
+  test("the old entry is replaced by monomem with the same database; notes survive; a verified safety copy is made", async () => {
     const s = sandbox();
     const { oldInstall, oldDb } = legacyHome(s, { CLAUDE_BRIDGE_TOKEN: "x".repeat(40) });
     const installBefore = tree(oldInstall).filter((x) => !x.includes("state.db"));
@@ -521,10 +521,10 @@ describe("setup: moving from claude-bridge", () => {
     assert.equal(await runSetup(s.e, io, opts({ yes: true })), 0);
     const j = json(ccFile(s.home));
     assert.equal(j.mcpServers["claude-bridge"], undefined);
-    assert.equal(j.mcpServers.onememory.env.ONEMEMORY_DB_PATH, oldDb);
-    assert.equal(j.mcpServers.onememory.env.ONEMEMORY_TOKEN, "x".repeat(40));
+    assert.equal(j.mcpServers.monomem.env.MONOMEM_DB_PATH, oldDb);
+    assert.equal(j.mcpServers.monomem.env.MONOMEM_TOKEN, "x".repeat(40));
     assert.equal(j.mcpServers.keep.command, "k", "other servers untouched");
-    assert.deepEqual(Object.keys(j.mcpServers), ["onememory", "keep"], "same position");
+    assert.deepEqual(Object.keys(j.mcpServers), ["monomem", "keep"], "same position");
     assert.ok(!io.all().includes("x".repeat(40)), "the token is never printed");
     const back = oldDb + `.pre-v${SCHEMA_VERSION}-backup`;
     assert.ok(existsSync(back), "the pre-upgrade copy exists");
@@ -566,23 +566,23 @@ describe("setup: moving from claude-bridge", () => {
     write(ccFile(s.home), JSON.stringify({ projects: { "/w/a": { mcpServers: { "claude-bridge": { command: "node", args: ["/x/claude-bridge/dist/src/mcp-stdio.js"], env: { CLAUDE_BRIDGE_DB_PATH: oldDb } } } } } }, null, 2));
     assert.equal(await runSetup(s.e, makeIO(), opts({ yes: true, noTestNote: true })), 0);
     const j = json(ccFile(s.home));
-    assert.equal(j.projects["/w/a"].mcpServers.onememory.env.ONEMEMORY_DB_PATH, oldDb);
+    assert.equal(j.projects["/w/a"].mcpServers.monomem.env.MONOMEM_DB_PATH, oldDb);
     assert.equal(j.mcpServers, undefined, "no second entry was added at the top");
   });
-  test("both claude-bridge and onememory present: it stops and explains, changing nothing", async () => {
+  test("both claude-bridge and monomem present: it stops and explains, changing nothing", async () => {
     const s = sandbox();
-    const orig = JSON.stringify({ mcpServers: { "claude-bridge": { command: "node" }, onememory: { command: "x" } } }, null, 2);
+    const orig = JSON.stringify({ mcpServers: { "claude-bridge": { command: "node" }, monomem: { command: "x" } } }, null, 2);
     write(ccFile(s.home), orig);
     const io = makeIO();
     assert.equal(await runSetup(s.e, io, opts({ yes: true, db: s.db })), 1);
-    assert.match(io.all(), /both "claude-bridge" and "onememory" exist/);
+    assert.match(io.all(), /both "claude-bridge" and "monomem" exist/);
     assert.equal(readFileSync(ccFile(s.home), "utf8"), orig);
   });
   test("a shell that still has CLAUDE_BRIDGE_DB_PATH set carries it into the new entry", async () => {
     const s = sandbox({}, { CLAUDE_BRIDGE_DB_PATH: join(dirname(sandbox().db), "shell.db") });
     write(ccFile(s.home), "{}");
     await runSetup(s.e, makeIO(), opts({ yes: true, noTestNote: true }));
-    assert.match(json(ccFile(s.home)).mcpServers.onememory.env.ONEMEMORY_DB_PATH, /shell\.db$/);
+    assert.match(json(ccFile(s.home)).mcpServers.monomem.env.MONOMEM_DB_PATH, /shell\.db$/);
   });
 });
 
@@ -628,10 +628,10 @@ describe("setup: the start-of-session hook", () => {
     assert.match(io.asked[1], /start-of-session hook/);
     assert.equal(readFileSync(join(s.home, ".claude", "settings.json"), "utf8"), SETTINGS);
   });
-  test("an existing onememory hook is recognised and not duplicated", async () => {
+  test("an existing monomem hook is recognised and not duplicated", async () => {
     const s = sandbox();
     write(ccFile(s.home), "{}");
-    write(join(s.home, ".claude", "settings.json"), '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"onememory recall --budget-ms 800"}]}]}}');
+    write(join(s.home, ".claude", "settings.json"), '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"monomem recall --budget-ms 800"}]}]}}');
     const before = readFileSync(join(s.home, ".claude", "settings.json"), "utf8");
     const io = makeIO();
     await runSetup(s.e, io, opts({ yes: true, hook: "yes", db: s.db, noTestNote: true }));
@@ -649,7 +649,7 @@ describe("setup: the start-of-session hook", () => {
   test("doctor sees a hook written by setup as wired", () => {
     const s = sandbox();
     const cmd = buildHookCommand(s.e, { command: "auto" });
-    assert.ok(/(onememory|cli\.js)[\s\S]{0,60}\brecall\b/.test(JSON.stringify([{ hooks: [{ command: cmd }] }])));
+    assert.ok(/(monomem|cli\.js)[\s\S]{0,60}\brecall\b/.test(JSON.stringify([{ hooks: [{ command: cmd }] }])));
   });
 });
 
@@ -667,7 +667,7 @@ describe("setup: Claude Code rewriting its file while we work", () => {
     assert.ok(w);
     const j = json(ccFile(s.home));
     assert.equal(j.numStartups, 99, "their newer value survived");
-    assert.ok(j.mcpServers.onememory, "our entry is there");
+    assert.ok(j.mcpServers.monomem, "our entry is there");
     assert.equal(readFileSync(w!.backup!, "utf8"), theirs, "and the backup is the NEWER file, not the stale one we planned from");
   });
   test("if someone already added the same entry, the write is a no-op", () => {
@@ -696,18 +696,18 @@ describe("setup: Claude Code rewriting its file while we work", () => {
 });
 
 describe("setup: wiring", () => {
-  test("`onememory help` lists setup and the new import and sync forms", async () => {
+  test("`monomem help` lists setup and the new import and sync forms", async () => {
     const { spawnSync } = await import("node:child_process");
     const r = spawnSync(process.execPath, [CLI, "help"], { encoding: "utf8" });
     assert.match(r.stdout, /setup \[--dry-run\]/);
     assert.match(r.stdout, /import --claude/);
     assert.match(r.stdout, /sync --git/);
   });
-  test("`onememory setup --dry-run` runs from the command line against a temporary home", async () => {
+  test("`monomem setup --dry-run` runs from the command line against a temporary home", async () => {
     const { spawnSync } = await import("node:child_process");
     const s = sandbox();
     write(ccFile(s.home), REAL_CLAUDE_JSON);
-    const r = spawnSync(process.execPath, [CLI, "setup", "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: s.home, USERPROFILE: s.home, ONEMEMORY_HOME: join(s.root, "om-home") } });
+    const r = spawnSync(process.execPath, [CLI, "setup", "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: s.home, USERPROFILE: s.home, MONOMEM_HOME: join(s.root, "om-home") } });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /Dry run: nothing was changed/);
     assert.equal(readFileSync(ccFile(s.home), "utf8"), REAL_CLAUDE_JSON);

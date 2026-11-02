@@ -139,11 +139,11 @@ describe("rate limiter counts failed auths, not all requests", () => {
     const store = new Store(":memory:");
     // The failed-auth tarpit (covered in core-122) would make 140 sequential
     // failures take minutes; switch it off for this limiter-focused test.
-    const prevStep = process.env.ONEMEMORY_TARPIT_STEP_MS;
-    process.env.ONEMEMORY_TARPIT_STEP_MS = "0";
+    const prevStep = process.env.MONOMEM_TARPIT_STEP_MS;
+    process.env.MONOMEM_TARPIT_STEP_MS = "0";
     const server = createApiServer(store, [{ token: ROOT, scope: "admin", label: "r" }]);
-    if (prevStep === undefined) delete process.env.ONEMEMORY_TARPIT_STEP_MS;
-    else process.env.ONEMEMORY_TARPIT_STEP_MS = prevStep;
+    if (prevStep === undefined) delete process.env.MONOMEM_TARPIT_STEP_MS;
+    else process.env.MONOMEM_TARPIT_STEP_MS = prevStep;
     await new Promise<void>((r) => server.listen(0, r));
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     try {
@@ -180,7 +180,7 @@ describe("token namespace pins fail closed", () => {
       const r = spawnSync(
         process.execPath,
         ["--no-warnings", "--input-type=module", "-e", `const c = await import(${JSON.stringify("file://" + CONFIG_JS)}); console.log(JSON.stringify(c.resolveTokens().map(t => [t.token, t.namespace ?? null])));`],
-        { env: { ...process.env, ONEMEMORY_HOME: home, HOME: home, ONEMEMORY_TOKENS: toks, ONEMEMORY_TOKEN: P("primary-token-for-test") }, encoding: "utf8" }
+        { env: { ...process.env, MONOMEM_HOME: home, HOME: home, MONOMEM_TOKENS: toks, MONOMEM_TOKEN: P("primary-token-for-test") }, encoding: "utf8" }
       );
       assert.equal(r.status, 0, r.stderr);
       const got = JSON.parse(r.stdout.trim().split("\n").pop()!) as Array<[string, string | null]>;
@@ -215,7 +215,7 @@ describe("MCP: real version, explain, forget_after", () => {
     assert.equal(client.getServerVersion()!.version, pkg.version);
     assert.equal(PACKAGE_VERSION, pkg.version);
     for (const flag of ["--version", "-v"]) {
-      const r = spawnSync(process.execPath, ["--no-warnings", CLI, flag], { encoding: "utf8", env: { ...process.env, ONEMEMORY_HOME: tmpdir() } });
+      const r = spawnSync(process.execPath, ["--no-warnings", CLI, flag], { encoding: "utf8", env: { ...process.env, MONOMEM_HOME: tmpdir() } });
       assert.equal(r.status, 0, r.stderr);
       assert.equal(r.stdout.trim(), pkg.version);
     }
@@ -244,7 +244,7 @@ describe("stdio MCP answers malformed JSON with -32700", () => {
   test("{bad on stdin yields a JSON-RPC parse error", async () => {
     const home = mkdtempSync(join(tmpdir(), "om-stdio-"));
     const child = spawn(process.execPath, ["--no-warnings", STDIO], {
-      env: { ...process.env, ONEMEMORY_HOME: home, HOME: home },
+      env: { ...process.env, MONOMEM_HOME: home, HOME: home },
       stdio: ["pipe", "pipe", "ignore"],
     });
     try {
@@ -282,7 +282,7 @@ describe(".key is in the private-file permission repair", () => {
       chmodSync(join(home, ".key"), 0o644);
       const CONFIG_JS = fileURLToPath(new URL("../src/config.js", import.meta.url));
       const r = spawnSync(process.execPath, ["--no-warnings", "--input-type=module", "-e", `(await import(${JSON.stringify("file://" + CONFIG_JS)})).prepareDataDir();`], {
-        env: { ...process.env, ONEMEMORY_HOME: home, HOME: home },
+        env: { ...process.env, MONOMEM_HOME: home, HOME: home },
         encoding: "utf8",
       });
       assert.equal(r.status, 0, r.stderr);

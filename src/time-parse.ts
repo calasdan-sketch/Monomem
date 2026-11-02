@@ -5,7 +5,7 @@
 // caller's job) and returns the [start, end) UTC range it denotes, or null
 // when nothing recognizable is present.
 //
-// Day boundaries are computed in the user's timezone (ONEMEMORY_TIMEZONE,
+// Day boundaries are computed in the user's timezone (MONOMEM_TIMEZONE,
 // default: the host's system timezone) via Intl.DateTimeFormat -- zero dependencies. Wall-clock
 // arithmetic is done on nominal date parts, then converted to true UTC
 // instants by measuring the zone offset at the candidate instant and
@@ -47,7 +47,7 @@ export interface TimeRange {
 export interface ParseOpts {
   /** Reference instant; defaults to new Date(). Injected in tests for determinism. */
   now?: Date;
-  /** IANA timezone name; defaults to ONEMEMORY_TIMEZONE env, else the system timezone. */
+  /** IANA timezone name; defaults to MONOMEM_TIMEZONE env, else the system timezone. */
   timeZone?: string;
 }
 
@@ -69,12 +69,12 @@ const tzWarned = new Set<string>();
 /**
  * Validate an IANA timezone name. Invalid names log once per distinct value
  * to stderr and fall back to "UTC" -- never throw, so a typo in
- * ONEMEMORY_TIMEZONE can't break search. Results are memoized: the Intl
+ * MONOMEM_TIMEZONE can't break search. Results are memoized: the Intl
  * constructor is the expensive part, and resolveTimeZone sits on every
  * parseTimePhrase call.
  */
 export function resolveTimeZone(raw?: string): string {
-  const tz = (raw ?? process.env.ONEMEMORY_TIMEZONE ?? "").trim() || systemTimeZone();
+  const tz = (raw ?? process.env.MONOMEM_TIMEZONE ?? "").trim() || systemTimeZone();
   const cached = tzCache.get(tz);
   if (cached !== undefined) return cached;
   let resolved: string;
@@ -86,7 +86,7 @@ export function resolveTimeZone(raw?: string): string {
     if (tz !== "UTC" && !tzWarned.has(tz)) {
       tzWarned.add(tz);
       // eslint-disable-next-line no-console
-      console.error(`[onememory] invalid timezone "${tz}"; falling back to UTC`);
+      console.error(`[monomem] invalid timezone "${tz}"; falling back to UTC`);
     }
   }
   tzCache.set(tz, resolved);

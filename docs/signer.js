@@ -11,8 +11,8 @@
 // every command being ignored with no explanation.
 
 export const COMMAND_FORMAT = 2;
-export const COMMAND_DOMAIN = "onememory-cmd-v2";
-export const RESULT_DOMAIN = "onememory-result-v1";
+export const COMMAND_DOMAIN = "monomem-cmd-v2";
+export const RESULT_DOMAIN = "monomem-result-v1";
 
 /** Deterministic JSON: sorted keys, no whitespace, undefined members dropped. */
 export function canonicalJson(v) {

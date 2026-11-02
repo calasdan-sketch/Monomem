@@ -64,18 +64,18 @@ function approvedTask(store: Store, ns: string, title = "t"): number {
 
 describe("runner status", () => {
   let store: Store;
-  const prevTtl = process.env.ONEMEMORY_APPROVAL_TTL_SECONDS;
-  const prevStale = process.env.ONEMEMORY_RUNNER_STALE_SECONDS;
+  const prevTtl = process.env.MONOMEM_APPROVAL_TTL_SECONDS;
+  const prevStale = process.env.MONOMEM_RUNNER_STALE_SECONDS;
   beforeEach(() => {
     store = new Store(":memory:");
-    delete process.env.ONEMEMORY_RUNNER_STALE_SECONDS;
+    delete process.env.MONOMEM_RUNNER_STALE_SECONDS;
   });
   afterEach(() => {
     store.close();
-    if (prevTtl === undefined) delete process.env.ONEMEMORY_APPROVAL_TTL_SECONDS;
-    else process.env.ONEMEMORY_APPROVAL_TTL_SECONDS = prevTtl;
-    if (prevStale === undefined) delete process.env.ONEMEMORY_RUNNER_STALE_SECONDS;
-    else process.env.ONEMEMORY_RUNNER_STALE_SECONDS = prevStale;
+    if (prevTtl === undefined) delete process.env.MONOMEM_APPROVAL_TTL_SECONDS;
+    else process.env.MONOMEM_APPROVAL_TTL_SECONDS = prevTtl;
+    if (prevStale === undefined) delete process.env.MONOMEM_RUNNER_STALE_SECONDS;
+    else process.env.MONOMEM_RUNNER_STALE_SECONDS = prevStale;
   });
 
   test("online vs stale vs never seen", () => {
@@ -88,7 +88,7 @@ describe("runner status", () => {
     const off = runnerStatus(store);
     assert.equal(off.runner.state, "stale");
     assert.equal(off.runner.stale_after_seconds, 600);
-    process.env.ONEMEMORY_RUNNER_STALE_SECONDS = "86400";
+    process.env.MONOMEM_RUNNER_STALE_SECONDS = "86400";
     assert.equal(runnerStatus(store).runner.state, "online", "threshold is configurable");
     assert.equal(staleAfterSeconds(), 86400);
   });
@@ -126,7 +126,7 @@ describe("runner status", () => {
   });
 
   test("approvals expiring within the hour, and already expired, are counted", () => {
-    process.env.ONEMEMORY_APPROVAL_TTL_SECONDS = "1800"; // 30 min
+    process.env.MONOMEM_APPROVAL_TTL_SECONDS = "1800"; // 30 min
     heartbeat(store, 5 * 3600);
     approvedTask(store, "tasks");
     const soon = runnerStatus(store);
@@ -253,24 +253,24 @@ describe("runner status surfaces", () => {
 describe("runner status: trust and correctness", () => {
   let store: Store;
   const saved = {
-    ttl: process.env.ONEMEMORY_APPROVAL_TTL_SECONDS,
-    stale: process.env.ONEMEMORY_RUNNER_STALE_SECONDS,
-    hb: process.env.ONEMEMORY_RUNNER_HEARTBEAT_MS,
-    id: process.env.ONEMEMORY_RUNNER_ID,
-    ns: process.env.ONEMEMORY_RUNNER_TASK_NAMESPACE,
+    ttl: process.env.MONOMEM_APPROVAL_TTL_SECONDS,
+    stale: process.env.MONOMEM_RUNNER_STALE_SECONDS,
+    hb: process.env.MONOMEM_RUNNER_HEARTBEAT_MS,
+    id: process.env.MONOMEM_RUNNER_ID,
+    ns: process.env.MONOMEM_RUNNER_TASK_NAMESPACE,
   };
   const restore = (k: string, v: string | undefined) => (v === undefined ? delete process.env[k] : (process.env[k] = v));
   beforeEach(() => {
     store = new Store(":memory:");
-    for (const k of ["ONEMEMORY_RUNNER_STALE_SECONDS", "ONEMEMORY_RUNNER_HEARTBEAT_MS", "ONEMEMORY_RUNNER_ID", "ONEMEMORY_RUNNER_TASK_NAMESPACE"]) delete process.env[k];
+    for (const k of ["MONOMEM_RUNNER_STALE_SECONDS", "MONOMEM_RUNNER_HEARTBEAT_MS", "MONOMEM_RUNNER_ID", "MONOMEM_RUNNER_TASK_NAMESPACE"]) delete process.env[k];
   });
   afterEach(() => {
     store.close();
-    restore("ONEMEMORY_APPROVAL_TTL_SECONDS", saved.ttl);
-    restore("ONEMEMORY_RUNNER_STALE_SECONDS", saved.stale);
-    restore("ONEMEMORY_RUNNER_HEARTBEAT_MS", saved.hb);
-    restore("ONEMEMORY_RUNNER_ID", saved.id);
-    restore("ONEMEMORY_RUNNER_TASK_NAMESPACE", saved.ns);
+    restore("MONOMEM_APPROVAL_TTL_SECONDS", saved.ttl);
+    restore("MONOMEM_RUNNER_STALE_SECONDS", saved.stale);
+    restore("MONOMEM_RUNNER_HEARTBEAT_MS", saved.hb);
+    restore("MONOMEM_RUNNER_ID", saved.id);
+    restore("MONOMEM_RUNNER_TASK_NAMESPACE", saved.ns);
   });
 
   test("a heartbeat forged by a token (future alive_at, any writer) is ignored", () => {
@@ -339,13 +339,13 @@ describe("runner status: trust and correctness", () => {
     assert.equal(runnerStatus(store).runner.state, "never_seen");
   });
 
-  test("ONEMEMORY_RUNNER_ACCEPT_LEGACY=1 lets a pre-1.3.4 heartbeat count again", () => {
-    process.env.ONEMEMORY_RUNNER_ACCEPT_LEGACY = "1";
+  test("MONOMEM_RUNNER_ACCEPT_LEGACY=1 lets a pre-1.3.4 heartbeat count again", () => {
+    process.env.MONOMEM_RUNNER_ACCEPT_LEGACY = "1";
     try {
       heartbeat(store, 20, { writer: "" });
       assert.equal(runnerStatus(store).runner.state, "online");
     } finally {
-      delete process.env.ONEMEMORY_RUNNER_ACCEPT_LEGACY;
+      delete process.env.MONOMEM_RUNNER_ACCEPT_LEGACY;
       clearRunnerStatusCache(store);
     }
     assert.equal(runnerStatus(store).runner.state, "never_seen", "off again");
@@ -404,7 +404,7 @@ describe("runner status: trust and correctness", () => {
   });
 
   test("expired approvals show in the notice even while the runner is online", () => {
-    process.env.ONEMEMORY_APPROVAL_TTL_SECONDS = "60";
+    process.env.MONOMEM_APPROVAL_TTL_SECONDS = "60";
     heartbeat(store, 5);
     approvedTask(store, "tasks");
     const s = runnerStatus(store, undefined, Date.now() + 120_000);
@@ -429,15 +429,15 @@ describe("runner status: trust and correctness", () => {
 
   test("stale threshold: default, clamp, and never below three beats", () => {
     assert.equal(staleAfterSeconds(), 600);
-    process.env.ONEMEMORY_RUNNER_STALE_SECONDS = "5";
+    process.env.MONOMEM_RUNNER_STALE_SECONDS = "5";
     assert.equal(staleAfterSeconds(), 30, "floor 30 s");
-    process.env.ONEMEMORY_RUNNER_STALE_SECONDS = "99999999";
+    process.env.MONOMEM_RUNNER_STALE_SECONDS = "99999999";
     assert.equal(staleAfterSeconds(), 7 * 86_400, "cap 7 d");
-    process.env.ONEMEMORY_RUNNER_STALE_SECONDS = "garbage";
+    process.env.MONOMEM_RUNNER_STALE_SECONDS = "garbage";
     assert.equal(staleAfterSeconds(), 600);
-    delete process.env.ONEMEMORY_RUNNER_STALE_SECONDS;
+    delete process.env.MONOMEM_RUNNER_STALE_SECONDS;
     assert.equal(staleAfterSeconds(900_000), 2700, "a 15 min beat needs 45 min before 'offline'");
-    process.env.ONEMEMORY_RUNNER_HEARTBEAT_MS = "1200000";
+    process.env.MONOMEM_RUNNER_HEARTBEAT_MS = "1200000";
     assert.equal(staleAfterSeconds(), 3600, "falls back to the configured beat interval");
   });
 
@@ -512,7 +512,7 @@ describe("runner status: recall hook, CLI, dashboard", () => {
       const cli = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.js");
       const run = (...args: string[]) =>
         spawnSync(process.execPath, [cli, "runner-status", ...args], {
-          env: { ...process.env, ONEMEMORY_DB_PATH: db, ONEMEMORY_HOME: dir },
+          env: { ...process.env, MONOMEM_DB_PATH: db, MONOMEM_HOME: dir },
           encoding: "utf8",
           timeout: 30000,
         });
@@ -545,14 +545,14 @@ describe("runner status: recall hook, CLI, dashboard", () => {
 
 describe("runner status: 1.4.1 review fixes", () => {
   let store: Store;
-  const keep = { prune: process.env.ONEMEMORY_RUNNER_HEARTBEAT_PRUNE_DAYS, ns: process.env.ONEMEMORY_RUNNER_TASK_NAMESPACE, id: process.env.ONEMEMORY_RUNNER_ID };
+  const keep = { prune: process.env.MONOMEM_RUNNER_HEARTBEAT_PRUNE_DAYS, ns: process.env.MONOMEM_RUNNER_TASK_NAMESPACE, id: process.env.MONOMEM_RUNNER_ID };
   beforeEach(() => {
     store = new Store(":memory:");
-    for (const k of ["ONEMEMORY_RUNNER_HEARTBEAT_PRUNE_DAYS", "ONEMEMORY_RUNNER_TASK_NAMESPACE", "ONEMEMORY_RUNNER_ID"]) delete process.env[k];
+    for (const k of ["MONOMEM_RUNNER_HEARTBEAT_PRUNE_DAYS", "MONOMEM_RUNNER_TASK_NAMESPACE", "MONOMEM_RUNNER_ID"]) delete process.env[k];
   });
   afterEach(() => {
     store.close();
-    for (const [k, v] of [["ONEMEMORY_RUNNER_HEARTBEAT_PRUNE_DAYS", keep.prune], ["ONEMEMORY_RUNNER_TASK_NAMESPACE", keep.ns], ["ONEMEMORY_RUNNER_ID", keep.id]] as const) {
+    for (const [k, v] of [["MONOMEM_RUNNER_HEARTBEAT_PRUNE_DAYS", keep.prune], ["MONOMEM_RUNNER_TASK_NAMESPACE", keep.ns], ["MONOMEM_RUNNER_ID", keep.id]] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
     }
@@ -608,20 +608,20 @@ describe("runner status: 1.4.1 review fixes", () => {
     assert.equal(store.read(old), null);
     // configurable: 0 = never prune; env var read by heartbeatPruneDays()
     beat("ancient", 400 * 86400);
-    process.env.ONEMEMORY_RUNNER_HEARTBEAT_PRUNE_DAYS = "0";
+    process.env.MONOMEM_RUNNER_HEARTBEAT_PRUNE_DAYS = "0";
     assert.equal(heartbeatPruneDays(), 0);
     assert.equal(pruneStaleHeartbeats(store), 0);
-    process.env.ONEMEMORY_RUNNER_HEARTBEAT_PRUNE_DAYS = "90";
+    process.env.MONOMEM_RUNNER_HEARTBEAT_PRUNE_DAYS = "90";
     assert.equal(heartbeatPruneDays(), 90);
     assert.equal(pruneStaleHeartbeats(store), 1);
-    delete process.env.ONEMEMORY_RUNNER_HEARTBEAT_PRUNE_DAYS;
+    delete process.env.MONOMEM_RUNNER_HEARTBEAT_PRUNE_DAYS;
     assert.equal(heartbeatPruneDays(), 30);
   });
 
   test("the runner id and task namespace are read from the environment in ONE place", async () => {
     const task = await import("../src/task-core.js");
-    process.env.ONEMEMORY_RUNNER_ID = "box-9";
-    process.env.ONEMEMORY_RUNNER_TASK_NAMESPACE = "jobs";
+    process.env.MONOMEM_RUNNER_ID = "box-9";
+    process.env.MONOMEM_RUNNER_TASK_NAMESPACE = "jobs";
     assert.equal(task.envRunnerId(), "box-9");
     assert.equal(task.envRunnerTaskNamespace(), "jobs");
     assert.equal((task as any).waitingCommandTasks, undefined, "the dead helper is gone");

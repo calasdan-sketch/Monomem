@@ -1,11 +1,11 @@
-// `onememory setup`: connect OneMemory to Claude Code, Claude Desktop, Cursor, Codex CLI, Gemini CLI, Muse, VS Code and Zed
+// `monomem setup`: connect Monomem to Claude Code, Claude Desktop, Cursor, Codex CLI, Gemini CLI, Muse, VS Code and Zed
 // without hand-editing JSON (or TOML, for Codex).
 //
 // The promises, in the order a nervous person would ask for them:
 //   * It shows a plain-language plan and the exact lines it will change BEFORE touching anything (`--dry-run` stops there).
 //   * It writes only after you type y (`--yes` skips the question; the backup is made either way).
-//   * Every file it changes is copied first (<file>.onememory-backup-<time>) and written atomically (temp file + rename).
-//   * It changes ONLY the OneMemory entry. Other servers, other settings, comments, number formats, line endings and
+//   * Every file it changes is copied first (<file>.monomem-backup-<time>) and written atomically (temp file + rename).
+//   * It changes ONLY the Monomem entry. Other servers, other settings, comments, number formats, line endings and
 //     key order stay byte for byte as they were (see jsonc-edit.ts). Nothing is ever deleted except the old
 //     "claude-bridge" entry you agree to migrate; the old install folder and its database are never touched.
 //   * `setup --undo` puts it back.
@@ -26,7 +26,7 @@ import { applyTomlOps, hasServer, tomlOpsApplied } from "./toml-table.js";
 export interface SetupEnv {
   home: string;
   platform: NodeJS.Platform;
-  /** The process environment (APPDATA, CLAUDE_CONFIG_DIR, ONEMEMORY_*). */
+  /** The process environment (APPDATA, CLAUDE_CONFIG_DIR, MONOMEM_*). */
   env: NodeJS.ProcessEnv;
   cwd: string;
   nodeVersion: string;
@@ -163,7 +163,7 @@ export function buildServerEntry(e: SetupEnv, opts: Pick<SetupOptions, "command"
   let entry: ServerEntry;
   if (useNpx) {
     // Pinned to this version on purpose: a database upgrade is one-way, so it must be a choice, not a side effect of npx.
-    const pkg = `onememory-mcp@${e.version}`;
+    const pkg = `monomem@${e.version}`;
     // On native Windows, npx is a .cmd script, so a config usually needs it wrapped as `cmd /c npx`. This is commonly needed;
     // the Claude Code MCP docs do not state it (checked), so it is not confirmed there. Verify with `/mcp` after setup.
     entry = e.platform === "win32" ? { command: "cmd", args: ["/c", "npx", "-y", pkg, "mcp"] } : { command: "npx", args: ["-y", pkg, "mcp"] };
@@ -180,21 +180,21 @@ export function buildServerEntry(e: SetupEnv, opts: Pick<SetupOptions, "command"
 export function buildHookCommand(e: SetupEnv, opts: Pick<SetupOptions, "command">, dbPath?: string): string {
   const useNpx = opts.command === "npx" || (opts.command === "auto" && runningFromNpxCache(e.cliPath));
   const db = dbPath ? ` --db "${dbPath.replace(/\\/g, "/")}"` : "";
-  if (useNpx) return `npx -y onememory-mcp@${e.version} recall --budget-ms 800${db}`;
+  if (useNpx) return `npx -y monomem@${e.version} recall --budget-ms 800${db}`;
   return `node "${e.cliPath.replace(/\\/g, "/")}" recall --budget-ms 800${db}`;
 }
 
-export type EntryKind = "onememory" | "legacy" | "other";
+export type EntryKind = "monomem" | "legacy" | "other";
 
 export function classifyEntry(name: string, entry: unknown): EntryKind {
-  if (name === "onememory") return "onememory";
+  if (name === "monomem") return "monomem";
   const o = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
   const args = Array.isArray(o.args) ? o.args.map(String) : [];
   const line = [typeof o.command === "string" ? o.command : "", ...args].join(" ").toLowerCase().replace(/\\/g, "/");
   const envKeys = o.env && typeof o.env === "object" ? Object.keys(o.env as object) : [];
   const legacy = name === "claude-bridge" || /claude-bridge/.test(line) || envKeys.some((k) => k.startsWith("CLAUDE_BRIDGE_"));
   if (legacy) return "legacy";
-  if (/onememory/.test(line)) return "onememory";
+  if (/monomem/.test(line)) return "monomem";
   return "other";
 }
 
@@ -211,7 +211,7 @@ function dbBesideInstall(entry: Record<string, unknown>): string | null {
   return null;
 }
 
-/** Turn an old claude-bridge entry into the OneMemory entry that keeps its data. */
+/** Turn an old claude-bridge entry into the Monomem entry that keeps its data. */
 export function migrateEntry(e: SetupEnv, opts: Pick<SetupOptions, "command">, old: Record<string, unknown>, withType: boolean): { entry: ServerEntry; db: string | null; notes: string[] } {
   const notes: string[] = [];
   const env: Record<string, string> = {};
@@ -220,18 +220,18 @@ export function migrateEntry(e: SetupEnv, opts: Pick<SetupOptions, "command">, o
   for (const [k, v] of Object.entries(oldEnv)) if (typeof v === "string" && !k.startsWith("CLAUDE_BRIDGE_")) env[k] = v;
   for (const [k, v] of Object.entries(oldEnv)) {
     if (typeof v !== "string" || !k.startsWith("CLAUDE_BRIDGE_")) continue;
-    const nk = "ONEMEMORY_" + k.slice("CLAUDE_BRIDGE_".length);
+    const nk = "MONOMEM_" + k.slice("CLAUDE_BRIDGE_".length);
     if (!(nk in env)) env[nk] = v;
   }
-  let db = env.ONEMEMORY_DB_PATH ?? null;
+  let db = env.MONOMEM_DB_PATH ?? null;
   if (!db) {
     const guess = dbBesideInstall(old);
     if (guess && existsSync(guess)) {
-      env.ONEMEMORY_DB_PATH = guess;
+      env.MONOMEM_DB_PATH = guess;
       db = guess;
       notes.push(`the old entry named no database; found one at ${guess} and pointed the new entry at it`);
     } else {
-      notes.push("the old entry named no database and none was found next to it: the new entry will start with the standard location (~/.onememory)");
+      notes.push("the old entry named no database and none was found next to it: the new entry will start with the standard location (~/.monomem)");
     }
   }
   const entry = buildServerEntry(e, opts, env, withType);
@@ -275,7 +275,7 @@ export interface SetupPlan {
   conflicts: string[];
 }
 
-// Which Node can actually run OneMemory. Two separate capabilities are needed,
+// Which Node can actually run Monomem. Two separate capabilities are needed,
 // and they arrived at different times, so a single ">= x.y" rule is wrong:
 //
 //   1. `node:sqlite` importable with no flag -- notes are stored through it
@@ -309,7 +309,7 @@ export const MIN_NODE_TEXT = `${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.0`;
  *
  * nodeIsOk() is a version heuristic built from the official nodejs.org builds,
  * and it is right for those. It cannot be right for a distro or custom build
- * that compiled SQLite with different flags at any version. Every OneMemory
+ * that compiled SQLite with different flags at any version. Every Monomem
  * search goes through an FTS5 table, so "no such module: fts5" is fatal, and a
  * capability probe costs one in-memory statement.
  */
@@ -405,14 +405,14 @@ function serversKey(id: ClientId, text: string): string {
   return "mcpServers";
 }
 
-/** Codex CLI: one [mcp_servers.onememory] table in ~/.codex/config.toml (command/args/env), everything else untouched. */
+/** Codex CLI: one [mcp_servers.monomem] table in ~/.codex/config.toml (command/args/env), everything else untouched. */
 function planToml(e: SetupEnv, opts: SetupOptions, target: ClientTarget, text: string | null, shared: { dbs: Set<string> }): { change: FileChange | null; already: string[]; conflicts: string[]; warnings: string[] } {
-  if (text !== null && hasServer(text, "onememory")) return { change: null, already: [`${target.label}: "onememory" is already set up`], conflicts: [], warnings: [] };
-  const entry = buildServerEntry(e, opts, opts.db ? { ONEMEMORY_DB_PATH: opts.db } : undefined);
+  if (text !== null && hasServer(text, "monomem")) return { change: null, already: [`${target.label}: "monomem" is already set up`], conflicts: [], warnings: [] };
+  const entry = buildServerEntry(e, opts, opts.db ? { MONOMEM_DB_PATH: opts.db } : undefined);
   if (opts.db) shared.dbs.add(opts.db);
-  const ops: Op[] = [{ op: "set", path: ["mcp_servers"], key: "onememory", value: entry }];
-  const lines = [`add the "onememory" memory server${opts.db ? ` (database ${opts.db})` : ""}`];
-  return { change: { client: target.id, label: target.label, file: target.file, before: text, ops, lines, inverse: [{ op: "remove", path: ["mcp_servers"], key: "onememory" }], allowEmpty: opts.forceEmpty, format: "toml" }, already: [], conflicts: [], warnings: [] };
+  const ops: Op[] = [{ op: "set", path: ["mcp_servers"], key: "monomem", value: entry }];
+  const lines = [`add the "monomem" memory server${opts.db ? ` (database ${opts.db})` : ""}`];
+  return { change: { client: target.id, label: target.label, file: target.file, before: text, ops, lines, inverse: [{ op: "remove", path: ["mcp_servers"], key: "monomem" }], allowEmpty: opts.forceEmpty, format: "toml" }, already: [], conflicts: [], warnings: [] };
 }
 
 export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, shared: { dbs: Set<string> }): { change: FileChange | null; already: string[]; conflicts: string[]; warnings: string[] } {
@@ -430,36 +430,36 @@ export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, 
   const withType = target.id === "claude-code" || target.id === "project" || target.id === "vscode";
   const servers = base.trim() === "" ? [] : findServers(base, target.id === "claude-code", key);
   const top = servers.filter((s) => s.path.length === 1);
-  const hasOneTop = top.some((s) => classifyEntry(s.name, safeParseEntry(base, s) ?? {}) === "onememory");
+  const hasOneTop = top.some((s) => classifyEntry(s.name, safeParseEntry(base, s) ?? {}) === "monomem");
   let migrated = 0;
   for (const s of servers) {
     const entry = safeParseEntry(base, s);
     if (!entry) {
       warnings.push(
         /bridge/i.test(s.name)
-          ? `${target.label}: the entry "${s.name}" looks like the old claude-bridge, but I could not read it, so I did NOT migrate it and left it alone. By hand: in the file, rename "${s.name}" to "onememory", set its "command" and "args" as shown in docs/live-claude-code.md, and rename its CLAUDE_BRIDGE_* settings to ONEMEMORY_* (same ending). Your data is not touched.`
+          ? `${target.label}: the entry "${s.name}" looks like the old claude-bridge, but I could not read it, so I did NOT migrate it and left it alone. By hand: in the file, rename "${s.name}" to "monomem", set its "command" and "args" as shown in docs/live-claude-code.md, and rename its CLAUDE_BRIDGE_* settings to MONOMEM_* (same ending). Your data is not touched.`
           : `${target.label}: the entry "${s.name}" is in a form I do not understand; I left it alone`
       );
       continue;
     }
     const kind = classifyEntry(s.name, entry);
     const where = s.path.length === 1 ? "" : ` (project ${s.path[1]})`;
-    if (kind === "onememory") {
+    if (kind === "monomem") {
       already.push(`${target.label}: "${s.name}"${where} is already set up`);
       continue;
     }
     if (kind !== "legacy") continue;
-    // An existing "onememory" next to the old one: do not merge two things by guesswork.
-    const sibling = servers.some((x) => x.name === "onememory" && x.path.join("\u0000") === s.path.join("\u0000"));
+    // An existing "monomem" next to the old one: do not merge two things by guesswork.
+    const sibling = servers.some((x) => x.name === "monomem" && x.path.join("\u0000") === s.path.join("\u0000"));
     if (sibling) {
-      conflicts.push(`${target.label}: both "${s.name}" and "onememory" exist${where}; remove the one you do not want, then run setup again`);
+      conflicts.push(`${target.label}: both "${s.name}" and "monomem" exist${where}; remove the one you do not want, then run setup again`);
       continue;
     }
     const m = migrateEntry(e, opts, entry, withType);
-    if (opts.db) m.entry.env = { ...(m.entry.env ?? {}), ONEMEMORY_DB_PATH: opts.db };
-    ops.push({ op: "rename", path: s.path, key: s.name, newKey: "onememory", value: m.entry });
-    inverse.unshift({ op: "rename", path: s.path, key: "onememory", newKey: s.name, value: entry });
-    lines.push(`replace the old "${s.name}" entry${where} with "onememory"; ${m.db ? `your data stays where it is (${m.db})` : "standard data location"}. The old install folder is not touched`);
+    if (opts.db) m.entry.env = { ...(m.entry.env ?? {}), MONOMEM_DB_PATH: opts.db };
+    ops.push({ op: "rename", path: s.path, key: s.name, newKey: "monomem", value: m.entry });
+    inverse.unshift({ op: "rename", path: s.path, key: "monomem", newKey: s.name, value: entry });
+    lines.push(`replace the old "${s.name}" entry${where} with "monomem"; ${m.db ? `your data stays where it is (${m.db})` : "standard data location"}. The old install folder is not touched`);
     lines.push(...m.notes.map((n) => "note: " + n));
     const dbToCheck = opts.db ?? m.db;
     if (dbToCheck) shared.dbs.add(dbToCheck);
@@ -467,7 +467,7 @@ export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, 
   }
   if (migrated === 0 && !hasOneTop && (target.id !== "project" || opts.project) && !already.length) {
     const env: Record<string, string> = {};
-    if (opts.db) env.ONEMEMORY_DB_PATH = opts.db;
+    if (opts.db) env.MONOMEM_DB_PATH = opts.db;
     let entry = buildServerEntry(e, opts, env, withType);
     // Muse: "optional" so a server that fails to start is skipped with a warning instead of aborting the whole run.
     if (target.id === "muse") entry = { transport: "stdio", ...entry, mode: "optional" };
@@ -476,9 +476,9 @@ export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, 
       ops.push({ op: "set", path: [], key: "schema_version", value: 1 });
       inverse.unshift({ op: "remove", path: [], key: "schema_version" });
     }
-    ops.push({ op: "set", path: [key], key: "onememory", value: entry });
-    inverse.unshift({ op: "remove", path: [key], key: "onememory" });
-    lines.push(`add the "onememory" memory server${opts.db ? ` (database ${opts.db})` : ""}`);
+    ops.push({ op: "set", path: [key], key: "monomem", value: entry });
+    inverse.unshift({ op: "remove", path: [key], key: "monomem" });
+    lines.push(`add the "monomem" memory server${opts.db ? ` (database ${opts.db})` : ""}`);
     if (opts.db) shared.dbs.add(opts.db);
   }
   if (ops.length === 0) return { change: null, already, conflicts, warnings };
@@ -486,11 +486,21 @@ export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, 
 }
 
 export const HOOK_MARKER = "recall --budget-ms";
-/** Our own start-of-session hook: the recall command we write, any command line naming onememory with recall, or the capture session-start hook. */
-const HOOK_DETECT = /recall --budget-ms|onememory[^\n]{0,120}\b(?:recall|hook session-start)\b/;
+/**
+ * Our own start-of-session hook: the recall command we write, any command line
+ * naming this tool with recall, or the capture session-start hook.
+ *
+ * `onememory` and `claude-bridge` are matched too, because this package has
+ * been renamed twice and the hook line is written into the USER's settings
+ * file, where it stays until setup rewrites it. Matching only the current name
+ * would make setup fail to recognise its own hook on every existing install
+ * and bolt a second, duplicate one in beside it.
+ */
+const TOOL_NAMES = "(?:monomem|onememory|claude-bridge)";
+const HOOK_DETECT = new RegExp(`recall --budget-ms|${TOOL_NAMES}[^\\n]{0,120}\\b(?:recall|hook session-start)\\b`);
 
 /**
- * Automatic memory: the Claude Code events the capture hooks run on, the `onememory hook <event>` each runs, and whether
+ * Automatic memory: the Claude Code events the capture hooks run on, the `monomem hook <event>` each runs, and whether
  * it runs in the background (`async`: the agent does not wait for it). user-prompt is synchronous so the prompt is
  * recorded before the tools it causes; session-start (below) is synchronous because its output is the injected context.
  */
@@ -505,11 +515,11 @@ export const CAPTURE_HOOKS: ReadonlyArray<{ on: string; event: string; async: bo
   { on: "SessionEnd", event: "session-end", async: true },
 ];
 
-/** `onememory hook <event>` as a hook command (same launcher rules as buildHookCommand). */
+/** `monomem hook <event>` as a hook command (same launcher rules as buildHookCommand). */
 export function buildCaptureCommand(e: SetupEnv, opts: Pick<SetupOptions, "command">, event: string, dbPath?: string): string {
   const useNpx = opts.command === "npx" || (opts.command === "auto" && runningFromNpxCache(e.cliPath));
   const db = dbPath ? ` --db "${dbPath.replace(/\\/g, "/")}"` : "";
-  if (useNpx) return `npx -y onememory-mcp@${e.version} hook ${event}${db}`;
+  if (useNpx) return `npx -y monomem@${e.version} hook ${event}${db}`;
   return `node "${e.cliPath.replace(/\\/g, "/")}" hook ${event}${db}`;
 }
 
@@ -519,7 +529,7 @@ export function planHook(e: SetupEnv, opts: SetupOptions, dbForHook?: string): {
 
 type CaptureHook = { on: string; event: string; async: boolean; matcher?: string };
 
-/** An agent with command hooks: where they live, its start-of-session event, and its events mapped to `onememory hook <event>`. */
+/** An agent with command hooks: where they live, its start-of-session event, and its events mapped to `monomem hook <event>`. */
 export interface HookHost {
   client: ClientId;
   label: string;
@@ -558,7 +568,7 @@ export function hookHosts(e: SetupEnv): HookHost[] {
         { on: "PostToolUse", event: "post-tool", async: true, matcher: "*" },
         { on: "Stop", event: "stop", async: true },
       ],
-      notes: ["note: Codex runs a new hook only after you trust it: type /hooks in Codex and approve the OneMemory ones"],
+      notes: ["note: Codex runs a new hook only after you trust it: type /hooks in Codex and approve the Monomem ones"],
     },
     {
       client: "gemini",
@@ -589,7 +599,7 @@ export function hookHosts(e: SetupEnv): HookHost[] {
 
 /**
  * The hooks to add to ~/.claude/settings.json: the start-of-session context (`recall`, unless one of ours is already
- * there) and, with `capture`, one entry per CAPTURE_HOOKS event (each only if that event has no onememory hook yet).
+ * there) and, with `capture`, one entry per CAPTURE_HOOKS event (each only if that event has no monomem hook yet).
  * With capture the start-of-session entry is `hook session-start`, which prints the same context and also does the
  * capture housekeeping. Existing entries, ours or anyone's, are never touched; every addition has its own undo op.
  */
@@ -615,14 +625,16 @@ export function planHooks(e: SetupEnv, opts: SetupOptions, dbForHook: string | u
   if (want.capture) {
     let added = 0;
     for (const h of host.events) {
-      // Ours: a command line naming onememory (the package or its cli.js) with `hook <event>`; another tool's hook is not.
-      if (has(h.on, new RegExp(`onememory[^\\n]{0,160}\\bhook ${h.event}(?![\\w-])`))) continue;
+      // Ours: a command line naming this tool (the package or its cli.js path) with `hook <event>`; another tool's
+      // hook is not. The retired names count: the command line lives in the USER's settings file and still holds
+      // whatever path was installed then, so matching only the current name would add a duplicate hook on upgrade.
+      if (has(h.on, new RegExp(`${TOOL_NAMES}[^\\n]{0,160}\\bhook ${h.event}(?![\\w-])`))) continue;
       const hook = { type: "command", command: buildCaptureCommand(e, opts, h.event, dbForHook), ...(h.async ? { async: true } : {}) };
       ops.push({ op: "append", path: ["hooks"], key: h.on, value: h.matcher ? { matcher: h.matcher, hooks: [hook] } : { hooks: [hook] } });
       inverse.unshift({ op: "unappend", path: ["hooks"], key: h.on, marker: `hook ${h.event}` });
       added++;
     }
-    if (added) lines.push(`record what ${host.agent} does in this project (files, commands, errors) into OneMemory, stored only on this machine (ONEMEMORY_CAPTURE=off turns it off)`);
+    if (added) lines.push(`record what ${host.agent} does in this project (files, commands, errors) into Monomem, stored only on this machine (MONOMEM_CAPTURE=off turns it off)`);
   }
   if (!ops.length) return { change: null, already: true };
   if (host.notes) lines.push(...host.notes);
@@ -711,7 +723,7 @@ function renameWithRetry(from: string, to: string): void {
 }
 
 function writeAtomic(real: string, text: string, mode: number | null): void {
-  const tmp = join(dirname(real), `.${basename(real)}.onememory-tmp-${process.pid}-${randomBytes(3).toString("hex")}`);
+  const tmp = join(dirname(real), `.${basename(real)}.monomem-tmp-${process.pid}-${randomBytes(3).toString("hex")}`);
   const fd = openSync(tmp, "wx", 0o600);
   try {
     writeSync(fd, text);
@@ -770,8 +782,8 @@ export function writeChange(e: SetupEnv, change: FileChange): WrittenChange | nu
     const next = applyFor(current ?? "", change.ops, change.format);
     let backup: string | null = null;
     if (buf) {
-      backup = `${real}.onememory-backup-${stamp(e.now())}`;
-      for (let n = 1; existsSync(backup); n++) backup = `${real}.onememory-backup-${stamp(e.now())}-${n}`;
+      backup = `${real}.monomem-backup-${stamp(e.now())}`;
+      for (let n = 1; existsSync(backup); n++) backup = `${real}.monomem-backup-${stamp(e.now())}-${n}`;
       const bfd = openSync(backup, "wx", 0o600);
       try {
         writeSync(bfd, buf);
@@ -822,10 +834,10 @@ export interface HistorySession {
   migratedLegacy?: boolean;
 }
 
-/** The data folder: ONEMEMORY_HOME, else ~/.onememory. */
+/** The data folder: MONOMEM_HOME, else ~/.monomem. */
 export function dataHome(e: SetupEnv): string {
-  const home = e.env.ONEMEMORY_HOME?.trim();
-  return home ? resolve(home) : join(e.home, ".onememory");
+  const home = e.env.MONOMEM_HOME?.trim();
+  return home ? resolve(home) : join(e.home, ".monomem");
 }
 
 export function historyFile(e: SetupEnv): string {
@@ -867,8 +879,8 @@ async function reportDatabaseAfterUndo(s: HistorySession, io: SetupIO): Promise<
     const bak = `${u.path}.pre-v${u.now}-backup`;
     io.out(`  ${u.path} was upgraded from schema v${u.before} to v${u.now}. The old claude-bridge program cannot open an upgraded database,`);
     io.out("  so the restored entry will fail until you do ONE of these:");
-    io.out("   A. Keep the new database and use OneMemory:  onememory setup   (it will reconnect you).");
-    io.out(`   B. Go fully back (notes written since the upgrade are lost, so run \`onememory backup --out <folder>\` first if you want them):`);
+    io.out("   A. Keep the new database and use Monomem:  monomem setup   (it will reconnect you).");
+    io.out(`   B. Go fully back (notes written since the upgrade are lost, so run \`monomem backup --out <folder>\` first if you want them):`);
     io.out("        1. Close Claude Code and every program that uses the database.");
     io.out(`        2. Move the safety copy over it:  ${bak}  ->  ${u.path}`);
     io.out(`        3. Delete  ${u.path}-wal  and  ${u.path}-shm  if they exist (they belong to the upgraded file).`);
@@ -923,10 +935,10 @@ export function undoSession(e: SetupEnv, io: SetupIO, s: HistorySession): number
       const reverted = applyFor(current, c.inverse, c.format);
       if (reverted === current) io.out(`  ${c.file}: our change is not there any more, nothing to do`);
       else {
-        const backup = `${c.real}.onememory-backup-${stamp(e.now())}-before-undo`;
+        const backup = `${c.real}.monomem-backup-${stamp(e.now())}-before-undo`;
         copyFileSync(c.real, backup);
         writeAtomic(c.real, reverted, statSync(c.real).mode & 0o777);
-        io.out(`  ${c.file}: it had changed since setup, so only the OneMemory change was taken out (copy of the file as it was: ${backup})`);
+        io.out(`  ${c.file}: it had changed since setup, so only the Monomem change was taken out (copy of the file as it was: ${backup})`);
       }
     } catch (err) {
       failed++;
@@ -948,7 +960,7 @@ function describeSchema(v: number | null, current: number): string {
 export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Promise<number> {
   if (!nodeIsOk(e.nodeVersion)) {
     io.err(
-      `OneMemory needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${e.nodeVersion}.\n` +
+      `Monomem needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${e.nodeVersion}.\n` +
         `  Fix: install Node 22.16+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n` +
         "  Then run this again. Nothing was changed. (Can't upgrade Node? Docker works too: see INSTALL.md.)"
     );
@@ -956,11 +968,11 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
   }
   if (opts.undo) return undoLast(e, io);
 
-  // A database pinned in the shell (ONEMEMORY_DB_PATH, or the old CLAUDE_BRIDGE_DB_PATH) must also reach the app's entry,
+  // A database pinned in the shell (MONOMEM_DB_PATH, or the old CLAUDE_BRIDGE_DB_PATH) must also reach the app's entry,
   // because the app will not run inside this shell.
-  const envDb = (e.env.ONEMEMORY_DB_PATH || e.env.CLAUDE_BRIDGE_DB_PATH || "").trim();
+  const envDb = (e.env.MONOMEM_DB_PATH || e.env.CLAUDE_BRIDGE_DB_PATH || "").trim();
   if (!opts.db && envDb) opts = { ...opts, db: envDb };
-  io.out(`OneMemory setup (version ${e.version})`);
+  io.out(`Monomem setup (version ${e.version})`);
   io.out(`  Node ${e.nodeVersion}: OK\n`);
   if (opts.only) {
     const bad = opts.only.filter((x) => !(CLIENT_IDS as readonly string[]).includes(x));
@@ -1001,7 +1013,7 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
   plan.dbs = dbs;
   for (const d of dbs) {
     const v = Store.peekSchemaVersion(d);
-    if (v !== null && v > SCHEMA_VERSION) plan.conflicts.push(`database ${d} is at schema v${v}, which is newer than this version (v${SCHEMA_VERSION}); install the newest onememory-mcp`);
+    if (v !== null && v > SCHEMA_VERSION) plan.conflicts.push(`database ${d} is at schema v${v}, which is newer than this version (v${SCHEMA_VERSION}); install the newest monomem`);
   }
 
   if (plan.changes.length === 0 && plan.conflicts.length === 0) {
@@ -1050,7 +1062,7 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
   if (plan.changes.length === 0 && !anyHook && !anyCapture) {
     for (const a of plan.already) io.out(`  (already fine) ${a}`);
     for (const w of plan.warnings) io.out(`  (careful) ${w}`);
-    io.out(plan.already.length ? "\nNothing to change: OneMemory is already connected. To check it, run:  onememory doctor" : "\nNothing was changed.");
+    io.out(plan.already.length ? "\nNothing to change: Monomem is already connected. To check it, run:  monomem doctor" : "\nNothing was changed.");
     return 0;
   }
 
@@ -1059,11 +1071,11 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
   for (const c of plan.changes) for (const l of c.lines) io.out(`  ${l.startsWith("note:") ? "   " : `${n++}. ${c.label}: `}${l}`);
   for (const d of dbs) io.out(`  ${n++}. Database ${d}: ${describeSchema(Store.peekSchemaVersion(d), SCHEMA_VERSION)}`);
   if (!opts.noTestNote) io.out(`  ${n++}. Write a test note, read it back and delete it, so you know writing, reading and deleting all work (your store is left empty)`);
-  io.out(`  ${n++}. Run \`onememory doctor\` and tell you how to check it inside Claude Code`);
+  io.out(`  ${n++}. Run \`monomem doctor\` and tell you how to check it inside Claude Code`);
   for (const a of plan.already) io.out(`  (already fine) ${a}`);
   for (const w of plan.warnings) io.out(`  (careful) ${w}`);
   io.out("");
-  io.out("Before any file is changed, a copy is saved beside it (name ends in .onememory-backup-<time>). `onememory setup --undo` puts it back.");
+  io.out("Before any file is changed, a copy is saved beside it (name ends in .monomem-backup-<time>). `monomem setup --undo` puts it back.");
   io.out("Please close Claude Code and Claude Desktop first: Claude Code rewrites ~/.claude.json while it runs.\n");
 
   // With automatic memory offered, its plan (which includes the start-of-session hook) is the one shown.
@@ -1136,10 +1148,10 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
             if (removed) io.out(`Database ${d}: removed ${removed} leftover test note${removed === 1 ? "" : "s"} from an earlier install — your store is yours now.`);
             {
               const note = s.create({
-                title: "OneMemory is connected",
-                body: "This note was written by `onememory setup` to check that writing and reading work. You can delete it any time.",
+                title: "Monomem is connected",
+                body: "This note was written by `monomem setup` to check that writing and reading work. You can delete it any time.",
                 tags: ["setup-check"],
-                source: "onememory setup",
+                source: "monomem setup",
               });
               const back = s.read(note.id); // gate-ok: setup reads back the test note it wrote a moment ago
               if (!back || back.title !== note.title || back.body !== note.body) throw new Error("the test note was written but did not read back the same");
@@ -1188,7 +1200,7 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
       const all = readHistory(e);
       all.push({ id: stamp(e.now()), at: e.now().toISOString(), version: e.version, changes: written, dbs: dbsBefore, migratedLegacy });
       saveHistory(e, all);
-      io.err("What was already written can be undone with: onememory setup --undo");
+      io.err("What was already written can be undone with: monomem setup --undo");
     }
     return 1;
   }
@@ -1200,9 +1212,9 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
 
   // 3. Doctor.
   if (!opts.noDoctor) {
-    io.out("\nonememory doctor:");
+    io.out("\nmonomem doctor:");
     const env = { ...e.env };
-    if (primaryDb !== DB_PATH) env.ONEMEMORY_DB_PATH = primaryDb;
+    if (primaryDb !== DB_PATH) env.MONOMEM_DB_PATH = primaryDb;
     const r = spawnSync(e.execPath, [e.cliPath, "doctor"], { env, encoding: "utf8", timeout: 60_000 });
     for (const l of `${r.stdout ?? ""}${r.stderr ?? ""}`.split("\n")) if (l.trim()) io.out("  " + l);
   }
@@ -1219,17 +1231,17 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
     }
   }
   if (missing.length) {
-    io.err(`\nWarning: ${missing.join(", ")} was changed by another program just after I wrote it, and the OneMemory entry is gone. Close Claude Code completely, then run setup again.`);
+    io.err(`\nWarning: ${missing.join(", ")} was changed by another program just after I wrote it, and the Monomem entry is gone. Close Claude Code completely, then run setup again.`);
     return 1;
   }
   // The last thing setup says is the only thing most people will act on, so
   // spend it proving the ONE claim this product makes: a fact told to one
   // assistant is known by another. It used to end by asking the user to search
   // for the note the installer had just written about the installer -- proof
-  // that OneMemory could talk to itself, in the slot where attention peaks.
+  // that Monomem could talk to itself, in the slot where attention peaks.
   const proof = proofPair(written);
   io.out("\nDone. Restart any assistant that was open, so it picks up the new entry.");
-  io.out("  Check it loaded: type  /mcp  (or your tool's equivalent) and look for  onememory  connected.");
+  io.out("  Check it loaded: type  /mcp  (or your tool's equivalent) and look for  monomem  connected.");
   if (proof) {
     io.out(`\nOne memory, ${proof.sameVendor ? "two assistants" : "two companies' assistants"}. Thirty seconds to see it:`);
     io.out(`  1. In ${proof.a}, say:   Remember: my staging server is on port 8443.`);
@@ -1247,9 +1259,9 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
     io.out("\nNow prove it (about 30 seconds):");
     io.out("  1. Say:   Remember: my staging server is on port 8443.");
     io.out("  2. Start a brand-new chat and ask:   What port is my staging server on?");
-    io.out("\n  The new chat was never told. It answers 8443. Wire up a second assistant with `onememory setup` and the same memory follows you there.");
+    io.out("\n  The new chat was never told. It answers 8443. Wire up a second assistant with `monomem setup` and the same memory follows you there.");
   }
-  io.out("\nIf onememory is missing or red: docs/live-claude-code.md has the fixes. To go back: onememory setup --undo");
+  io.out("\nIf monomem is missing or red: docs/live-claude-code.md has the fixes. To go back: monomem setup --undo");
   return 0;
 }
 
@@ -1284,7 +1296,7 @@ function primaryDbIfCustom(primary: string, std: string, opts: SetupOptions): st
 /** Backups left by setup next to a config file (for tests and `doctor`). */
 export function listBackups(file: string): string[] {
   const dir = dirname(file);
-  const base = basename(file) + ".onememory-backup-";
+  const base = basename(file) + ".monomem-backup-";
   try {
     return readdirSync(dir).filter((f) => f.startsWith(base)).map((f) => join(dir, f));
   } catch {

@@ -576,7 +576,7 @@ describe("recall: task board in the SessionStart hook", () => {
 
   test("configured namespaces: the board is scoped like the notes (no cross-namespace leak)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "om-recall-ns-board-"));
-    const prev = process.env.ONEMEMORY_SPACES;
+    const prev = process.env.MONOMEM_SPACES;
     try {
       const db = join(dir, "state.db");
       const s = new Store(db);
@@ -584,13 +584,13 @@ describe("recall: task board in the SessionStart hook", () => {
       putTask(s, { title: "other project task", namespace: "proj-b" });
       writeHandoff(s, { surface: "x", summary: "other project handoff", namespace: "proj-b" });
       s.close();
-      process.env.ONEMEMORY_SPACES = JSON.stringify({ spaces: { [process.cwd()]: "proj-a" }, default_namespace: "shared" });
+      process.env.MONOMEM_SPACES = JSON.stringify({ spaces: { [process.cwd()]: "proj-a" }, default_namespace: "shared" });
       const ctx = ctxOf(await runRecall({ dbPath: db }));
       assert.ok(ctx.includes("proj-a task"));
       assert.ok(!ctx.includes("other project"), `LEAK: ${ctx}`);
     } finally {
-      if (prev === undefined) delete process.env.ONEMEMORY_SPACES;
-      else process.env.ONEMEMORY_SPACES = prev;
+      if (prev === undefined) delete process.env.MONOMEM_SPACES;
+      else process.env.MONOMEM_SPACES = prev;
       rmSync(dir, { recursive: true, force: true });
     }
   });

@@ -1,4 +1,4 @@
-// `onememory sync --git`: two "computers" (two databases) and a private "remote" (a local bare repository).
+// `monomem sync --git`: two "computers" (two databases) and a private "remote" (a local bare repository).
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -153,7 +153,7 @@ describe("sync --git: plain files", { skip }, () => {
     const r = await sync(w.a, { noPush: true });
     assert.equal(r.code, 0, r.x.all());
     assert.equal(spawnSync("git", ["rev-parse", "--verify", "-q", "main"], { cwd: w.remote }).status, 1, "the remote still has no branch");
-    assert.match(g(w.a.repo, "log", "--oneline"), /onememory sync/);
+    assert.match(g(w.a.repo, "log", "--oneline"), /monomem sync/);
   });
   test("a repository with no remote is committed to locally", async () => {
     const root = mkdtempSync(join(tmpdir(), "om-gsync-nr-"));
@@ -196,7 +196,7 @@ describe("sync --git: plain files", { skip }, () => {
     const r = await sync(w.a, { dryRun: true });
     assert.equal(r.code, 0, r.x.all());
     assert.match(r.x.all(), /Dry run/);
-    assert.equal(existsSync(join(w.a.repo, "onememory")), false);
+    assert.equal(existsSync(join(w.a.repo, "monomem")), false);
     assert.equal(spawnSync("git", ["log"], { cwd: w.a.repo }).status !== 0 || g(w.a.repo, "log", "--oneline") === "", true);
   });
   test("a git-level conflict aborts cleanly and leaves the memory alone", async () => {
@@ -206,7 +206,7 @@ describe("sync --git: plain files", { skip }, () => {
     await sync(w.b);
     // hand-edit the SAME file differently in both repos and commit, so git itself cannot merge
     const fileOf = (d: Dev): string => {
-      const dir = join(d.repo, "onememory", "default");
+      const dir = join(d.repo, "monomem", "default");
       return join(dir, readdirSync(dir)[0]);
     };
     writeFileSync(fileOf(w.a), readFileSync(fileOf(w.a), "utf8") + "\nA line\n");
@@ -221,7 +221,7 @@ describe("sync --git: plain files", { skip }, () => {
     assert.equal(JSON.stringify(notes(w.b)), before);
     assert.equal(g(w.b.repo, "status", "--porcelain"), "", "the half-done merge was aborted");
   });
-  test("only the onememory/ folder is ever committed; other files in the repository are left alone", async () => {
+  test("only the monomem/ folder is ever committed; other files in the repository are left alone", async () => {
     const w = world();
     writeFileSync(join(w.a.repo, "README.md"), "mine");
     g(w.a.repo, "add", "README.md");
@@ -230,7 +230,7 @@ describe("sync --git: plain files", { skip }, () => {
     put(w.a, "n", "b");
     await sync(w.a);
     assert.ok(!g(w.a.repo, "ls-files").includes("scratch.txt"));
-    assert.match(g(w.a.repo, "ls-files"), /onememory\/default\//);
+    assert.match(g(w.a.repo, "ls-files"), /monomem\/default\//);
   });
 });
 
@@ -254,7 +254,7 @@ describe("sync --git: encrypted", { skip }, () => {
     // and not in git history either
     const all = g(w.a.repo, "log", "-p", "--all");
     assert.ok(!all.includes("SECRETWORD") && !all.includes(key.toString("base64")));
-    assert.match(readdirSync(join(w.a.repo, "onememory-enc"))[0], /^[0-9a-f]{32}\.enc$/);
+    assert.match(readdirSync(join(w.a.repo, "monomem-enc"))[0], /^[0-9a-f]{32}\.enc$/);
   });
   test("the key stays out of the repository: a key file inside it is refused", async () => {
     const w = world();
@@ -314,14 +314,14 @@ describe("sync --git: encrypted", { skip }, () => {
     await sync(w.a);
     const r = await sync(w.a, { encrypt: true });
     assert.equal(r.code, 1);
-    assert.match(r.x.all(), /already uses onememory\//);
+    assert.match(r.x.all(), /already uses monomem\//);
   });
   test("when at-rest encryption is on, its key is reused (one key to look after)", () => {
     const keyFile = join(tmpdir(), "nonexistent-dir-for-test", ".key");
     const p = syncKeyPath({ dataDir: "/data", env: {}, keyFile });
     assert.equal(p, keyFile);
     assert.equal(syncKeyPath({ dataDir: "/data", env: {} }).replace(/\\/g, "/"), "/data/.sync-key");
-    assert.equal(syncKeyPath({ dataDir: "/data", env: { ONEMEMORY_SYNC_KEY_FILE: "/k/x" } }).replace(/\\/g, "/").endsWith("/k/x"), true);
+    assert.equal(syncKeyPath({ dataDir: "/data", env: { MONOMEM_SYNC_KEY_FILE: "/k/x" } }).replace(/\\/g, "/").endsWith("/k/x"), true);
   });
   test("the work folder with readable notes is removed afterwards", async () => {
     const w = world();
@@ -384,7 +384,7 @@ describe("sync --git: the sealed-file format", () => {
   });
   test("containedIn: Windows flavour (mixed separators, case, drives, 8.3 already expanded)", () => {
     const w = (d: string, f: string): boolean => containedIn(path.win32, d, f, true);
-    assert.equal(w("C:\\Users\\runneradmin\\repo", "C:/Users/runneradmin/repo/onememory"), true);
+    assert.equal(w("C:\\Users\\runneradmin\\repo", "C:/Users/runneradmin/repo/monomem"), true);
     assert.equal(w("c:\\users\\RunnerAdmin\\Repo", "C:\\Users\\runneradmin\\repo\\a\\b"), true);
     assert.equal(w("C:\\Users\\runneradmin\\repo", "C:\\Users\\runneradmin\\repo"), true);
     assert.equal(w("C:\\repo", "C:\\repo\\..x\\f"), true);

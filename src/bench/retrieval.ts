@@ -1,7 +1,7 @@
-// `onememory bench --longmemeval | --locomo`: a retrieval benchmark on public long-conversation datasets.
+// `monomem bench --longmemeval | --locomo`: a retrieval benchmark on public long-conversation datasets.
 // No LLM, no judge: each conversation is loaded into a fresh throwaway Store, the question is searched, and the
 // retrieved sessions/turns are scored against the dataset's gold evidence (recall@k, nDCG@10, MRR).
-import { BENCH_HOME } from "./retrieval-env.js"; // first: isolate ONEMEMORY_HOME before config.js loads
+import { BENCH_HOME } from "./retrieval-env.js"; // first: isolate MONOMEM_HOME before config.js loads
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -23,7 +23,7 @@ const SOURCES = {
 } as const;
 type Dataset = keyof typeof SOURCES;
 type Granularity = "session" | "turn";
-const CACHE_DIR = join(homedir(), ".cache", "onememory-bench");
+const CACHE_DIR = join(homedir(), ".cache", "monomem-bench");
 const TOP = 50;
 
 interface Doc {
@@ -193,7 +193,7 @@ export async function runRetrieval(o: RetrievalOptions): Promise<RetrievalReport
 
   let hybridSkip = "";
   if (o.mode === "hybrid") {
-    if (!embeddingsEnabled()) hybridSkip = "embeddings are off (set ONEMEMORY_EMBEDDINGS=on and an embedding server)";
+    if (!embeddingsEnabled()) hybridSkip = "embeddings are off (set MONOMEM_EMBEDDINGS=on and an embedding server)";
     else if (!(await embed("probe"))) hybridSkip = "embedding endpoint did not return a vector";
   }
   const useHybrid = o.mode === "hybrid" && !hybridSkip;
@@ -321,7 +321,7 @@ export async function retrievalMain(argv: string[], out: (s: string) => void = c
         const v = take(i++, a);
         if (v !== "session" && v !== "turn") throw new Error("--granularity must be session or turn");
         o.granularity = v;
-      } else throw new Error(`unknown option ${a} (try: onememory bench --help)`);
+      } else throw new Error(`unknown option ${a} (try: monomem bench --help)`);
     }
     const r = await runRetrieval(o);
     out(json ? JSON.stringify(r, null, 2) : renderRetrieval(r));

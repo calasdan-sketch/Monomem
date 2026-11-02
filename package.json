@@ -1,17 +1,17 @@
 {
-  "name": "onememory-mcp",
-  "version": "2.1.2",
+  "name": "monomem",
+  "version": "1.0.0",
   "description": "Auditable shared memory for AI coding agents. Provenance on every note, injection-linted writes, one-command undo. Self-hosted, MIT.",
   "license": "MIT",
   "author": "Calas Automations Inc.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/calasdan-sketch/onememory.git"
+    "url": "git+https://github.com/calasdan-sketch/monomem.git"
   },
   "bugs": {
-    "url": "https://github.com/calasdan-sketch/onememory/issues"
+    "url": "https://github.com/calasdan-sketch/monomem/issues"
   },
-  "homepage": "https://github.com/calasdan-sketch/onememory#readme",
+  "homepage": "https://github.com/calasdan-sketch/monomem#readme",
   "keywords": [
     "mcp",
     "memory",
@@ -51,6 +51,7 @@
     "runner:sign": "node dist/src/runner-sign-start.js"
   },
   "bin": {
+    "monomem": "dist/src/cli.js",
     "onememory": "dist/src/cli.js"
   },
   "files": [

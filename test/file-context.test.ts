@@ -74,8 +74,8 @@ describe("file-context hook", () => {
       link(s, s.create({ title: "Good about b.ts", body: "fine" }, { kind: "observation", sessionId: "g", obsType: "change" }).id, "src/b.ts");
       s.close();
       assert.equal(await runHook("file-context", read("src/a.ts"), opts), "");
-      assert.equal(await runHook("file-context", read("src/b.ts", "x1"), { ...opts, env: { ONEMEMORY_CAPTURE: "off" } }), "");
-      assert.equal(await runHook("file-context", read("src/b.ts", "x2"), { ...opts, env: { ONEMEMORY_CAPTURE_EXCLUDE: "C:/work/**" } }), "");
+      assert.equal(await runHook("file-context", read("src/b.ts", "x1"), { ...opts, env: { MONOMEM_CAPTURE: "off" } }), "");
+      assert.equal(await runHook("file-context", read("src/b.ts", "x2"), { ...opts, env: { MONOMEM_CAPTURE_EXCLUDE: "C:/work/**" } }), "");
       assert.equal(await runHook("file-context", read("src/b.ts", "x3", { tool_name: "Edit" }), opts), "");
       assert.equal(await runHook("file-context", "{not json", opts), "");
       assert.equal(await runHook("file-context", read("src/b.ts", ""), opts), "", "no session id: nothing to dedupe against");
@@ -87,18 +87,18 @@ describe("file-context hook", () => {
 
   test("namespace: only the resolved one; fail-closed when unresolvable; no database = silent and none created", async () => {
     const { dir, db, opts } = setup();
-    const prev = process.env.ONEMEMORY_SPACES;
+    const prev = process.env.MONOMEM_SPACES;
     const err = console.error;
     try {
       const s = new Store(db);
       link(s, s.create({ title: "B knows c.ts", body: "b", namespace: "proj-b" }, { kind: "observation", sessionId: "b", obsType: "change" }).id, "src/c.ts");
       link(s, s.create({ title: "A knows c.ts", body: "a", namespace: "proj-a" }, { kind: "observation", sessionId: "a", obsType: "change" }).id, "src/c.ts");
       s.close();
-      process.env.ONEMEMORY_SPACES = JSON.stringify({ spaces: { [CWD]: "proj-a" }, default_namespace: "shared" });
+      process.env.MONOMEM_SPACES = JSON.stringify({ spaces: { [CWD]: "proj-a" }, default_namespace: "shared" });
       const out = await runHook("file-context", read("src/c.ts"), opts);
       assert.match(out, /A knows c\.ts/);
       assert.doesNotMatch(out, /B knows/);
-      process.env.ONEMEMORY_SPACES = JSON.stringify({ spaces: { [CWD]: "x", [CWD + "/*"]: "y" }, default_namespace: "shared" });
+      process.env.MONOMEM_SPACES = JSON.stringify({ spaces: { [CWD]: "x", [CWD + "/*"]: "y" }, default_namespace: "shared" });
       console.error = () => {};
       assert.equal(await runHook("file-context", read("src/c.ts", "n2"), opts), "");
       const none = join(dir, "missing.db");
@@ -106,8 +106,8 @@ describe("file-context hook", () => {
       assert.ok(!existsSync(none));
     } finally {
       console.error = err;
-      if (prev === undefined) delete process.env.ONEMEMORY_SPACES;
-      else process.env.ONEMEMORY_SPACES = prev;
+      if (prev === undefined) delete process.env.MONOMEM_SPACES;
+      else process.env.MONOMEM_SPACES = prev;
       rmSync(dir, { recursive: true, force: true });
     }
   });

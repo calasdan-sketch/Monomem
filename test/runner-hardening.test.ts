@@ -153,7 +153,7 @@ describe("finding 2: claims, results and heartbeat are not forgeable", () => {
       .update(canonicalString({ cmd_id: "x", action: "", issued_at: "", nonce: "" }))
       .digest("hex");
     assert.notEqual(body.sig, cmdMac);
-    assert.ok(canonicalString({ cmd_id: "x", action: "a", issued_at: "t", nonce: "n" }).startsWith("onememory-cmd-v2\n"));
+    assert.ok(canonicalString({ cmd_id: "x", action: "a", issued_at: "t", nonce: "n" }).startsWith("monomem-cmd-v2\n"));
   });
 
   test("an unsigned note naming a real cmd_id gets no reply", async () => {

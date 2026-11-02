@@ -1,7 +1,7 @@
 // Optional semantic-search embeddings.
 //
 // OFF by default -- keyword (FTS5) search is the zero-dependency default and
-// nothing here runs unless ONEMEMORY_EMBEDDINGS is turned on. When on,
+// nothing here runs unless MONOMEM_EMBEDDINGS is turned on. When on,
 // embeddings are produced by *your own* OpenAI-compatible endpoint (Ollama's
 // `/v1/embeddings`, a local text-embedding server, or any OpenAI-shaped API).
 // Nothing is sent to a third party you didn't configure, and there are still
@@ -11,10 +11,10 @@
 // keyword search. A memory tool must never lose a write or a query because
 // an optional embedding server was down.
 //
-// ONEMEMORY_EMBEDDINGS=auto: use embeddings when the configured endpoint
+// MONOMEM_EMBEDDINGS=auto: use embeddings when the configured endpoint
 // answers, keyword-only when it does not, without a word on stderr. A failed
 // call marks the endpoint down for AUTO_RETRY_MS (no request at all until
-// then), and the timeout is AUTO_TIMEOUT_MS unless ONEMEMORY_EMBED_TIMEOUT_MS
+// then), and the timeout is AUTO_TIMEOUT_MS unless MONOMEM_EMBED_TIMEOUT_MS
 // is set, so a machine without the backend never waits on it.
 
 const AUTO_RETRY_MS = 60_000;
@@ -24,7 +24,7 @@ let autoDownUntil = 0;
 
 export interface EmbeddingsConfig {
   enabled: boolean;
-  /** ONEMEMORY_EMBEDDINGS=auto: a failure is silent and backs off. */
+  /** MONOMEM_EMBEDDINGS=auto: a failure is silent and backs off. */
   auto?: boolean;
   url: string;
   model: string;
@@ -33,19 +33,19 @@ export interface EmbeddingsConfig {
 }
 
 export function embeddingsConfig(): EmbeddingsConfig {
-  const flag = (process.env.ONEMEMORY_EMBEDDINGS || "").trim().toLowerCase();
+  const flag = (process.env.MONOMEM_EMBEDDINGS || "").trim().toLowerCase();
   const auto = flag === "auto";
   const enabled = auto || flag === "1" || flag === "on" || flag === "true" || flag === "yes";
   return {
     enabled,
     ...(auto ? { auto: true } : {}),
     // Ollama's OpenAI-compatible route by default; override for any other.
-    url: process.env.ONEMEMORY_EMBED_URL || "http://localhost:11434/v1/embeddings",
-    model: process.env.ONEMEMORY_EMBED_MODEL || "nomic-embed-text",
-    apiKey: process.env.ONEMEMORY_EMBED_KEY || undefined,
+    url: process.env.MONOMEM_EMBED_URL || "http://localhost:11434/v1/embeddings",
+    model: process.env.MONOMEM_EMBED_MODEL || "nomic-embed-text",
+    apiKey: process.env.MONOMEM_EMBED_KEY || undefined,
     // 30s default: a local embedding model's first (cold-load) call can be
-    // slow; after that it's fast. Raise it with ONEMEMORY_EMBED_TIMEOUT_MS.
-    timeoutMs: Number(process.env.ONEMEMORY_EMBED_TIMEOUT_MS || (auto ? AUTO_TIMEOUT_MS : 30000)),
+    // slow; after that it's fast. Raise it with MONOMEM_EMBED_TIMEOUT_MS.
+    timeoutMs: Number(process.env.MONOMEM_EMBED_TIMEOUT_MS || (auto ? AUTO_TIMEOUT_MS : 30000)),
   };
 }
 
@@ -104,14 +104,14 @@ export async function embed(
       body: JSON.stringify({ model: cfg.model, input: text }),
       signal: controller.signal,
     });
-    if (!res.ok) return fail(`[onememory] embeddings endpoint returned ${res.status}; using keyword search`);
+    if (!res.ok) return fail(`[monomem] embeddings endpoint returned ${res.status}; using keyword search`);
     const json = (await res.json()) as unknown;
     const vec = parseEmbedding(json);
-    if (!vec || vec.length === 0) return fail("[onememory] embeddings response had no vector; using keyword search");
+    if (!vec || vec.length === 0) return fail("[monomem] embeddings response had no vector; using keyword search");
     if (cfg.auto) autoDownUntil = 0;
     return vec;
   } catch (e) {
-    return fail(`[onememory] embeddings call failed (${(e as Error).message}); using keyword search`);
+    return fail(`[monomem] embeddings call failed (${(e as Error).message}); using keyword search`);
   } finally {
     clearTimeout(timer);
   }

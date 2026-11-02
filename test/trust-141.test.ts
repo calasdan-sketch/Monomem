@@ -428,18 +428,18 @@ describe("G: attestation keys, pinning, rotation, versions", () => {
   let dir: string;
   let a: Store;
   let b: Store;
-  const prevEnv = process.env.ONEMEMORY_TRUSTED_ATTESTERS;
+  const prevEnv = process.env.MONOMEM_TRUSTED_ATTESTERS;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "om-att141-"));
     a = new Store(join(dir, "a", "state.db"));
     b = new Store(":memory:");
-    delete process.env.ONEMEMORY_TRUSTED_ATTESTERS;
+    delete process.env.MONOMEM_TRUSTED_ATTESTERS;
   });
   afterEach(() => {
     a.close();
     b.close();
-    if (prevEnv === undefined) delete process.env.ONEMEMORY_TRUSTED_ATTESTERS;
-    else process.env.ONEMEMORY_TRUSTED_ATTESTERS = prevEnv;
+    if (prevEnv === undefined) delete process.env.MONOMEM_TRUSTED_ATTESTERS;
+    else process.env.MONOMEM_TRUSTED_ATTESTERS = prevEnv;
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -516,7 +516,7 @@ describe("G: attestation keys, pinning, rotation, versions", () => {
     const sid = "22222222-2222-4222-8222-222222222222";
     const rec = { id: 7, namespace: "n", title: "t", body: "b", tags: ["x"], written_by: "w", created_by: "c", updated_at: "2026-01-01T00:00:00.000Z" };
     const hash = contentHash(rec.title, rec.body, rec.tags);
-    const bytes = Buffer.from(JSON.stringify(["onememory-attest-v1", sid, rec.id, rec.namespace, hash, "w", "c", rec.updated_at, "", "", []]));
+    const bytes = Buffer.from(JSON.stringify(["monomem-attest-v1", sid, rec.id, rec.namespace, hash, "w", "c", rec.updated_at, "", "", []]));
     const att = { v: 1, server_id: sid, key_id: key.keyId, content_hash: hash, sig: sign(null, bytes, key.privateKey).toString("base64url") };
     const trusted = new Map<string, TrustedAttester>([[key.keyId, { public_key: key.publicKey, server_id: sid, label: "old" }]]);
     assert.equal(verifyRecord(att, rec, trusted, null).ok, true, "1.4.0 exports are still accepted");
@@ -602,7 +602,7 @@ describe("G: attestation keys, pinning, rotation, versions", () => {
     assert.equal(publicKeyBuildCount(), after, "a repeat verification builds nothing");
   });
 
-  test("ONEMEMORY_TRUSTED_ATTESTERS: <server_id>=<key> entries or a JSON array; a bare key is reported, never trusted", () => {
+  test("MONOMEM_TRUSTED_ATTESTERS: <server_id>=<key> entries or a JSON array; a bare key is reported, never trusted", () => {
     const id = a.identity();
     const ok = parseTrustedAttestersEnvDetailed(`${id.server_id}=${id.public_key}`);
     assert.equal(ok.attesters.length, 1);
@@ -621,7 +621,7 @@ describe("G: attestation keys, pinning, rotation, versions", () => {
     const real = console.error;
     console.error = (...x: unknown[]) => void logged.push(x.join(" "));
     try {
-      process.env.ONEMEMORY_TRUSTED_ATTESTERS = "this-is-not-valid";
+      process.env.MONOMEM_TRUSTED_ATTESTERS = "this-is-not-valid";
       b.attesterList();
       b.attesterList();
     } finally {
@@ -635,7 +635,7 @@ describe("G: attestation keys, pinning, rotation, versions", () => {
 describe("F: import robustness", () => {
   test("a corrupt .attest-key, or a key location that cannot exist, does not fail an import of unattested notes", async () => {
     const dir = mkdtempSync(join(tmpdir(), "om-f-"));
-    const prev = process.env.ONEMEMORY_ATTEST_KEY_FILE;
+    const prev = process.env.MONOMEM_ATTEST_KEY_FILE;
     try {
       const a = new Store(":memory:");
       as("alice", () => a.create({ title: "n", body: "b" }));
@@ -651,15 +651,15 @@ describe("F: import robustness", () => {
       assert.equal(readFileSync(join(dir, "s", ATTEST_KEY_FILENAME), "utf8"), "not a key", "the damaged key was not touched");
       store.close();
       // a location that can never be created
-      process.env.ONEMEMORY_ATTEST_KEY_FILE = join(dir, "a-file", "sub", "key");
+      process.env.MONOMEM_ATTEST_KEY_FILE = join(dir, "a-file", "sub", "key");
       writeFileSync(join(dir, "a-file"), "x");
       const s2 = new Store(join(dir, "s2", "state.db"));
       const r3 = await importInto(s2, plain);
       assert.equal(r3.created.length, 1);
       s2.close();
     } finally {
-      if (prev === undefined) delete process.env.ONEMEMORY_ATTEST_KEY_FILE;
-      else process.env.ONEMEMORY_ATTEST_KEY_FILE = prev;
+      if (prev === undefined) delete process.env.MONOMEM_ATTEST_KEY_FILE;
+      else process.env.MONOMEM_ATTEST_KEY_FILE = prev;
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -667,7 +667,7 @@ describe("F: import robustness", () => {
   test("the CLI prints no terminal escapes or fake commands taken from an import file", () => {
     const dir = mkdtempSync(join(tmpdir(), "om-f2-"));
     try {
-      const evilSid = "\u001b[2J\u001b[31mRUN: onememory trust attester-add AAAA --any-server";
+      const evilSid = "\u001b[2J\u001b[31mRUN: monomem trust attester-add AAAA --any-server";
       const note = {
         id: 1,
         namespace: "n\u001b[2J",
@@ -682,7 +682,7 @@ describe("F: import robustness", () => {
       const file = join(dir, "in.json");
       writeFileSync(file, JSON.stringify({ notes: [note] }));
       const r = spawnSync(process.execPath, [CLI, "import", "--file", file], {
-        env: { ...process.env, ONEMEMORY_DB_PATH: join(dir, "db", "state.db"), ONEMEMORY_HOME: join(dir, "home") },
+        env: { ...process.env, MONOMEM_DB_PATH: join(dir, "db", "state.db"), MONOMEM_HOME: join(dir, "home") },
         encoding: "utf8",
         timeout: 60000,
       });
@@ -706,7 +706,7 @@ describe("F: import robustness", () => {
           const file = join(dir, "x.json");
           writeFileSync(file, JSON.stringify(shape));
           const r = spawnSync(process.execPath, [CLI, "import", "--file", file, "--json"], {
-            env: { ...process.env, ONEMEMORY_DB_PATH: join(dir, "db", "state.db"), ONEMEMORY_HOME: join(dir, "home") },
+            env: { ...process.env, MONOMEM_DB_PATH: join(dir, "db", "state.db"), MONOMEM_HOME: join(dir, "home") },
             encoding: "utf8",
             timeout: 60000,
           });
@@ -740,7 +740,7 @@ describe("H: export shape", () => {
         assert.equal(JSON.parse(await (await fetch(`${base}/export${q}`, { headers: h })).text()).export, undefined, q);
       }
       const att = JSON.parse(await (await fetch(`${base}/export?attest=1`, { headers: h })).text());
-      assert.equal(att.export.format, "onememory-export");
+      assert.equal(att.export.format, "monomem-export");
       assert.ok(att.notes[0].attestation);
       const t = new Store(":memory:");
       const server2 = createApiServer(t, [{ token: "a".repeat(32), scope: "admin", label: "adm" }]);
@@ -838,7 +838,7 @@ describe("I: migration backup", () => {
       } finally {
         console.error = quiet;
       }
-      const env = { ...process.env, ONEMEMORY_DB_PATH: path, ONEMEMORY_HOME: join(dir, "home") };
+      const env = { ...process.env, MONOMEM_DB_PATH: path, MONOMEM_HOME: join(dir, "home") };
       const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { env, encoding: "utf8", timeout: 60000 });
       const doc = run("doctor");
       assert.match(doc.stdout + doc.stderr, /pre-upgrade|pre-v15/i, doc.stdout + doc.stderr);
@@ -866,7 +866,7 @@ describe("backup: --include-attest-key", () => {
       s.create({ title: "n", body: "b" });
       s.identity();
       s.close();
-      const env = { ...process.env, ONEMEMORY_DB_PATH: path, ONEMEMORY_HOME: join(dir, "home") };
+      const env = { ...process.env, MONOMEM_DB_PATH: path, MONOMEM_HOME: join(dir, "home") };
       const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { env, encoding: "utf8", timeout: 60000 });
       const o1 = join(dir, "o1");
       const r1 = run("backup", "--out", o1);
@@ -901,7 +901,7 @@ describe("L: CLI help", () => {
   test("`trust --help` and `trust help` print the actions and exit 0; an unknown action prints them and exits 1", () => {
     const dir = mkdtempSync(join(tmpdir(), "om-help-"));
     try {
-      const env = { ...process.env, ONEMEMORY_DB_PATH: join(dir, "db", "state.db"), ONEMEMORY_HOME: join(dir, "home") };
+      const env = { ...process.env, MONOMEM_DB_PATH: join(dir, "db", "state.db"), MONOMEM_HOME: join(dir, "home") };
       const run = (...a: string[]) => spawnSync(process.execPath, [CLI, "trust", ...a], { env, encoding: "utf8", timeout: 60000 });
       for (const flag of ["--help", "help", "-h"]) {
         const r = run(flag);

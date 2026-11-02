@@ -51,10 +51,10 @@ describe("RateLimiter", () => {
 });
 
 describe("originAllowed (DNS-rebinding defense)", () => {
-  const SAVE = process.env.ONEMEMORY_ALLOWED_ORIGINS;
+  const SAVE = process.env.MONOMEM_ALLOWED_ORIGINS;
   afterEach(() => {
-    if (SAVE === undefined) delete process.env.ONEMEMORY_ALLOWED_ORIGINS;
-    else process.env.ONEMEMORY_ALLOWED_ORIGINS = SAVE;
+    if (SAVE === undefined) delete process.env.MONOMEM_ALLOWED_ORIGINS;
+    else process.env.MONOMEM_ALLOWED_ORIGINS = SAVE;
   });
 
   test("no Origin header (non-browser client) is allowed", () => {
@@ -68,12 +68,12 @@ describe("originAllowed (DNS-rebinding defense)", () => {
   });
 
   test("an unlisted browser Origin is blocked", () => {
-    delete process.env.ONEMEMORY_ALLOWED_ORIGINS;
+    delete process.env.MONOMEM_ALLOWED_ORIGINS;
     assert.equal(originAllowed(req({ origin: "http://evil.com" })), false);
   });
 
   test("a rebinding request (Origin==Host, both attacker-controlled) is still blocked", () => {
-    delete process.env.ONEMEMORY_ALLOWED_ORIGINS;
+    delete process.env.MONOMEM_ALLOWED_ORIGINS;
     // The old same-origin shortcut would have waved this through.
     assert.equal(
       originAllowed(req({ origin: "http://evil.com", host: "evil.com" })),
@@ -82,27 +82,27 @@ describe("originAllowed (DNS-rebinding defense)", () => {
   });
 
   test("an explicitly allowlisted Origin is allowed; others still blocked", () => {
-    process.env.ONEMEMORY_ALLOWED_ORIGINS = "https://notes.example.com, https://ok.test";
+    process.env.MONOMEM_ALLOWED_ORIGINS = "https://notes.example.com, https://ok.test";
     assert.equal(originAllowed(req({ origin: "https://notes.example.com" })), true);
     assert.equal(originAllowed(req({ origin: "https://ok.test" })), true);
     assert.equal(originAllowed(req({ origin: "https://nope.example.com" })), false);
   });
 
   test("a malformed Origin is blocked", () => {
-    delete process.env.ONEMEMORY_ALLOWED_ORIGINS;
+    delete process.env.MONOMEM_ALLOWED_ORIGINS;
     assert.equal(originAllowed(req({ origin: "@@not a url@@" })), false);
   });
 });
 
 describe("clientKey (rate-limit key / IP-spoofing defense)", () => {
   const SAVE = {
-    cf: process.env.ONEMEMORY_TRUST_CLOUDFLARE,
-    px: process.env.ONEMEMORY_TRUST_PROXY,
+    cf: process.env.MONOMEM_TRUST_CLOUDFLARE,
+    px: process.env.MONOMEM_TRUST_PROXY,
   };
   afterEach(() => {
     for (const [k, v] of [
-      ["ONEMEMORY_TRUST_CLOUDFLARE", SAVE.cf],
-      ["ONEMEMORY_TRUST_PROXY", SAVE.px],
+      ["MONOMEM_TRUST_CLOUDFLARE", SAVE.cf],
+      ["MONOMEM_TRUST_PROXY", SAVE.px],
     ] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
@@ -110,21 +110,21 @@ describe("clientKey (rate-limit key / IP-spoofing defense)", () => {
   });
 
   test("defaults to the socket address, ignoring forwarded headers", () => {
-    delete process.env.ONEMEMORY_TRUST_CLOUDFLARE;
-    delete process.env.ONEMEMORY_TRUST_PROXY;
+    delete process.env.MONOMEM_TRUST_CLOUDFLARE;
+    delete process.env.MONOMEM_TRUST_PROXY;
     const key = clientKey(
       req({ "cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "2.2.2.2" }, "10.0.0.5")
     );
     assert.equal(key, "10.0.0.5"); // forged headers do not get their own bucket
   });
 
-  test("trusts cf-connecting-ip only when ONEMEMORY_TRUST_CLOUDFLARE=1", () => {
-    process.env.ONEMEMORY_TRUST_CLOUDFLARE = "1";
+  test("trusts cf-connecting-ip only when MONOMEM_TRUST_CLOUDFLARE=1", () => {
+    process.env.MONOMEM_TRUST_CLOUDFLARE = "1";
     assert.equal(clientKey(req({ "cf-connecting-ip": "9.9.9.9" }, "10.0.0.5")), "9.9.9.9");
   });
 
-  test("trusts the first x-forwarded-for hop only when ONEMEMORY_TRUST_PROXY=1", () => {
-    process.env.ONEMEMORY_TRUST_PROXY = "1";
+  test("trusts the first x-forwarded-for hop only when MONOMEM_TRUST_PROXY=1", () => {
+    process.env.MONOMEM_TRUST_PROXY = "1";
     assert.equal(
       clientKey(req({ "x-forwarded-for": "8.8.8.8, 7.7.7.7" }, "10.0.0.5")),
       "8.8.8.8"

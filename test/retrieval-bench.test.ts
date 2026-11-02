@@ -1,4 +1,4 @@
-// Metric functions and dataset parsing of `onememory bench --longmemeval / --locomo`, on tiny inline fixtures (no download).
+// Metric functions and dataset parsing of `monomem bench --longmemeval / --locomo`, on tiny inline fixtures (no download).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { aggregate, dedupe, ndcg, percentile, reciprocalRank, recallAll, recallAny, scoreQuestion } from "../src/bench/retrieval-metrics.js";

@@ -58,9 +58,9 @@ describe("project profile", () => {
     assert.ok(small.length <= 90, small);
     assert.match(small, /Decisions:/);
     assert.equal(profileTokens({}), 300);
-    assert.equal(profileTokens({ ONEMEMORY_PROFILE_TOKENS: "50" }), 50);
-    assert.equal(profileTokens({ ONEMEMORY_PROFILE: "off" }), 0);
-    await withEnv({ ONEMEMORY_PROFILE: "off" }, async () => assert.doesNotMatch(await injectContext(s, { signals: noGit }), /What I know/));
+    assert.equal(profileTokens({ MONOMEM_PROFILE_TOKENS: "50" }), 50);
+    assert.equal(profileTokens({ MONOMEM_PROFILE: "off" }), 0);
+    await withEnv({ MONOMEM_PROFILE: "off" }, async () => assert.doesNotMatch(await injectContext(s, { signals: noGit }), /What I know/));
     const dec = s.list({ kinds: ["observation"], obsTypes: ["decision"] }).notes[0];
     setNeverShow(s, dec.id, true);
     assert.doesNotMatch(projectProfile(s, {}, null, 1200), /Decisions/);
@@ -179,7 +179,7 @@ describe("token & footprint meter", () => {
     await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
     try {
       const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
-      assert.equal(await llmSummarize(s, "llm-1", { ONEMEMORY_LLM_URL: url, ONEMEMORY_LLM_MODEL: "m" }), true);
+      assert.equal(await llmSummarize(s, "llm-1", { MONOMEM_LLM_URL: url, MONOMEM_LLM_MODEL: "m" }), true);
       assert.ok(meterStats(s).totals.llm_tokens > 0);
     } finally {
       srv.close();

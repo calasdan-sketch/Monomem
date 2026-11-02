@@ -297,16 +297,16 @@ function taskBody(p: BodyParts): string {
   return `${head.join("\n")}\n\n${p.notes}`;
 }
 
-/** How long an approval stays valid (ONEMEMORY_APPROVAL_TTL_SECONDS, default 24 h, 60 s - 30 d). */
+/** How long an approval stays valid (MONOMEM_APPROVAL_TTL_SECONDS, default 24 h, 60 s - 30 d). */
 export function approvalTtlMs(): number {
-  const raw = Number(process.env.ONEMEMORY_APPROVAL_TTL_SECONDS);
+  const raw = Number(process.env.MONOMEM_APPROVAL_TTL_SECONDS);
   const sec = Number.isFinite(raw) && raw > 0 ? Math.min(30 * 86_400, Math.max(60, Math.floor(raw))) : 86_400;
   return sec * 1000;
 }
 
-/** Max queued command tasks per namespace (ONEMEMORY_TASK_COMMAND_QUOTA, default 100). */
+/** Max queued command tasks per namespace (MONOMEM_TASK_COMMAND_QUOTA, default 100). */
 export function commandQuota(): number {
-  const raw = Number(process.env.ONEMEMORY_TASK_COMMAND_QUOTA);
+  const raw = Number(process.env.MONOMEM_TASK_COMMAND_QUOTA);
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 100;
 }
 
@@ -390,7 +390,7 @@ function validateTarget(v: unknown): string | undefined {
 
 /** Turn a caller's idempotency key into the stored tag value (never stored raw). */
 function ckeyTag(namespace: string, key: string): string {
-  return createHash("sha256").update(`onememory-ckey-v1\0${namespace}\0${key}`).digest("hex").slice(0, 24);
+  return createHash("sha256").update(`monomem-ckey-v1\0${namespace}\0${key}`).digest("hex").slice(0, 24);
 }
 
 function clientKey(v: unknown): string | undefined {

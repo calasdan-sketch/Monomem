@@ -1,17 +1,17 @@
-# Security & Threat Model — OneMemory
+# Security & Threat Model — Monomem
 
-OneMemory is a note store exposed over MCP + HTTP. **Treat all stored
+Monomem is a note store exposed over MCP + HTTP. **Treat all stored
 content as untrusted input to your agents** — see "Memory safety" below.
 
 ## Controls
 
 - **Network:** binds `127.0.0.1` by default. Public exposure is opt-in
-  (`ONEMEMORY_BIND`) and the server **refuses to start** on a non-loopback
-  address unless you set an explicit `ONEMEMORY_TOKEN`. Public deployments
+  (`MONOMEM_BIND`) and the server **refuses to start** on a non-loopback
+  address unless you set an explicit `MONOMEM_TOKEN`. Public deployments
   are expected to sit behind an authenticated tunnel (e.g. Cloudflare Tunnel +
   Cloudflare Access). The **Origin** header is validated (DNS-rebinding
   defense); browser origins are blocked unless listed in
-  `ONEMEMORY_ALLOWED_ORIGINS`.
+  `MONOMEM_ALLOWED_ORIGINS`.
 - **Auth:** a bearer token is required on every route except `/health` and
   `/ready`. Each token is compared in constant time (a minor side-channel on
   token length/count is not fully eliminated, which is immaterial for the
@@ -19,20 +19,20 @@ content as untrusted input to your agents** — see "Memory safety" below.
   URLs and are never logged. The primary token file is created `0600` and is
   git-ignored.
 - **Scoped tokens:** besides the primary (admin) token, you can define extra
-  `read` / `write` / `admin` tokens via `ONEMEMORY_TOKENS` (a JSON array)
-  or a `~/.onememory/tokens.json` file, so a leaked read-only token can't write, delete
+  `read` / `write` / `admin` tokens via `MONOMEM_TOKENS` (a JSON array)
+  or a `~/.monomem/tokens.json` file, so a leaked read-only token can't write, delete
   or dump the store. Scopes are enforced identically on the REST API and the
   MCP tools; `/export` (a full-store dump), `/import` and all deletes require
-  `admin`. If you use `~/.onememory/tokens.json`, it is re-`chmod`ed `600` on every start (POSIX) — it holds credentials
+  `admin`. If you use `~/.monomem/tokens.json`, it is re-`chmod`ed `600` on every start (POSIX) — it holds credentials
   and the app reads but does not set its permissions.
 - **Rate limiting:** per-client fixed-window limiter (defaults configurable via
-  `ONEMEMORY_RATE_MAX` / `ONEMEMORY_RATE_WINDOW_MS`) so a leaked token
+  `MONOMEM_RATE_MAX` / `MONOMEM_RATE_WINDOW_MS`) so a leaked token
   can't be brute-forced or hammered. Over-limit requests get `429`.
 - **Input validation:** per-note size caps (title/body/tags), a 1MB request
   body cap, and parameterized SQL only (no string-built queries).
 - **Secret guard:** writes are scanned for high-confidence credentials (AWS
   keys, private-key blocks, provider API tokens, etc.) and **rejected** by
-  default (`ONEMEMORY_LINT`), since a memory store is where secrets get pasted
+  default (`MONOMEM_LINT`), since a memory store is where secrets get pasted
   by accident.
 - **Audit log:** an append-only log records every mutation (op, id, namespace,
   byte count) — **no note content and no secrets** are logged.
@@ -63,17 +63,17 @@ note's original author. Read [docs/trust.md](./docs/trust.md) for exactly what t
 - A distrusted writer's content **stays hidden** after anyone else edits it (the taint set only grows); only the
   admin lifting the rule shows it again. `include_distrusted` is admin-only on every surface.
 - A trusted key is **pinned to one `server_id`** (an unpinned key needs an explicit `--any-server`), can carry a
-  `not_after`, and is rotated with `onememory trust rotate`. Version-2 attestations also sign `created_at`,
+  `not_after`, and is rotated with `monomem trust rotate`. Version-2 attestations also sign `created_at`,
   `source`, `expires_at`, `archived_at`, `rev` and the export time.
 - **Replay:** an old export stays validly signed. Replaying it into a server that trusts the key restores the old
   content (with its old provenance); `not_after` retires a whole key, but there is no per-note freshness.
   Import only files you hold, and treat `exported_at` as the signer's claim of when it exported.
 - `.attest-key` is the identity: protect it like the encryption key and **do not keep the data directory in a
   synced folder** (Dropbox, iCloud, OneDrive copy it to every device). It is re-tightened to 0600 at every start and
-  left out of `onememory backup` unless you pass `--include-attest-key`.
+  left out of `monomem backup` unless you pass `--include-attest-key`.
 - It is a policy on labels, not protection against the operator; a trusted server can still export a hostile
   note; and a writer who obtains a new token under a new label is not on the list.
-- Heartbeats from runners older than 1.3.4 are no longer believed by default (`ONEMEMORY_RUNNER_ACCEPT_LEGACY=1`
+- Heartbeats from runners older than 1.3.4 are no longer believed by default (`MONOMEM_RUNNER_ACCEPT_LEGACY=1`
   restores the old behaviour). A heartbeat counts only if the runner process wrote it and its own `alive_at` agrees
   with the server's clock within two minutes, so a tag-only touch of an old heartbeat does not make it fresh.
 - **Replacing a note (1.6.0)** is two steps: a preview that changes nothing, then a confirm that needs the preview's one-time
@@ -88,11 +88,11 @@ note's original author. Read [docs/trust.md](./docs/trust.md) for exactly what t
   bounded per note, encrypted at rest when encryption is on (plaintext otherwise, like note bodies), included in `export` unless
   `?history=0` / `--no-history`, and removable with `history purge`. Treat an export that carries history like the database.
 - Pre-upgrade copies (`<db>.pre-v16-backup`) are plaintext snapshots: remove them
-  (`onememory backup --prune-premigration`) once the upgrade is checked, especially before enabling encryption.
+  (`monomem backup --prune-premigration`) once the upgrade is checked, especially before enabling encryption.
 
 ## Encryption at rest (shipped in 1.2.0)
 
-`onememory encrypt enable` encrypts note **bodies** with AES-256-GCM. The
+`monomem encrypt enable` encrypts note **bodies** with AES-256-GCM. The
 limits, stated plainly:
 
 - **Titles, tags, timestamps and the writer (`written_by` / `created_by`,
@@ -100,11 +100,11 @@ limits, stated plainly:
   isolation need them. Keyword search covers title + tags only while
   encryption is on.
 - **Embeddings bypass encryption.** If you enable semantic search, the
-  decrypted body is sent to your `ONEMEMORY_EMBED_URL` endpoint, and the
+  decrypted body is sent to your `MONOMEM_EMBED_URL` endpoint, and the
   resulting vectors are stored unencrypted (vectors can leak information
   about the text). Leave embeddings off if that matters.
-- **The key sits beside the database** (`~/.onememory/.key`, mode `0600`, or
-  `ONEMEMORY_KEY_FILE`). A backup of the whole data directory contains both,
+- **The key sits beside the database** (`~/.monomem/.key`, mode `0600`, or
+  `MONOMEM_KEY_FILE`). A backup of the whole data directory contains both,
   so encryption protects against a stolen database file or a backup of the
   database alone, not against someone who gets the whole directory. There is
   no re-key command.
@@ -123,8 +123,8 @@ limits, stated plainly:
   tokens. A token can also be **pinned to one namespace**; a pinned token
   (even an admin one) cannot read or write another namespace. See
   [docs/token-namespaces.md](./docs/token-namespaces.md).
-- Rotate by setting a new `ONEMEMORY_TOKEN` or deleting
-  `~/.onememory/.token`; a leaked token works until you do.
+- Rotate by setting a new `MONOMEM_TOKEN` or deleting
+  `~/.monomem/.token`; a leaked token works until you do.
 
 ## Memory safety
 
@@ -134,10 +134,10 @@ prompt-injection / "memory poisoning"** channel. Layers:
 - **Write-time linter:** secrets (API keys, private keys, JWTs,
   high-entropy tokens) are blocked; prompt-injection phrasing is
   **quarantined**, invisible to search and recall until an admin approves it
-  (`onememory quarantine`). It is a pattern linter: it will miss novel
+  (`monomem quarantine`). It is a pattern linter: it will miss novel
   phrasing and can flag harmless text. See
   [docs/memory-linter.md](./docs/memory-linter.md).
-- **Untrusted-data banner on every MCP read** (and `onememory recall`).
+- **Untrusted-data banner on every MCP read** (and `monomem recall`).
   REST responses do not carry it; REST callers must apply the same rule.
 - **SKILL.md** tells agents to treat note content as data, never as
   instructions. If you integrate the tools yourself, enforce the same rule.
@@ -146,13 +146,13 @@ prompt-injection / "memory poisoning"** channel. Layers:
 
 - Single-user, single-node SQLite. No clustering, no multi-tenant isolation
   beyond namespaces on one process.
-- Note history is bounded, not unlimited: `ONEMEMORY_HISTORY_VERSIONS` earlier
+- Note history is bounded, not unlimited: `MONOMEM_HISTORY_VERSIONS` earlier
   versions per note (default 20, at most 500; **`0` keeps none at all, the
-  original included**) and `ONEMEMORY_HISTORY_MAX_BYTES` of earlier text per
+  original included**) and `MONOMEM_HISTORY_MAX_BYTES` of earlier text per
   note (default 2,000,000; 10,000 to 50,000,000). While history is on,
   pruning never drops the oldest kept version. Older versions beyond those
   limits are gone and cannot be restored, and an explicit purge
-  (`onememory history purge`, `memory_history_purge`,
+  (`monomem history purge`, `memory_history_purge`,
   `DELETE /notes/:id/history`) deletes **every** kept version, original
   included.
 - The similarity-edge graph rebuild is O(n^2); large imports defer it.

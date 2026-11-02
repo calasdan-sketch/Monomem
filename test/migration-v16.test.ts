@@ -121,7 +121,7 @@ describe("no-migrate open (the capture hooks)", () => {
 });
 
 describe("capture event retention", () => {
-  test("sweepExpired deletes raw events older than ONEMEMORY_CAPTURE_RETENTION_DAYS", () => {
+  test("sweepExpired deletes raw events older than MONOMEM_CAPTURE_RETENTION_DAYS", () => {
     const s = new Store(":memory:");
     const db = s.captureDb();
     const ins = db.prepare("INSERT INTO capture_events (session_id, at, event) VALUES (?, ?, 'post-tool')");
@@ -130,11 +130,11 @@ describe("capture event retention", () => {
     ins.run("s", new Date().toISOString());
     s.sweepExpired();
     assert.equal((db.prepare("SELECT COUNT(*) AS n FROM capture_events").get() as { n: number }).n, 2);
-    process.env.ONEMEMORY_CAPTURE_RETENTION_DAYS = "1";
+    process.env.MONOMEM_CAPTURE_RETENTION_DAYS = "1";
     try {
       s.sweepExpired();
     } finally {
-      delete process.env.ONEMEMORY_CAPTURE_RETENTION_DAYS;
+      delete process.env.MONOMEM_CAPTURE_RETENTION_DAYS;
     }
     assert.equal((db.prepare("SELECT COUNT(*) AS n FROM capture_events").get() as { n: number }).n, 1);
     s.close();

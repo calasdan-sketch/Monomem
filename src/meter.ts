@@ -1,4 +1,4 @@
-// What OneMemory costs you: aggregate numbers only, never prompt or note text.
+// What Monomem costs you: aggregate numbers only, never prompt or note text.
 //
 // One row per agent session: tokens the SessionStart hook injected, the tokens of captured work those stood in for
 // ("saved", the same estimate as the savings footer), and tokens the optional local model used (llm.ts; 0 when it is
@@ -46,7 +46,7 @@ export function meterAdd(store: Store, sessionId: string, namespace: string, add
          saved_tokens = saved_tokens + excluded.saved_tokens, llm_tokens = llm_tokens + excluded.llm_tokens, updated_at = excluded.updated_at`
     ).run(sessionId, namespace, inj, Math.max(0, Math.round(add.injected ?? 0)), Math.max(0, Math.round(add.saved ?? 0)), Math.max(0, Math.round(add.llm ?? 0)), new Date().toISOString());
   } catch (e) {
-    process.stderr.write(`onememory: meter not updated (${(e as Error).message})\n`);
+    process.stderr.write(`monomem: meter not updated (${(e as Error).message})\n`);
   }
 }
 
@@ -79,11 +79,11 @@ export function meterStats(store: Store, namespaces?: string[]): MeterStats {
     recent: recent.map((r) => ({ ...r })),
     capture_events: Number(ev.c),
     db_bytes: Number(pages.b),
-    note: "Estimates at ~4 characters a token. llm_tokens counts only the optional local model (0 when ONEMEMORY_LLM_URL is unset); OneMemory makes no other model calls.",
+    note: "Estimates at ~4 characters a token. llm_tokens counts only the optional local model (0 when MONOMEM_LLM_URL is unset); Monomem makes no other model calls.",
   };
 }
 
-/** One line for `onememory doctor`. */
+/** One line for `monomem doctor`. */
 export function meterLine(m: MeterStats): string {
   const t = m.totals;
   return (

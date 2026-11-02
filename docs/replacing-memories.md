@@ -1,6 +1,6 @@
 # Replacing a memory, history and confidence (1.6.0)
 
-Plain version: when a note is out of date, you can **replace** it with a newer one. OneMemory never does that
+Plain version: when a note is out of date, you can **replace** it with a newer one. Monomem never does that
 quietly. It first shows you exactly what would stop appearing in search, you say yes, and only then does it
 happen. Nothing is deleted, and you can undo it.
 
@@ -14,7 +14,7 @@ happen. Nothing is deleted, and you can undo it.
    It returns a one-time **confirmation code**.
 2. **Confirm.** The only step that changes anything. It needs that code. The code
    - works **once**,
-   - expires (10 minutes by default; `ONEMEMORY_SUPERSEDE_TTL_SECONDS`, 1 to 3600),
+   - expires (10 minutes by default; `MONOMEM_SUPERSEDE_TTL_SECONDS`, 1 to 3600),
    - works **only for the person who asked** (same writer, same scope, same tenant),
    - is tied to the exact notes and versions you were shown: if any of them is edited after the preview, the confirm is
      refused ("something changed; run the preview again"), and
@@ -28,10 +28,10 @@ nothing changed.
 
 | Surface | Preview | Confirm |
 |---|---|---|
-| Command line | `onememory supersede --old 12[,13] --title "..." --body "..." [--tags a,b] [--confidence 0.8]` (or `--new-id 40` to use a note that already exists) | At a terminal it asks you to **type the number of notes** you are replacing (or `yes`); anything else cancels and changes nothing. With no terminal (a script) it only previews, prints the code, and exits 2. A script must run `onememory supersede --confirm-token <code> --title ... --body ...` (the same text). There is deliberately **no `--yes`**. |
+| Command line | `monomem supersede --old 12[,13] --title "..." --body "..." [--tags a,b] [--confidence 0.8]` (or `--new-id 40` to use a note that already exists) | At a terminal it asks you to **type the number of notes** you are replacing (or `yes`); anything else cancels and changes nothing. With no terminal (a script) it only previews, prints the code, and exits 2. A script must run `monomem supersede --confirm-token <code> --title ... --body ...` (the same text). There is deliberately **no `--yes`**. |
 | REST | `POST /supersede/preview` `{ old_ids, new_note \| new_id }` | `POST /supersede/confirm` `{ token, new_note?, acknowledge_risk? }` |
 | MCP | `memory_supersede_preview` | `memory_supersede_confirm` |
-| Undo | `onememory supersede undo <id>` | `POST /supersede/undo` `{ id }` · `memory_supersede_undo` (recorded) |
+| Undo | `monomem supersede undo <id>` | `POST /supersede/undo` `{ id }` · `memory_supersede_undo` (recorded) |
 
 At most 20 notes can be replaced in one go. Tasks and handoffs are managed with the task tools and cannot be replaced.
 Replacing needs a write or admin token; a read token is refused.
@@ -73,18 +73,18 @@ Replacing hides a note, so it is held to the same trust rules as everything else
 
 Every edit that changes a note's title or body keeps the text it replaces (and the writer, tags, source and confidence it had).
 
-- Bounded: `ONEMEMORY_HISTORY_VERSIONS` (default 20 per note; 0 turns it off; at most 500) and
-  `ONEMEMORY_HISTORY_MAX_BYTES` (default 2,000,000 per note). When a note is over a limit, the **original version is
+- Bounded: `MONOMEM_HISTORY_VERSIONS` (default 20 per note; 0 turns it off; at most 500) and
+  `MONOMEM_HISTORY_MAX_BYTES` (default 2,000,000 per note). When a note is over a limit, the **original version is
   never dropped**, a writer's older copies go before another writer's newest one (so one writer flooding edits cannot push out
   someone else's version), and otherwise the oldest goes.
 - **Administrators only.** Old text can hold something that was taken out on purpose. `GET /notes/:id/history`, `memory_history`,
-  `onememory history <id>`. Versions written by a distrusted writer are left out unless the admin asks for them.
-- **Restore**: `POST /notes/:id/history/restore` `{ version, if_rev? }`, `memory_restore_version`, `onememory history restore <id> <version>`.
+  `monomem history <id>`. Versions written by a distrusted writer are left out unless the admin asks for them.
+- **Restore**: `POST /notes/:id/history/restore` `{ version, if_rev? }`, `memory_restore_version`, `monomem history restore <id> <version>`.
   A restore makes a **new version**; the text it replaces goes into the history, so a restore can itself be undone.
   A version written by a distrusted writer cannot be restored. Restoring a version this server saw being written takes the note's
   taint back to what that text had then (this is how an admin recovers a trusted original after distrusting an overwriter);
   a version that arrived by import is only a claim and can only add names.
-- **Forget**: `DELETE /notes/:id/history`, `memory_history_purge`, `onememory history purge <id>` (asks first) removes the kept versions
+- **Forget**: `DELETE /notes/:id/history`, `memory_history_purge`, `monomem history purge <id>` (asks first) removes the kept versions
   (use it after a secret was removed from a note). A hard delete of the note removes its history too.
 - Encrypted at rest like note bodies when encryption is on, and bound to their own row.
 - Carried by `export` (turn off with `?history=0` / `--no-history`) and `import` (every entry is a **claim**: names in the file are kept as
@@ -94,7 +94,7 @@ Every edit that changes a note's title or body keeps the text it replaces (and t
 
 A note may carry `confidence`, a number from 0 to 1 that the writer **claims** for how sure it is. It is validated (anything
 else is refused), labelled with who claimed it (`confidence_claimed_by`), kept through edits, export and import, shown in
-search results, and used in the replace warning. A `null` clears it. OneMemory never ranks by it and never lets it override
+search results, and used in the replace warning. A `null` clears it. Monomem never ranks by it and never lets it override
 the trust rules.
 
 ## Ranking: the newer of two near-identical notes comes first

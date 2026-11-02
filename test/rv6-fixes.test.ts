@@ -18,7 +18,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = join(HERE, "..", "src", "cli.js");
 const tmp = (p: string): string => mkdtempSync(join(tmpdir(), p));
 function cli(home: string, args: string[], env: Record<string, string> = {}) {
-  return spawnSync(process.execPath, [CLI, ...args], { env: { ...process.env, ONEMEMORY_HOME: home, ONEMEMORY_TOKEN: "t".repeat(40), ...env }, encoding: "utf8" });
+  return spawnSync(process.execPath, [CLI, ...args], { env: { ...process.env, MONOMEM_HOME: home, MONOMEM_TOKEN: "t".repeat(40), ...env }, encoding: "utf8" });
 }
 function quietly<T>(fn: () => T): { out: T; logged: string } {
   const orig = console.error;
@@ -325,11 +325,11 @@ describe("F5/F6/F7: rotation order, claim message, expiry wording", () => {
 
 describe("RV6-b: the pre-upgrade copy is required, read-only directories get a readable error, bad copies are handled with care", () => {
   const savedFree = Store.freeBytes;
-  const savedEnv = process.env.ONEMEMORY_SKIP_PREMIGRATION_BACKUP;
+  const savedEnv = process.env.MONOMEM_SKIP_PREMIGRATION_BACKUP;
   afterEach(() => {
     Store.freeBytes = savedFree;
-    if (savedEnv === undefined) delete process.env.ONEMEMORY_SKIP_PREMIGRATION_BACKUP;
-    else process.env.ONEMEMORY_SKIP_PREMIGRATION_BACKUP = savedEnv;
+    if (savedEnv === undefined) delete process.env.MONOMEM_SKIP_PREMIGRATION_BACKUP;
+    else process.env.MONOMEM_SKIP_PREMIGRATION_BACKUP = savedEnv;
   });
   function legacy(): { dir: string; path: string } {
     const dir = tmp("om-rv6-bak-");
@@ -342,14 +342,14 @@ describe("RV6-b: the pre-upgrade copy is required, read-only directories get a r
     return { dir, path };
   }
 
-  test("with no room for the copy the upgrade does NOT run; ONEMEMORY_SKIP_PREMIGRATION_BACKUP=1 upgrades without one", () => {
+  test("with no room for the copy the upgrade does NOT run; MONOMEM_SKIP_PREMIGRATION_BACKUP=1 upgrades without one", () => {
     const { dir, path } = legacy();
     try {
       Store.freeBytes = () => 0;
-      assert.throws(() => quietly(() => new Store(path)), /was not upgraded.*not enough free disk space.*ONEMEMORY_SKIP_PREMIGRATION_BACKUP=1/s);
+      assert.throws(() => quietly(() => new Store(path)), /was not upgraded.*not enough free disk space.*MONOMEM_SKIP_PREMIGRATION_BACKUP=1/s);
       assert.equal(Store.peekSchemaVersion(path), 13, "the database is untouched");
       assert.ok(!existsSync(path + ".pre-v16-backup"));
-      process.env.ONEMEMORY_SKIP_PREMIGRATION_BACKUP = "1";
+      process.env.MONOMEM_SKIP_PREMIGRATION_BACKUP = "1";
       const r = quietly(() => new Store(path));
       r.out.close();
       assert.match(r.logged, /WITHOUT a pre-upgrade copy/);
@@ -423,7 +423,7 @@ describe("RV6-b: the pre-upgrade copy is required, read-only directories get a r
   test("docs: no 'refuses to start' without the env override, no stale --prune, the dated copies are named", () => {
     const root = join(HERE, "..", "..");
     const up = readFileSync(join(root, "docs", "upgrading.md"), "utf8");
-    assert.match(up, /ONEMEMORY_SKIP_PREMIGRATION_BACKUP/);
+    assert.match(up, /MONOMEM_SKIP_PREMIGRATION_BACKUP/);
     assert.doesNotMatch(up, /refuses to start/);
     assert.doesNotMatch(readFileSync(join(root, "docs", "trust.md"), "utf8"), /refuses to start/);
     assert.doesNotMatch(readFileSync(join(root, "docs", "file-sync.md"), "utf8"), /with `--prune`/);

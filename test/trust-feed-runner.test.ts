@@ -128,18 +128,18 @@ describe("change feed: event writer vs note writer", () => {
 
 describe("runner status per target", () => {
   let s: Store;
-  const keep = { ttl: process.env.ONEMEMORY_APPROVAL_TTL_SECONDS, stale: process.env.ONEMEMORY_RUNNER_STALE_SECONDS, legacy: process.env.ONEMEMORY_RUNNER_ACCEPT_LEGACY };
+  const keep = { ttl: process.env.MONOMEM_APPROVAL_TTL_SECONDS, stale: process.env.MONOMEM_RUNNER_STALE_SECONDS, legacy: process.env.MONOMEM_RUNNER_ACCEPT_LEGACY };
   beforeEach(() => {
     s = new Store(":memory:");
-    delete process.env.ONEMEMORY_RUNNER_STALE_SECONDS;
-    delete process.env.ONEMEMORY_RUNNER_ACCEPT_LEGACY;
+    delete process.env.MONOMEM_RUNNER_STALE_SECONDS;
+    delete process.env.MONOMEM_RUNNER_ACCEPT_LEGACY;
     // the namespace the server believes runners serve when a runner has not said (so a runner never seen still counts)
-    process.env.ONEMEMORY_RUNNER_TASK_NAMESPACE = "tasks";
+    process.env.MONOMEM_RUNNER_TASK_NAMESPACE = "tasks";
   });
   afterEach(() => {
     s.close();
-    delete process.env.ONEMEMORY_RUNNER_TASK_NAMESPACE;
-    for (const [k, v] of [["ONEMEMORY_APPROVAL_TTL_SECONDS", keep.ttl], ["ONEMEMORY_RUNNER_STALE_SECONDS", keep.stale], ["ONEMEMORY_RUNNER_ACCEPT_LEGACY", keep.legacy]] as const) {
+    delete process.env.MONOMEM_RUNNER_TASK_NAMESPACE;
+    for (const [k, v] of [["MONOMEM_APPROVAL_TTL_SECONDS", keep.ttl], ["MONOMEM_RUNNER_STALE_SECONDS", keep.stale], ["MONOMEM_RUNNER_ACCEPT_LEGACY", keep.legacy]] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
     }
@@ -224,7 +224,7 @@ describe("runner status per target", () => {
     let st = runnerStatus(s);
     assert.equal(st.targets.find((t) => t.target === "pc-1")!.state, "never_seen");
     assert.ok(!st.targets.some((t) => t.target === "pc-9"));
-    process.env.ONEMEMORY_RUNNER_ACCEPT_LEGACY = "1";
+    process.env.MONOMEM_RUNNER_ACCEPT_LEGACY = "1";
     clearRunnerStatusCache(s);
     st = runnerStatus(s);
     assert.equal(st.targets.find((t) => t.target === "pc-9")!.state, "online", "the unsafe fallback is honoured only when asked for");
@@ -312,15 +312,15 @@ describe("module structure", () => {
 describe("the runner writes one heartbeat per runner id", () => {
   test("two runner ids make two notes, and the status shows both runners", () => {
     const s = new Store(":memory:");
-    const keepId = process.env.ONEMEMORY_RUNNER_ID;
+    const keepId = process.env.MONOMEM_RUNNER_ID;
     try {
       // the real runner process is stamped "runner"; mimic it for the liveness trust rule
       setProcessWriter("runner");
-      process.env.ONEMEMORY_RUNNER_ID = "pc-1";
+      process.env.MONOMEM_RUNNER_ID = "pc-1";
       resetHeartbeat();
       runnerBeat(s, "secret", new Date().toISOString());
       runnerBeat(s, "secret", new Date().toISOString());
-      process.env.ONEMEMORY_RUNNER_ID = "pc-2";
+      process.env.MONOMEM_RUNNER_ID = "pc-2";
       resetHeartbeat();
       runnerBeat(s, "secret", new Date().toISOString());
       const notes = s.list({ namespace: "runner", withTags: ["heartbeat"] }).notes;
@@ -330,8 +330,8 @@ describe("the runner writes one heartbeat per runner id", () => {
       assert.deepEqual(st.targets.map((t) => [t.target, t.state]), [["pc-1", "online"], ["pc-2", "online"]]);
     } finally {
       setProcessWriter("cli");
-      if (keepId === undefined) delete process.env.ONEMEMORY_RUNNER_ID;
-      else process.env.ONEMEMORY_RUNNER_ID = keepId;
+      if (keepId === undefined) delete process.env.MONOMEM_RUNNER_ID;
+      else process.env.MONOMEM_RUNNER_ID = keepId;
       resetHeartbeat();
       s.close();
     }

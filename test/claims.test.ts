@@ -98,20 +98,20 @@ describe("tool-surface claims match the registered tools", () => {
 describe("shipped skills only promise tools the reader can actually call", () => {
   // A skill that instructs a non-default tool must say so, or an agent loads it
   // on a plain install and calls a tool that does not exist.
-  const skills = ["SKILL.md", "skills/onememory-mem/SKILL.md"];
+  const skills = ["SKILL.md", "skills/monomem-mem/SKILL.md"];
   const core = read("src/mcp-server-core.ts");
   const registered = new Set([...core.matchAll(/server\.registerTool\(\s*"([a-z_]+)"/g)].map((m) => m[1]));
 
   for (const f of skills) {
-    test(`${f} declares the ONEMEMORY_TOOLS requirement if it uses a non-default tool`, () => {
+    test(`${f} declares the MONOMEM_TOOLS requirement if it uses a non-default tool`, () => {
       const text = read(f);
       const used = [...text.matchAll(/\b(memory_[a-z_]+|task_[a-z_]+|session_[a-z_]+|runner_status|trust_policy)\b/g)].map((m) => m[1]);
       const nonDefault = [...new Set(used)].filter((t) => registered.has(t) && !DEFAULT_TOOLS.includes(t));
       if (nonDefault.length === 0) return;
       assert.match(
         text,
-        /ONEMEMORY_TOOLS/,
-        `${f} mentions non-default tools (${nonDefault.slice(0, 5).join(", ")}) but never tells the reader they need ONEMEMORY_TOOLS`,
+        /MONOMEM_TOOLS/,
+        `${f} mentions non-default tools (${nonDefault.slice(0, 5).join(", ")}) but never tells the reader they need MONOMEM_TOOLS`,
       );
     });
   }

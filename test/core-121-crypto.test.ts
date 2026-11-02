@@ -18,12 +18,12 @@ let dir: string;
 let savedKeyFile: string | undefined;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "om-core121-"));
-  savedKeyFile = process.env.ONEMEMORY_KEY_FILE;
-  delete process.env.ONEMEMORY_KEY_FILE;
+  savedKeyFile = process.env.MONOMEM_KEY_FILE;
+  delete process.env.MONOMEM_KEY_FILE;
 });
 afterEach(() => {
-  if (savedKeyFile === undefined) delete process.env.ONEMEMORY_KEY_FILE;
-  else process.env.ONEMEMORY_KEY_FILE = savedKeyFile;
+  if (savedKeyFile === undefined) delete process.env.MONOMEM_KEY_FILE;
+  else process.env.MONOMEM_KEY_FILE = savedKeyFile;
   rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
@@ -65,7 +65,7 @@ describe("1: encrypt enable/disable while a server holds the DB", () => {
   });
 
   test("CLI disable works end to end and leaves a plaintext, key-less store", () => {
-    const env = { ...process.env, ONEMEMORY_HOME: dir };
+    const env = { ...process.env, MONOMEM_HOME: dir };
     const run = (...a: string[]) => spawnSync(process.execPath, ["--no-warnings", CLI, ...a], { env, encoding: "utf8" });
     const s = new Store(join(dir, "state.db"));
     s.create({ title: "p", body: "plain first" });
@@ -192,7 +192,7 @@ describe("AAD: ciphertext is bound to its row", () => {
   });
 });
 
-describe("5: one key resolver (ONEMEMORY_DB_PATH elsewhere)", () => {
+describe("5: one key resolver (MONOMEM_DB_PATH elsewhere)", () => {
   test("CLI enable puts the key beside the DB and the Store sees it", () => {
     const dbdir = join(dir, "elsewhere");
     mkdirSync(dbdir);
@@ -203,7 +203,7 @@ describe("5: one key resolver (ONEMEMORY_DB_PATH elsewhere)", () => {
     s.create({ title: "t", body: "mixed store check" });
     s.close();
     const r = spawnSync(process.execPath, ["--no-warnings", CLI, "encrypt", "enable"], {
-      env: { ...process.env, ONEMEMORY_HOME: home, ONEMEMORY_DB_PATH: dbp },
+      env: { ...process.env, MONOMEM_HOME: home, MONOMEM_DB_PATH: dbp },
       encoding: "utf8",
     });
     assert.equal(r.status, 0, r.stderr);
@@ -216,11 +216,11 @@ describe("5: one key resolver (ONEMEMORY_DB_PATH elsewhere)", () => {
   });
 });
 
-describe("ONEMEMORY_KEY_FILE pointing at a directory", () => {
+describe("MONOMEM_KEY_FILE pointing at a directory", () => {
   test("gives a clear error, not raw EISDIR", () => {
     const d = join(dir, "keydir");
     mkdirSync(d);
-    process.env.ONEMEMORY_KEY_FILE = d;
+    process.env.MONOMEM_KEY_FILE = d;
     assert.throws(() => loadKey(dir), /is a directory, not a file/);
     assert.throws(() => new Store(join(dir, "state.db")), /is a directory/);
     assert.equal(keyPath(dir), d);

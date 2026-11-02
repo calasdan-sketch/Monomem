@@ -70,17 +70,17 @@ function loadEvalSet(): EvalSet {
 /** Seed a fresh, isolated store for one task. Returns it plus its temp dir. */
 function seedStore(evalSet: EvalSet): { store: Store; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), "om-eval-"));
-  const savedKey = process.env.ONEMEMORY_KEY_FILE;
-  const savedBoost = process.env.ONEMEMORY_ACCESS_BOOST;
-  process.env.ONEMEMORY_KEY_FILE = join(dir, "no-such-key"); // plaintext store
-  process.env.ONEMEMORY_ACCESS_BOOST = "0"; // deterministic: native ranking only
+  const savedKey = process.env.MONOMEM_KEY_FILE;
+  const savedBoost = process.env.MONOMEM_ACCESS_BOOST;
+  process.env.MONOMEM_KEY_FILE = join(dir, "no-such-key"); // plaintext store
+  process.env.MONOMEM_ACCESS_BOOST = "0"; // deterministic: native ranking only
   const store = new Store(join(dir, "state.db"));
   for (const n of evalSet.notes) store.create({ title: n.title, body: n.body, tags: n.tags });
   // Restore env immediately; the Store captured its key state at open.
-  if (savedKey === undefined) delete process.env.ONEMEMORY_KEY_FILE;
-  else process.env.ONEMEMORY_KEY_FILE = savedKey;
-  if (savedBoost === undefined) delete process.env.ONEMEMORY_ACCESS_BOOST;
-  else process.env.ONEMEMORY_ACCESS_BOOST = savedBoost;
+  if (savedKey === undefined) delete process.env.MONOMEM_KEY_FILE;
+  else process.env.MONOMEM_KEY_FILE = savedKey;
+  if (savedBoost === undefined) delete process.env.MONOMEM_ACCESS_BOOST;
+  else process.env.MONOMEM_ACCESS_BOOST = savedBoost;
   return { store, dir };
 }
 

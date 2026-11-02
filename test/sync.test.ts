@@ -275,17 +275,17 @@ describe("export / import", () => {
 describe("sync hardening (r3)", () => {
   let dir: string;
   let outside: string;
-  const SAVE = process.env.ONEMEMORY_LINT;
+  const SAVE = process.env.MONOMEM_LINT;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "om-sync-"));
     outside = mkdtempSync(join(tmpdir(), "om-outside-"));
-    delete process.env.ONEMEMORY_LINT;
+    delete process.env.MONOMEM_LINT;
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
-    if (SAVE === undefined) delete process.env.ONEMEMORY_LINT;
-    else process.env.ONEMEMORY_LINT = SAVE;
+    if (SAVE === undefined) delete process.env.MONOMEM_LINT;
+    else process.env.MONOMEM_LINT = SAVE;
   });
   const edit = (p: string, from: string, to: string): void =>
     writeFileSync(p, readFileSync(p, "utf8").replace(from, to));

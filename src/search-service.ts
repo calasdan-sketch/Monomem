@@ -228,12 +228,12 @@ function bumpAccess(store: Store, notes: NoteRecord[]): void {
 
 /**
  * The access-boost + staleness re-rank is on by default; set
- * ONEMEMORY_ACCESS_BOOST=0 to rank by native relevance only (FTS bm25,
+ * MONOMEM_ACCESS_BOOST=0 to rank by native relevance only (FTS bm25,
  * cosine, RRF) -- the 1.0.0 ordering. Read per search so it can be flipped
  * without a restart in tests. Access counters still bump either way.
  */
 export function accessRerankEnabled(): boolean {
-  return (process.env.ONEMEMORY_ACCESS_BOOST ?? "").trim() !== "0";
+  return (process.env.MONOMEM_ACCESS_BOOST ?? "").trim() !== "0";
 }
 
 /**

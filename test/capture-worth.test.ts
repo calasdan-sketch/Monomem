@@ -9,7 +9,7 @@
 //   3x "Session: hi"                                (a 2-character prompt)
 //   2x "Edited 6 files: AppData/Local/Temp/..."     (tool noise, temp paths)
 //   1x "Decision: Every rival's user becomes ..."   (a subagent's words)
-//   1x "OneMemory is connected"                     (the installer's own note)
+//   1x "Monomem is connected"                     (the installer's own note)
 //
 // The positive controls matter as much as the rejections: a gate that throws
 // away real decisions and real edits would be worse than the junk.
@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 
 import { observe, summarize } from "../src/extract.js";
 
-const CWD = "C:/Users/testuser/new-repos/onememory";
+const CWD = "C:/Users/testuser/new-repos/monomem";
 
 let seq = 0;
 const ev = (o: Partial<{ event: string; tool: string; input: string; output: string; ok: boolean }>) => ({

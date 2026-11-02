@@ -3,7 +3,7 @@
 // The closing message is the only instruction most people act on, so it has to
 // demonstrate the product's one claim: a fact told to one assistant is known by
 // another. It used to end by asking the user to search for the note the
-// installer had just written about the installer -- proof that OneMemory could
+// installer had just written about the installer -- proof that Monomem could
 // talk to itself, spent in the slot where attention peaks.
 //
 // proofPair() picks the two assistants that message names. It must prefer two

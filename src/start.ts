@@ -4,12 +4,12 @@
 //
 // One Store means one SQLite connection (WAL + busy_timeout) does all the
 // writing, so the two transports never race each other on the same file.
-// This is what `onememory start` and `npm start` run, and what the
+// This is what `monomem start` and `npm start` run, and what the
 // Docker image launches -- so a self-hoster who tunnels port 8791 actually
 // has an MCP endpoint there, not a dead port.
 
 import "./quiet-sqlite.js"; // first: hide the node:sqlite ExperimentalWarning
-import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as ONEMEMORY_*
+import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as MONOMEM_*
 import { Store } from "./store.js";
 import { createApiServer } from "./api.js";
 import { createMcpHttpServer } from "./mcp-http.js";
@@ -40,11 +40,11 @@ const store = new Store(DB_PATH);
 const nsOpts = resolveStartupNamespace(process.cwd());
 if (nsOpts) {
   // eslint-disable-next-line no-console
-  console.error(`[onememory] namespace resolution ACTIVE: namespace="${nsOpts.namespace}"`);
+  console.error(`[monomem] namespace resolution ACTIVE: namespace="${nsOpts.namespace}"`);
 }
 
 /**
- * Background auto-consolidation (opt-in via ONEMEMORY_AUTO_CONSOLIDATE_INTERVAL).
+ * Background auto-consolidation (opt-in via MONOMEM_AUTO_CONSOLIDATE_INTERVAL).
  * Conservative by design: only exact-duplicate pairs (title AND body
  * identical) scoring >= 0.99 are merged automatically; weaker candidates
  * and token-collapse near-duplicates are LOGGED for human review
@@ -68,29 +68,29 @@ async function runAutoConsolidation(): Promise<void> {
     if (candidateCount > 0) {
       // eslint-disable-next-line no-console
       console.error(
-        `[onememory] auto-consolidate: ${candidateCount} duplicate candidate pair(s) ` +
+        `[monomem] auto-consolidate: ${candidateCount} duplicate candidate pair(s) ` +
           `>= 0.95 — review with memory_consolidation_candidates`
       );
     }
     for (const s of skipped) {
       // eslint-disable-next-line no-console
       console.error(
-        `[onememory] auto-consolidate: skipped pair #${s.idA}/#${s.idB}: ${s.reason}`
+        `[monomem] auto-consolidate: skipped pair #${s.idA}/#${s.idB}: ${s.reason}`
       );
     }
     for (const m of merged) {
       // eslint-disable-next-line no-console
       console.error(
-        `[onememory] auto-consolidate: merged #${m.idA}+#${m.idB} -> #${m.mergedId}`
+        `[monomem] auto-consolidate: merged #${m.idA}+#${m.idB} -> #${m.mergedId}`
       );
     }
     if (merged.length > 0) {
       // eslint-disable-next-line no-console
-      console.error(`[onememory] auto-consolidate: ${merged.length} merge(s) done`);
+      console.error(`[monomem] auto-consolidate: ${merged.length} merge(s) done`);
     }
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.error(`[onememory] auto-consolidate failed: ${(e as Error).message}`);
+    console.error(`[monomem] auto-consolidate failed: ${(e as Error).message}`);
   }
 }
 
@@ -113,28 +113,28 @@ function scheduleJanitor(): void {
   timer.unref(); // never keep the process alive on the scheduler's account
 }
 
-exitOnListenError(apiServer, API_PORT, "ONEMEMORY_PORT", "API").listen(API_PORT, BIND_HOST, () => {
-  console.error(`[onememory] API + dashboard on http://${BIND_HOST}:${API_PORT}`);
-  console.error(`[onememory] DB: ${DB_PATH}`);
-  const tokenFromEnv = Boolean(process.env.ONEMEMORY_TOKEN && process.env.ONEMEMORY_TOKEN.trim());
-  console.error(`[onememory] token: ${tokenFromEnv ? "from ONEMEMORY_TOKEN" : TOKEN_FILE}`);
-  const tokenExpr = tokenFromEnv ? "$ONEMEMORY_TOKEN" : `$(cat "${TOKEN_FILE}")`;
+exitOnListenError(apiServer, API_PORT, "MONOMEM_PORT", "API").listen(API_PORT, BIND_HOST, () => {
+  console.error(`[monomem] API + dashboard on http://${BIND_HOST}:${API_PORT}`);
+  console.error(`[monomem] DB: ${DB_PATH}`);
+  const tokenFromEnv = Boolean(process.env.MONOMEM_TOKEN && process.env.MONOMEM_TOKEN.trim());
+  console.error(`[monomem] token: ${tokenFromEnv ? "from MONOMEM_TOKEN" : TOKEN_FILE}`);
+  const tokenExpr = tokenFromEnv ? "$MONOMEM_TOKEN" : `$(cat "${TOKEN_FILE}")`;
   console.error(
-    `[onememory] try: curl -H "Authorization: Bearer ${tokenExpr}" "http://127.0.0.1:${API_PORT}/notes?limit=5"`
+    `[monomem] try: curl -H "Authorization: Bearer ${tokenExpr}" "http://127.0.0.1:${API_PORT}/notes?limit=5"`
   );
   scheduleJanitor();
 });
 
-exitOnListenError(mcpServer, MCP_HTTP_PORT, "ONEMEMORY_MCP_PORT", "MCP").listen(MCP_HTTP_PORT, BIND_HOST, () => {
+exitOnListenError(mcpServer, MCP_HTTP_PORT, "MONOMEM_MCP_PORT", "MCP").listen(MCP_HTTP_PORT, BIND_HOST, () => {
   console.error(
-    `[onememory] MCP over HTTP on http://${BIND_HOST}:${MCP_HTTP_PORT}/mcp (tunnel this)`
+    `[monomem] MCP over HTTP on http://${BIND_HOST}:${MCP_HTTP_PORT}/mcp (tunnel this)`
   );
   scheduleJanitor();
 });
 
 if (AUTO_CONSOLIDATE_INTERVAL_MS && AUTO_CONSOLIDATE_INTERVAL_MS > 0) {
   console.error(
-    `[onememory] auto-consolidation every ${AUTO_CONSOLIDATE_INTERVAL_MS}ms ` +
+    `[monomem] auto-consolidation every ${AUTO_CONSOLIDATE_INTERVAL_MS}ms ` +
       `(auto-merge >= ${AUTO_MERGE_SCORE}; weaker candidates are only logged)`
   );
 }
@@ -142,9 +142,9 @@ if (AUTO_CONSOLIDATE_INTERVAL_MS && AUTO_CONSOLIDATE_INTERVAL_MS > 0) {
 // The change log is pruned (90-day retention) on a timer, not only when
 // someone happens to read the feed. Best-effort, unref'd, and cheap (one
 // indexed DELETE): shortly after start, then hourly. (The interval can be
-// shortened with ONEMEMORY_CHANGE_LOG_PURGE_MS; that is for tests.)
+// shortened with MONOMEM_CHANGE_LOG_PURGE_MS; that is for tests.)
 const purgeEveryMs = (() => {
-  const n = Number(process.env.ONEMEMORY_CHANGE_LOG_PURGE_MS);
+  const n = Number(process.env.MONOMEM_CHANGE_LOG_PURGE_MS);
   return Number.isInteger(n) && n >= 100 ? n : 3_600_000;
 })();
 const purgeNow = (): void => {
@@ -152,7 +152,7 @@ const purgeNow = (): void => {
     store.purgeChangeLog();
     pruneStaleHeartbeats(store);
   } catch (e) {
-    console.error(`[onememory] change-log purge failed: ${(e as Error).message}`);
+    console.error(`[monomem] change-log purge failed: ${(e as Error).message}`);
   }
 };
 const purgeTimer = setInterval(purgeNow, purgeEveryMs);

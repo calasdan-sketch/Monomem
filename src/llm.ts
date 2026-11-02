@@ -1,13 +1,13 @@
-// Optional: a local model rewrites a session's summary in plain words. OFF unless ONEMEMORY_LLM_URL and
-// ONEMEMORY_LLM_MODEL are set.
+// Optional: a local model rewrites a session's summary in plain words. OFF unless MONOMEM_LLM_URL and
+// MONOMEM_LLM_MODEL are set.
 //
 //  - One call per session, at session-end, on the deterministic summary extract.ts already wrote (and the session's
 //    prompts), all of it already redacted. Never a call per tool event.
 //  - Any OpenAI-compatible chat endpoint: Ollama (http://127.0.0.1:11434), LM Studio, llama.cpp server, vLLM. The URL
 //    is the server's base; "/v1/chat/completions" is added (a URL that already ends in /v1 gets "/chat/completions").
-//  - Data stays on this PC: a URL whose host is not loopback is refused unless ONEMEMORY_LLM_ALLOW_REMOTE=1, and
+//  - Data stays on this PC: a URL whose host is not loopback is refused unless MONOMEM_LLM_ALLOW_REMOTE=1, and
 //    redirects are refused (a local server cannot bounce the text elsewhere).
-//  - Bounded: ONEMEMORY_LLM_TIMEOUT_MS (default 30000) for the whole call, a size cap on what is sent and kept.
+//  - Bounded: MONOMEM_LLM_TIMEOUT_MS (default 30000) for the whole call, a size cap on what is sent and kept.
 //  - What comes back is untrusted: it is redacted again (redact.ts) and written with Store.update, so the memory linter
 //    and quarantine apply exactly as to any write. On any failure (off, refused, timeout, bad answer, held by the
 //    linter) the deterministic summary simply stays.
@@ -32,26 +32,26 @@ const LOOPBACK = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\]|::1)$/i;
 
 /** The summarizer's settings, or null when it is off or its URL is refused (reason on stderr). */
 export function llmConfig(env: NodeJS.ProcessEnv = process.env): LlmConfig | null {
-  const raw = (env.ONEMEMORY_LLM_URL ?? "").trim();
-  const model = (env.ONEMEMORY_LLM_MODEL ?? "").trim();
+  const raw = (env.MONOMEM_LLM_URL ?? "").trim();
+  const model = (env.MONOMEM_LLM_MODEL ?? "").trim();
   if (!raw || !model) return null;
   let u: URL;
   try {
     u = new URL(raw);
   } catch {
-    process.stderr.write("onememory: ONEMEMORY_LLM_URL is not a URL; the LLM summarizer is off\n");
+    process.stderr.write("monomem: MONOMEM_LLM_URL is not a URL; the LLM summarizer is off\n");
     return null;
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") {
-    process.stderr.write("onememory: ONEMEMORY_LLM_URL must be http(s); the LLM summarizer is off\n");
+    process.stderr.write("monomem: MONOMEM_LLM_URL must be http(s); the LLM summarizer is off\n");
     return null;
   }
-  if (!LOOPBACK.test(u.hostname) && env.ONEMEMORY_LLM_ALLOW_REMOTE !== "1") {
-    process.stderr.write(`onememory: ONEMEMORY_LLM_URL host ${u.hostname} is not this machine; refusing to send session text off it (set ONEMEMORY_LLM_ALLOW_REMOTE=1 to allow)\n`);
+  if (!LOOPBACK.test(u.hostname) && env.MONOMEM_LLM_ALLOW_REMOTE !== "1") {
+    process.stderr.write(`monomem: MONOMEM_LLM_URL host ${u.hostname} is not this machine; refusing to send session text off it (set MONOMEM_LLM_ALLOW_REMOTE=1 to allow)\n`);
     return null;
   }
   const base = u.href.replace(/\/+$/, "");
-  const t = Number(env.ONEMEMORY_LLM_TIMEOUT_MS);
+  const t = Number(env.MONOMEM_LLM_TIMEOUT_MS);
   return {
     endpoint: /\/v1$/.test(base) ? `${base}/chat/completions` : `${base}/v1/chat/completions`,
     model,
@@ -123,7 +123,7 @@ export async function llmSummarize(store: Store, sessionId: string, env: NodeJS.
     store.update(sum.id, { title: `Session: ${parsed.title}`, body: [parsed.body, ...facts].join("\n").slice(0, BODY_MAX + 2000), tags });
     return true;
   } catch (e) {
-    process.stderr.write(`onememory: LLM summary skipped (${(e as Error).message}); the automatic summary stays\n`);
+    process.stderr.write(`monomem: LLM summary skipped (${(e as Error).message}); the automatic summary stays\n`);
     return false;
   }
 }

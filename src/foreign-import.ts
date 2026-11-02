@@ -1,4 +1,4 @@
-// `onememory import --from claude-mem|mem0|basic-memory`: bring another memory tool's notes into OneMemory.
+// `monomem import --from claude-mem|mem0|basic-memory`: bring another memory tool's notes into Monomem.
 //
 //   * claude-mem   (github.com/thedotmack/claude-mem): its SQLite database, ~/.claude-mem/claude-mem.db by default
 //                  ($CLAUDE_MEM_DATA_DIR/claude-mem.db when set). Opened READ-ONLY. `observations` become rows of kind
@@ -254,7 +254,7 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
   const { from } = opts;
   const path = opts.path ? resolve(e.cwd, opts.path) : defaultPath(from, e);
   if (!path) {
-    io.err(`Name the mem0 export file: onememory import --from mem0 --path <export.json>`);
+    io.err(`Name the mem0 export file: monomem import --from mem0 --path <export.json>`);
     return 1;
   }
   if (!existsSync(path)) {
@@ -302,7 +302,7 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
     const t = [...groups.values()].reduce((a, g) => ({ n: a.n + g.n, c: a.c + g.create, s: a.s + g.same, x: a.x + g.secrets }), { n: 0, c: 0, s: 0, x: 0 });
     io.out(`\n${t.n} item(s): ${t.c} new, ${t.s} already imported, ${t.x} skipped because they look like a secret.`);
     if (t.x) io.out("  Skipped items are not stored and not shown. Take the secret out at the source (or keep it in a password manager) and run again.");
-    if (heldSkipped) io.out(`  ${heldSkipped} item(s) were held by the memory linter on an earlier run and are not queued again (see \`onememory quarantine\`).`);
+    if (heldSkipped) io.out(`  ${heldSkipped} item(s) were held by the memory linter on an earlier run and are not queued again (see \`monomem quarantine\`).`);
     if (opts.dryRun) {
       io.out("\nDry run: nothing was written.");
       return 0;
@@ -341,7 +341,7 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
     }
     if (held) writeHeld(opts.dbPath, heldBefore);
     io.out(`\nImported ${created} new note(s). They are tagged "${tagFor(from)}" and written by "${writerFor(from)}".`);
-    if (held) io.out(`${held} item(s) were held by the memory linter (it saw something that reads like an instruction to an AI): see \`onememory quarantine\`.`);
+    if (held) io.out(`${held} item(s) were held by the memory linter (it saw something that reads like an instruction to an AI): see \`monomem quarantine\`.`);
     if (failed) {
       io.err(`${failed} item(s) could not be stored.`);
       return 1;

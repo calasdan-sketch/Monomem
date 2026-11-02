@@ -41,14 +41,14 @@ import { join } from "node:path";
 // request. Read once and cached; missing files simply 404.
 // Off by default: the runner ships separately from the memory package, so a
 // plain memory install exposes nothing runner-related. Set
-// ONEMEMORY_ENABLE_SIGN_PAGE=1 to serve it; otherwise both paths 404.
+// MONOMEM_ENABLE_SIGN_PAGE=1 to serve it; otherwise both paths 404.
 const SIGN_PAGES: Record<string, { file: string; type: string }> = {
   "/sign": { file: "sign.html", type: "text/html; charset=utf-8" },
   "/signer.js": { file: "signer.js", type: "application/javascript; charset=utf-8" },
 };
 const signCache = new Map<string, string | null>();
 function signAsset(file: string): string | null {
-  if (process.env.ONEMEMORY_ENABLE_SIGN_PAGE !== "1") return null;
+  if (process.env.MONOMEM_ENABLE_SIGN_PAGE !== "1") return null;
   if (!signCache.has(file)) {
     try {
       signCache.set(file, readFileSync(join(PROJECT_ROOT, "docs", file), "utf8"));
@@ -156,10 +156,10 @@ function sendError(res: ServerResponse, e: unknown): void {
   } else if (e instanceof ValidationError) {
     sendJson(res, 400, { error: e.message });
   } else if (e instanceof NoteUnreadableError) {
-    console.error("[onememory] " + e.message);
+    console.error("[monomem] " + e.message);
     sendJson(res, 500, { error: e.message, id: e.noteId });
   } else {
-    console.error("[onememory] write error:", (e as Error).message);
+    console.error("[monomem] write error:", (e as Error).message);
     sendJson(res, 500, { error: "internal error" });
   }
 }
@@ -1192,7 +1192,7 @@ export function createApiServer(
         return;
       }
 
-      // POST /capture: one hook event, from a capture hook that could not use the local database (ONEMEMORY_HOOK_URL).
+      // POST /capture: one hook event, from a capture hook that could not use the local database (MONOMEM_HOOK_URL).
       // The event is redacted AGAIN here (never trust the sender to have done it), lands in the token's own namespace
       // when namespaces are resolved, and cannot be appended to another namespace's session.
       if (req.method === "POST" && path === "/capture") {
@@ -1625,7 +1625,7 @@ export function createApiServer(
             header = `"export":${JSON.stringify(store.exportHeader())},`;
           } catch (e) {
             attest = false;
-            console.error("[onememory] export without attestations:", (e as Error).message);
+            console.error("[monomem] export without attestations:", (e as Error).message);
           }
         }
         res.write(`{${header}"notes":[`);
@@ -1654,7 +1654,7 @@ export function createApiServer(
         } catch (e) {
           // Headers are already sent, so a status code is impossible: log the
           // cause and destroy the socket so the client sees a failed download.
-          console.error("[onememory] export aborted:", (e as Error).message);
+          console.error("[monomem] export aborted:", (e as Error).message);
           res.destroy(e as Error);
           return;
         }
@@ -1697,7 +1697,7 @@ export function createApiServer(
           // is O(n^2) and measured at 88-97% of a bulk restore's runtime
           // (8000 notes: 3.6s of inserts vs 34.9s of linking). Landing the
           // notes in seconds and rebuilding the graph afterwards with
-          // `onememory rebuild-edges` beats blocking the restore for minutes
+          // `monomem rebuild-edges` beats blocking the restore for minutes
           // on an optional ranking aid. Below the threshold, link inline so
           // the common small import behaves exactly as before.
           const deferEdges = notes.length > IMPORT_EDGE_DEFER_THRESHOLD;
@@ -1727,7 +1727,7 @@ export function createApiServer(
             ...(deferEdges
               ? {
                   similarityGraph: "deferred",
-                  note: `similarity graph not rebuilt for ${created.length} notes; run \`onememory rebuild-edges\` to restore neighbor ranking (search is unaffected)`,
+                  note: `similarity graph not rebuilt for ${created.length} notes; run \`monomem rebuild-edges\` to restore neighbor ranking (search is unaffected)`,
                 }
               : {}),
             ...(report.skipped ? { skipped: report.skipped } : {}),
@@ -1860,12 +1860,12 @@ export function createApiServer(
       // A body that cannot be decrypted names the note (clear, actionable,
       // contains no content) instead of a bare "internal error".
       if (e instanceof NoteUnreadableError) {
-        console.error("[onememory] " + e.message);
+        console.error("[monomem] " + e.message);
         sendJson(res, 500, { error: e.message, id: e.noteId });
         return;
       }
       // Log details server-side; never leak internals (SQL errors, paths) out.
-      console.error("[onememory] request error:", (e as Error).message);
+      console.error("[monomem] request error:", (e as Error).message);
       sendJson(res, 500, { error: "internal error" });
     }
   };

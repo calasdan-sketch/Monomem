@@ -26,10 +26,10 @@ import { dirname, join } from "node:path";
 export const ATTEST_VERSION = 2;
 export const SUPPORTED_VERSIONS: readonly number[] = [1, 2];
 export const ATTEST_KEY_FILENAME = ".attest-key";
-const DOMAIN_V1 = "onememory-attest-v1";
-const DOMAIN_V2 = "onememory-attest-v2";
+const DOMAIN_V1 = "monomem-attest-v1";
+const DOMAIN_V2 = "monomem-attest-v2";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const CONTENT_DOMAIN = "onememory-content-v1";
+const CONTENT_DOMAIN = "monomem-content-v1";
 
 /** The detached attestation carried in an export, beside each note. */
 export interface Attestation {
@@ -138,9 +138,9 @@ function fromPrivate(privateKey: KeyObject): SigningKey {
   return { privateKey, publicKey, keyId: keyIdOf(publicKey) };
 }
 
-/** Where the signing key lives for a data directory (ONEMEMORY_ATTEST_KEY_FILE overrides). */
+/** Where the signing key lives for a data directory (MONOMEM_ATTEST_KEY_FILE overrides). */
 export function attestKeyPath(dataDir: string): string {
-  return process.env.ONEMEMORY_ATTEST_KEY_FILE || join(dataDir, ATTEST_KEY_FILENAME);
+  return process.env.MONOMEM_ATTEST_KEY_FILE || join(dataDir, ATTEST_KEY_FILENAME);
 }
 
 /** A key pair that lives only in memory (an in-memory database has nowhere to keep one). */
@@ -234,9 +234,9 @@ export function copyKeyFileExclusive(src: string, dest: string): void {
   }
 }
 
-/** ONEMEMORY_ATTEST_MIN_VERSION: the oldest attestation version an import still believes (default 1, at most the current version). */
+/** MONOMEM_ATTEST_MIN_VERSION: the oldest attestation version an import still believes (default 1, at most the current version). */
 export function attestMinVersion(): number {
-  const raw = (process.env.ONEMEMORY_ATTEST_MIN_VERSION ?? "").trim();
+  const raw = (process.env.MONOMEM_ATTEST_MIN_VERSION ?? "").trim();
   if (!raw) return 1;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) return 1;
@@ -261,7 +261,7 @@ export function loadOrCreateSigningKey(dataDir: string): SigningKey {
   try {
     mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
   } catch (e) {
-    const where = process.env.ONEMEMORY_ATTEST_KEY_FILE ? `ONEMEMORY_ATTEST_KEY_FILE=${p}` : p;
+    const where = process.env.MONOMEM_ATTEST_KEY_FILE ? `MONOMEM_ATTEST_KEY_FILE=${p}` : p;
     throw new Error(`cannot create the attestation key location for ${where}: ${(e as Error).message}`);
   }
   const { privateKey } = generateKeyPairSync("ed25519");
@@ -355,7 +355,7 @@ export interface VerifyContext {
   serverId?: string;
   /** Key ids an admin revoked: nothing signed by them is believed, whatever its date says. */
   revoked?: ReadonlySet<string>;
-  /** Oldest attestation version believed (ONEMEMORY_ATTEST_MIN_VERSION). */
+  /** Oldest attestation version believed (MONOMEM_ATTEST_MIN_VERSION). */
   minVersion?: number;
   /** Verification time (ms since epoch); `not_after` is compared against it. Default: now. */
   now?: number;
@@ -451,9 +451,9 @@ export interface EnvAttesterIssue {
 }
 
 /**
- * ONEMEMORY_TRUSTED_ATTESTERS. Two forms:
+ * MONOMEM_TRUSTED_ATTESTERS. Two forms:
  *   `<server id>=<public key>` entries separated by commas, whitespace or
- *       semicolons (keys are the base64url key printed by `onememory trust identity`);
+ *       semicolons (keys are the base64url key printed by `monomem trust identity`);
  *   a JSON array `[{"public_key":"...","server_id":"...","label":"...","not_after":"..."}]`.
  * Every entry must name the server id it speaks for; a bare key (no server
  * id) is refused, because such a key could claim to be any peer. Entries
@@ -499,7 +499,7 @@ export function parseTrustedAttestersEnvDetailed(raw: string | undefined): { att
   return { attesters, issues };
 }
 
-/** The usable entries of ONEMEMORY_TRUSTED_ATTESTERS (see parseTrustedAttestersEnvDetailed). */
+/** The usable entries of MONOMEM_TRUSTED_ATTESTERS (see parseTrustedAttestersEnvDetailed). */
 export function parseTrustedAttestersEnv(raw: string | undefined): TrustedAttester[] {
   return parseTrustedAttestersEnvDetailed(raw).attesters;
 }

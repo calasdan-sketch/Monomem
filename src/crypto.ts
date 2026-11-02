@@ -1,6 +1,6 @@
 // At-rest encryption for note bodies (AES-256-GCM).
 //
-// WHY THIS SHAPE. OneMemory's keyword search is SQLite FTS5 over an
+// WHY THIS SHAPE. Monomem's keyword search is SQLite FTS5 over an
 // external-content index of `notes(title, body, tags)`, maintained by SQL
 // triggers. You cannot encrypt the `body` column in place: the trigger would
 // happily index the ciphertext, and every search would silently match
@@ -62,21 +62,21 @@ export function captureAad(seq: number, sessionId: string, field: "output" | "in
 /** Default key location: beside the database, in the data dir. */
 export const KEY_FILENAME = ".key";
 
-/** Resolved key path, honoring ONEMEMORY_KEY_FILE for tests / custom layouts. */
+/** Resolved key path, honoring MONOMEM_KEY_FILE for tests / custom layouts. */
 export function keyPath(dataDir: string): string {
-  return process.env.ONEMEMORY_KEY_FILE || join(dataDir, KEY_FILENAME);
+  return process.env.MONOMEM_KEY_FILE || join(dataDir, KEY_FILENAME);
 }
 
 /**
  * Whether at-rest encryption is active.
  *
  * Opt-in by PRESENCE of a key file, not by an env flag: the key file is the
- * source of truth. A stale ONEMEMORY_ENCRYPT=1 with no key would produce
+ * source of truth. A stale MONOMEM_ENCRYPT=1 with no key would produce
  * unreadable notes, so we never infer "on" from an environment variable
- * alone. `onememory encrypt enable` creates the key; `disable` removes it.
+ * alone. `monomem encrypt enable` creates the key; `disable` removes it.
  */
 export function encryptionEnabled(dataDir: string): boolean {
-  if (process.env.ONEMEMORY_ENCRYPT === "0") return false; // hard off (tests)
+  if (process.env.MONOMEM_ENCRYPT === "0") return false; // hard off (tests)
   try {
     return existsSync(keyPath(dataDir));
   } catch {
@@ -98,18 +98,18 @@ export function loadKey(dataDir: string): Buffer | null {
   try {
     if (statSync(p).isDirectory()) {
       throw new Error(
-        `onememory: the encryption key path ${p} is a directory, not a file. ` +
-          `Point ONEMEMORY_KEY_FILE at a file (or unset it to use <data dir>/${KEY_FILENAME}).`
+        `monomem: the encryption key path ${p} is a directory, not a file. ` +
+          `Point MONOMEM_KEY_FILE at a file (or unset it to use <data dir>/${KEY_FILENAME}).`
       );
     }
   } catch (e) {
-    if ((e as Error).message.startsWith("onememory:")) throw e;
+    if ((e as Error).message.startsWith("monomem:")) throw e;
   }
   const raw = readFileSync(p);
   if (raw.length !== KEY_BYTES) {
     throw new Error(
-      `onememory: encryption key at ${p} is ${raw.length} bytes, expected ${KEY_BYTES}. ` +
-        `Restore it from a backup, or run \`onememory encrypt disable --wipe\` to start over ` +
+      `monomem: encryption key at ${p} is ${raw.length} bytes, expected ${KEY_BYTES}. ` +
+        `Restore it from a backup, or run \`monomem encrypt disable --wipe\` to start over ` +
         `(existing encrypted notes become unreadable).`
     );
   }
@@ -179,23 +179,23 @@ export function encrypt(plaintext: string, key: Buffer, aad?: string): string {
 export function decrypt(envelope: string, key: Buffer, aad?: string): string {
   assertKey(key);
   if (!isEncrypted(envelope)) {
-    throw new Error("onememory: not an encrypted value (missing v1:/v2: prefix)");
+    throw new Error("monomem: not an encrypted value (missing v1:/v2: prefix)");
   }
   const v2 = envelope.startsWith(ENC_PREFIX_V2);
   if (v2 && aad === undefined) {
-    throw new Error("onememory: v2 envelope needs its row binding (id|namespace) to decrypt");
+    throw new Error("monomem: v2 envelope needs its row binding (id|namespace) to decrypt");
   }
   const parts = envelope.slice(ENC_PREFIX.length).split(":");
   if (parts.length !== 3) {
-    throw new Error("onememory: malformed encryption envelope (expected iv:tag:ciphertext)");
+    throw new Error("monomem: malformed encryption envelope (expected iv:tag:ciphertext)");
   }
   const [ivB64, tagB64, ctB64] = parts;
   const iv = Buffer.from(ivB64, "base64");
   const tag = Buffer.from(tagB64, "base64");
   const ct = Buffer.from(ctB64, "base64");
-  if (iv.length !== IV_BYTES) throw new Error("onememory: malformed IV in encryption envelope");
+  if (iv.length !== IV_BYTES) throw new Error("monomem: malformed IV in encryption envelope");
   if (tag.length !== TAG_BYTES) {
-    throw new Error("onememory: malformed auth tag in encryption envelope");
+    throw new Error("monomem: malformed auth tag in encryption envelope");
   }
   const decipher = createDecipheriv(ALGO, key, iv);
   if (v2) decipher.setAAD(Buffer.from(aad as string, "utf8"));
@@ -205,7 +205,7 @@ export function decrypt(envelope: string, key: Buffer, aad?: string): string {
 
 function assertKey(key: Buffer): void {
   if (!Buffer.isBuffer(key) || key.length !== KEY_BYTES) {
-    throw new Error(`onememory: encryption key must be ${KEY_BYTES} bytes`);
+    throw new Error(`monomem: encryption key must be ${KEY_BYTES} bytes`);
   }
 }
 
@@ -219,7 +219,7 @@ export function decryptIfEncrypted(value: string, key: Buffer | null, aad?: stri
   if (!isEncrypted(value)) return value;
   if (!key) {
     throw new Error(
-      "onememory: this note is encrypted but no key file is present. " +
+      "monomem: this note is encrypted but no key file is present. " +
         "Restore the key, or the note body cannot be read."
     );
   }

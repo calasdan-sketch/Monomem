@@ -11,7 +11,7 @@
 //
 // What gates execution (all must hold; each is independent):
 //   1. NAMESPACE   the task lives in exactly RUNNER.taskNamespace (opt-in env
-//                  ONEMEMORY_RUNNER_TASK_NAMESPACE; unset = this feature is off).
+//                  MONOMEM_RUNNER_TASK_NAMESPACE; unset = this feature is off).
 //                  Namespace resolution in an API process can only move a task
 //                  OUT of that namespace, where this runner never looks.
 //   2. TARGET      command.target equals THIS runner's own id (runnerId()).
@@ -125,7 +125,7 @@ export async function pollTasks(deps: RunnerDeps): Promise<number> {
         reason: done.reason,
       });
     } catch (e) {
-      console.error(`[onememory:runner] command task ${note.id} failed:`, e);
+      console.error(`[monomem:runner] command task ${note.id} failed:`, e);
       try {
         finishCommandTask(deps.store, note.id, { ok: false, status: "error", reason: "runner error" });
       } catch {

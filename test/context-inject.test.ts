@@ -79,7 +79,7 @@ describe("session-start context", () => {
 
   test("namespace: scoped to the resolved one, and fail-closed (empty) when the config cannot be resolved", async () => {
     const dir = mkdtempSync(join(tmpdir(), "om-ctx-ns-"));
-    const prev = process.env.ONEMEMORY_SPACES;
+    const prev = process.env.MONOMEM_SPACES;
     const err = console.error;
     try {
       const db = join(dir, "state.db");
@@ -88,17 +88,17 @@ describe("session-start context", () => {
       s.create({ title: "Proj B observation", body: "b", namespace: "proj-b" }, { kind: "observation", sessionId: "b" });
       s.create({ title: "Proj A summary", body: "a", namespace: "proj-a" }, { kind: "summary", sessionId: "c" });
       s.close();
-      process.env.ONEMEMORY_SPACES = JSON.stringify({ spaces: { [process.cwd()]: "proj-a" }, default_namespace: "shared" });
+      process.env.MONOMEM_SPACES = JSON.stringify({ spaces: { [process.cwd()]: "proj-a" }, default_namespace: "shared" });
       const ctx = ctxOf(await runRecall({ dbPath: db }));
       assert.match(ctx, /Proj A summary/);
       assert.doesNotMatch(ctx, /Proj B|A observation/);
-      process.env.ONEMEMORY_SPACES = JSON.stringify({ spaces: { [process.cwd()]: "x", [process.cwd() + "/*"]: "y" }, default_namespace: "shared" });
+      process.env.MONOMEM_SPACES = JSON.stringify({ spaces: { [process.cwd()]: "x", [process.cwd() + "/*"]: "y" }, default_namespace: "shared" });
       console.error = () => {};
       assert.equal(ctxOf(await runRecall({ dbPath: db })), "");
     } finally {
       console.error = err;
-      if (prev === undefined) delete process.env.ONEMEMORY_SPACES;
-      else process.env.ONEMEMORY_SPACES = prev;
+      if (prev === undefined) delete process.env.MONOMEM_SPACES;
+      else process.env.MONOMEM_SPACES = prev;
       rmSync(dir, { recursive: true, force: true });
     }
   });

@@ -122,7 +122,7 @@ export function parseBody(body: string): BodyParts {
 /** Canonical text of a command, bound into the approval MAC. */
 export function commandHash(namespace: string, id: number, c: TaskCommand): string {
   return createHash("sha256")
-    .update(JSON.stringify(["onememory-task-cmd-v1", namespace, id, c.action, Object.entries(c.params).sort(), c.target]))
+    .update(JSON.stringify(["monomem-task-cmd-v1", namespace, id, c.action, Object.entries(c.params).sort(), c.target]))
     .digest("hex");
 }
 
@@ -189,12 +189,12 @@ export interface RunnerIdentity {
  * use it: the runner is not part of the npm package).
  */
 export function envRunnerId(): string {
-  return process.env.ONEMEMORY_RUNNER_ID || process.env.COMPUTERNAME || process.env.HOSTNAME || "default";
+  return process.env.MONOMEM_RUNNER_ID || process.env.COMPUTERNAME || process.env.HOSTNAME || "default";
 }
 
 /** The namespace whose command tasks the runner executes, from the environment ("" = off). */
 export function envRunnerTaskNamespace(): string {
-  return process.env.ONEMEMORY_RUNNER_TASK_NAMESPACE || "";
+  return process.env.MONOMEM_RUNNER_TASK_NAMESPACE || "";
 }
 
 export type SkipReason = "not_command" | "other_namespace" | "other_target" | "unapproved" | "leased" | "distrusted";

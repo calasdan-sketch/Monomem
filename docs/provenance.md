@@ -56,7 +56,7 @@ changes `written_by`, and the approval is voided anyway.
 
 1. the **label of the authenticated token** behind the call (REST, MCP over HTTP);
 2. else a fixed marker for the process: `stdio` (the local MCP stdio server), `cli` (an
-   `onememory ...` command, including `import --dir` and `consolidate`), `server` (the
+   `monomem ...` command, including `import --dir` and `consolidate`), `server` (the
    long-running server's own background jobs), `runner` (the command runner process, which writes
    the heartbeat that `runner_status` trusts);
 3. else `""` (unknown): a library caller with no identity, or any row written before
@@ -72,7 +72,7 @@ stored as its first 87 characters plus `~` and 12 hex digits of its SHA-256, so 
 the same start stay different; the `written_by` / `not_written_by` filters apply the same rule, so
 passing the full label finds it.
 
-Give each client its own token and label (`ONEMEMORY_TOKENS`: `{"token", "scope", "label"}`).
+Give each client its own token and label (`MONOMEM_TOKENS`: `{"token", "scope", "label"}`).
 Two clients sharing one token share one `written_by`; that is the limit of what the server
 can know.
 
@@ -121,7 +121,7 @@ the change feed (the permanent change-log triggers copy the note's writer).
 A note made by consolidation is written by whoever ran the consolidation. Restoring an
 unsigned backup flattens history: every note becomes the importer's, and the payload's claims are kept only as
 `imported_written_by`, so `not_written_by` hygiene is not meaningful on it. Restoring the database **file**
-(`onememory backup`) keeps everything.
+(`monomem backup`) keeps everything.
 
 ## Limits (read these)
 
@@ -138,10 +138,10 @@ unsigned backup flattens history: every note becomes the importer's, and the pay
   (`<server_id>/<label>`) is for: a filter or rule may use it to say which server.
 - **Heartbeat trust** (`runner_status`): only a note stamped `runner` counts, and its time is the
   server's own timestamp, not the `alive_at` in the body. A runner older than 1.3.4 stamps no marker (`""`);
-  since 1.4.0 those heartbeats are **no longer believed** unless `ONEMEMORY_RUNNER_ACCEPT_LEGACY=1` (see [RUNNER.md](https://github.com/calasdan-sketch/onememory/blob/main/docs/RUNNER.md)). Anyone with write access to the database file can still stamp anything.
+  since 1.4.0 those heartbeats are **no longer believed** unless `MONOMEM_RUNNER_ACCEPT_LEGACY=1` (see [RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md)). Anyone with write access to the database file can still stamp anything.
 - **Upgrading while old processes run.** A process still running the pre-1.3.3 code keeps writing
   after another process has upgraded the file: its edits succeed but never touch `written_by`, so the
-  note keeps the previous writer's name on the old process's text. Stop every onememory process
+  note keeps the previous writer's name on the old process's text. Stop every monomem process
   (servers, stdio MCP sessions) before upgrading, then start them again. A database file at schema v13
   is refused by an older build when it is opened, but cannot reach a process that is already running.
 - Old rows read `""`. They are never back-filled from `source`, because `source` is forgeable.
@@ -149,11 +149,11 @@ unsigned backup flattens history: every note becomes the importer's, and the pay
 
 ## Upgrading and rolling back
 
-The first time a database at schema v1 to v13 is opened by 1.4.0 (schema v14), OneMemory copies it to
+The first time a database at schema v1 to v13 is opened by 1.4.0 (schema v14), Monomem copies it to
 `<database>.pre-v16-backup` (a consistent snapshot, still at the old schema), logs the path, and
-never overwrites an existing copy. (1.3.3 made `.pre-v13-backup` the same way for v12; an existing one is left alone.) The `onememory recall` hook never upgrades a database: against an older
+never overwrites an existing copy. (1.3.3 made `.pre-v13-backup` the same way for v12; an existing one is left alone.) The `monomem recall` hook never upgrades a database: against an older
 file it prints nothing and logs one line until a normal command or the server has migrated it.
-To roll back: stop every onememory process, put the backup file back as the database (keep the
+To roll back: stop every monomem process, put the backup file back as the database (keep the
 `-wal` / `-shm` files out of the way), and install the older version. Writes made after the upgrade are
 not in the backup.
 
@@ -162,4 +162,4 @@ not in the backup.
 The four items once listed here as planned are built: per-database writer ids, the admin-managed
 `distrust_writers` list, signed Ed25519 attestations for notes moved between servers, and per-target
 runner heartbeats. They are described, with what they do **not** prove, in [trust.md](./trust.md) and
-[RUNNER.md](https://github.com/calasdan-sketch/onememory/blob/main/docs/RUNNER.md).
+[RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md).

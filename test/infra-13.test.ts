@@ -19,10 +19,10 @@ import { runChanges } from "../src/changes.js";
 const mk = (p: string) => mkdtempSync(join(tmpdir(), p));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe("onememory backup", () => {
+describe("monomem backup", () => {
   test("hot copy opens, is consistent, includes the key (0600) and a clear warning file", () => {
     const dir = mk("om-bk-");
-    const prevHome = process.env.ONEMEMORY_ENCRYPT;
+    const prevHome = process.env.MONOMEM_ENCRYPT;
     try {
       ensureKey(dir);
       const db = join(dir, "state.db");
@@ -52,7 +52,7 @@ describe("onememory backup", () => {
       assert.throws(() => backupStore(s, db, out), /already exists/);
       s.close();
     } finally {
-      if (prevHome === undefined) delete process.env.ONEMEMORY_ENCRYPT;
+      if (prevHome === undefined) delete process.env.MONOMEM_ENCRYPT;
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -64,7 +64,7 @@ describe("onememory backup", () => {
       const s = new Store(db);
       s.create({ title: "n" });
       s.close();
-      const env = { ...process.env, ONEMEMORY_HOME: dir, ONEMEMORY_DB_PATH: db };
+      const env = { ...process.env, MONOMEM_HOME: dir, MONOMEM_DB_PATH: db };
       const r = spawnSync(process.execPath, [join(process.cwd(), "dist/src/cli.js"), "backup", "--out", join(dir, "b1")], { env, encoding: "utf8" });
       assert.equal(r.status, 0, r.stderr);
       assert.match(r.stdout, /Backed up 1 note/);
@@ -88,17 +88,17 @@ describe("onememory backup", () => {
 describe("audit.log rotation", () => {
   test("rotates by size and keeps N files", () => {
     const dir = mk("om-rot-");
-    const prev = { l: process.env.ONEMEMORY_AUDIT_LOG, m: process.env.ONEMEMORY_AUDIT_MAX_BYTES, k: process.env.ONEMEMORY_AUDIT_KEEP };
-    process.env.ONEMEMORY_AUDIT_LOG = join(dir, "audit.log");
-    process.env.ONEMEMORY_AUDIT_MAX_BYTES = "3000";
-    process.env.ONEMEMORY_AUDIT_KEEP = "3";
+    const prev = { l: process.env.MONOMEM_AUDIT_LOG, m: process.env.MONOMEM_AUDIT_MAX_BYTES, k: process.env.MONOMEM_AUDIT_KEEP };
+    process.env.MONOMEM_AUDIT_LOG = join(dir, "audit.log");
+    process.env.MONOMEM_AUDIT_MAX_BYTES = "3000";
+    process.env.MONOMEM_AUDIT_KEEP = "3";
     try {
       for (let i = 0; i < 1500; i++) audit({ op: "create", id: i, namespace: "default", bytes: 10 });
       const files = readdirSync(dir).sort();
       assert.deepEqual(files, ["audit.log", "audit.log.1", "audit.log.2", "audit.log.3"]);
       for (const f of files) assert.ok(statSync(join(dir, f)).size < 3000 + 50 * 120, `${f} stays near the limit`);
     } finally {
-      for (const [k, v] of [["ONEMEMORY_AUDIT_LOG", prev.l], ["ONEMEMORY_AUDIT_MAX_BYTES", prev.m], ["ONEMEMORY_AUDIT_KEEP", prev.k]] as const) {
+      for (const [k, v] of [["MONOMEM_AUDIT_LOG", prev.l], ["MONOMEM_AUDIT_MAX_BYTES", prev.m], ["MONOMEM_AUDIT_KEEP", prev.k]] as const) {
         if (v === undefined) delete process.env[k];
         else process.env[k] = v;
       }
@@ -116,7 +116,7 @@ describe("waiters", () => {
     assert.equal(activeWaiters(), 16);
     await assert.rejects(
       waitForChanges(s, { since: "last", consumer: "x" }, { waitSeconds: 5, key: "tok", scopeKey: "other" }),
-      (e: unknown) => e instanceof WaitBusyError && /429/.test(e.message) && /ONEMEMORY_WAIT_MAX_PER_TOKEN/.test(e.message) && /disconnect/.test(e.message)
+      (e: unknown) => e instanceof WaitBusyError && /429/.test(e.message) && /MONOMEM_WAIT_MAX_PER_TOKEN/.test(e.message) && /disconnect/.test(e.message)
     );
     aborts.forEach((a) => a.abort());
     await Promise.all(waits);
@@ -126,7 +126,7 @@ describe("waiters", () => {
 
   test("per-namespace-scope cap is shared across tokens", async () => {
     const s = new Store(":memory:");
-    process.env.ONEMEMORY_WAIT_MAX_PER_NAMESPACE = "2";
+    process.env.MONOMEM_WAIT_MAX_PER_NAMESPACE = "2";
     try {
       const a = [new AbortController(), new AbortController()];
       const waits = a.map((c, i) => waitForChanges(s, { since: "last", consumer: `c${i}` }, { waitSeconds: 5, signal: c.signal, key: `tok${i}`, scopeKey: "work" }));
@@ -144,7 +144,7 @@ describe("waiters", () => {
       a.forEach((c) => c.abort());
       await Promise.all(waits);
     } finally {
-      delete process.env.ONEMEMORY_WAIT_MAX_PER_NAMESPACE;
+      delete process.env.MONOMEM_WAIT_MAX_PER_NAMESPACE;
     }
     s.close();
   });
@@ -175,7 +175,7 @@ describe("watch", () => {
     const loop = watchLoop(s, {
       consumer: "w",
       waitSeconds: 1,
-      exec: ["notify", "--title", "OneMemory"],
+      exec: ["notify", "--title", "Monomem"],
       signal: abort.signal,
       log: () => {},
       retryMs: 10,
@@ -193,10 +193,10 @@ describe("watch", () => {
     s.create({ title: evil, source: "phone" });
     const batches = await loop;
     assert.equal(batches, 2, "failed batch is delivered again, then succeeds");
-    assert.deepEqual(calls[0].argv, ["notify", "--title", "OneMemory"], "argv exactly as given");
+    assert.deepEqual(calls[0].argv, ["notify", "--title", "Monomem"], "argv exactly as given");
     assert.ok(calls.every((c) => !c.argv.join(" ").includes("rm -rf")), "titles never reach argv");
     assert.equal(JSON.parse(calls[1].stdin).changes[0].title, evil);
-    assert.equal(calls[1].env.ONEMEMORY_CHANGE_COUNT, "1");
+    assert.equal(calls[1].env.MONOMEM_CHANGE_COUNT, "1");
     // acked: nothing left
     assert.equal(runChanges(s, { since: "last", consumer: "w" }).changes.length, 0);
     s.close();
@@ -245,7 +245,7 @@ async function freePort(): Promise<number> {
 
 function startServer(env: Record<string, string>) {
   const child = spawn(process.execPath, [join(process.cwd(), "dist/src/start.js")], {
-    env: { ...process.env, ONEMEMORY_TOKEN: "infra-test-token-0123456789abcdef0123456789abcdef", ...env },
+    env: { ...process.env, MONOMEM_TOKEN: "infra-test-token-0123456789abcdef0123456789abcdef", ...env },
     stdio: ["ignore", "ignore", "pipe"],
   });
   let log = "";
@@ -264,7 +264,7 @@ describe("server process", () => {
     const dir = mk("om-term-");
     const apiPort = await freePort();
     const mcpPort = await freePort();
-    const srv = startServer({ ONEMEMORY_HOME: dir, ONEMEMORY_PORT: String(apiPort), ONEMEMORY_MCP_PORT: String(mcpPort) });
+    const srv = startServer({ MONOMEM_HOME: dir, MONOMEM_PORT: String(apiPort), MONOMEM_MCP_PORT: String(mcpPort) });
     try {
       await srv.ready;
       const t0 = Date.now();
@@ -297,7 +297,7 @@ describe("server process", () => {
     raw.close();
     const apiPort = await freePort();
     const mcpPort = await freePort();
-    const srv = startServer({ ONEMEMORY_HOME: dir, ONEMEMORY_DB_PATH: db, ONEMEMORY_PORT: String(apiPort), ONEMEMORY_MCP_PORT: String(mcpPort), ONEMEMORY_CHANGE_LOG_PURGE_MS: "200" });
+    const srv = startServer({ MONOMEM_HOME: dir, MONOMEM_DB_PATH: db, MONOMEM_PORT: String(apiPort), MONOMEM_MCP_PORT: String(mcpPort), MONOMEM_CHANGE_LOG_PURGE_MS: "200" });
     try {
       await srv.ready;
       let left = before;

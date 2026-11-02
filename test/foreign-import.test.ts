@@ -1,4 +1,4 @@
-// `onememory import --from claude-mem|mem0|basic-memory`
+// `monomem import --from claude-mem|mem0|basic-memory`
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

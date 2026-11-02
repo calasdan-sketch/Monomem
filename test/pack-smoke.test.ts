@@ -99,7 +99,7 @@ test("the packed tarball starts: every relative import resolves, runner-status a
     assert.deepEqual(missing, [], `packed files import files that are not in the tarball: ${missing.join("; ")}`);
 
     const home = join(root, "home");
-    const env = { ...process.env, ONEMEMORY_HOME: home, ONEMEMORY_DB_PATH: join(home, "state.db"), HOME: home, USERPROFILE: home };
+    const env = { ...process.env, MONOMEM_HOME: home, MONOMEM_DB_PATH: join(home, "state.db"), HOME: home, USERPROFILE: home };
 
     // 2. The runner-status command (it loads the liveness module).
     const rs = spawnSync(process.execPath, [join(src, "cli.js"), "runner-status", "--json"], { cwd: pkg, env, encoding: "utf8", timeout: 60000 });

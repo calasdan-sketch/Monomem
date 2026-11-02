@@ -102,12 +102,12 @@ describe("crypto: key management", () => {
   test("encryptionEnabled tracks key-file presence", () => {
     const noKeyDir = mkdtempSync(join(tmpdir(), "om-nokey-"));
     try {
-      process.env.ONEMEMORY_ENCRYPT = "";
+      process.env.MONOMEM_ENCRYPT = "";
       assert.equal(encryptionEnabled(noKeyDir), false, "no key file = off");
       ensureKey(noKeyDir);
       assert.equal(encryptionEnabled(noKeyDir), true, "key file = on");
     } finally {
-      delete process.env.ONEMEMORY_ENCRYPT;
+      delete process.env.MONOMEM_ENCRYPT;
       rmSync(noKeyDir, { recursive: true, force: true });
     }
   });
@@ -129,12 +129,12 @@ describe("crypto: store integration", () => {
 
   before(() => {
     dir = mkdtempSync(join(tmpdir(), "om-store-enc-"));
-    prevKeyFile = process.env.ONEMEMORY_KEY_FILE;
-    process.env.ONEMEMORY_KEY_FILE = join(dir, ".key");
+    prevKeyFile = process.env.MONOMEM_KEY_FILE;
+    process.env.MONOMEM_KEY_FILE = join(dir, ".key");
   });
   after(() => {
-    if (prevKeyFile === undefined) delete process.env.ONEMEMORY_KEY_FILE;
-    else process.env.ONEMEMORY_KEY_FILE = prevKeyFile;
+    if (prevKeyFile === undefined) delete process.env.MONOMEM_KEY_FILE;
+    else process.env.MONOMEM_KEY_FILE = prevKeyFile;
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -180,10 +180,10 @@ describe("crypto: store integration", () => {
 
   test("plaintext store (no key): body column plaintext, no ciphertext, byte-identical to before", () => {
     const plainDir = mkdtempSync(join(tmpdir(), "om-plain-"));
-    const saved = process.env.ONEMEMORY_KEY_FILE;
+    const saved = process.env.MONOMEM_KEY_FILE;
     try {
       // Point at a non-existent key file so encryptionEnabled() is false.
-      process.env.ONEMEMORY_KEY_FILE = join(plainDir, "no-such-key");
+      process.env.MONOMEM_KEY_FILE = join(plainDir, "no-such-key");
       const store = new Store(join(plainDir, "state.db"));
       const note = store.create({ title: "P", body: "plaintext body" });
       const raw = rawBody(store, note.id);
@@ -193,8 +193,8 @@ describe("crypto: store integration", () => {
       assert.equal(note.body, "plaintext body");
       store.close();
     } finally {
-      if (saved === undefined) delete process.env.ONEMEMORY_KEY_FILE;
-      else process.env.ONEMEMORY_KEY_FILE = saved;
+      if (saved === undefined) delete process.env.MONOMEM_KEY_FILE;
+      else process.env.MONOMEM_KEY_FILE = saved;
       rmSync(plainDir, { recursive: true, force: true });
     }
   });

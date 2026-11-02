@@ -1,16 +1,16 @@
-# Install OneMemory in your agent
+# Install Monomem in your agent
 
-OneMemory speaks the standard **MCP** protocol, so it drops into any
+Monomem speaks the standard **MCP** protocol, so it drops into any
 MCP-capable agent. They all launch it the same way — a local command over
 "stdio" — they just keep their config in different places. Pick yours below.
 
 > **One-time setup first** (Node.js 22.16+ or 24 LTS):
 > ```bash
-> npm install -g onememory-mcp
+> npm install -g monomem
 > ```
-> That puts the `onememory` command on your PATH; every client below runs
-> `onememory mcp`. Your memory lives in `~/.onememory` (override with
-> `ONEMEMORY_HOME`), so it survives upgrades.
+> That puts the `monomem` command on your PATH; every client below runs
+> `monomem mcp`. Your memory lives in `~/.monomem` (override with
+> `MONOMEM_HOME`), so it survives upgrades.
 >
 > **Ten tools are registered by default** — enough to write, find, read,
 > forget and safely replace a memory. Every tool's schema is sent to the model
@@ -20,36 +20,36 @@ MCP-capable agent. They all launch it the same way — a local command over
 >
 > ```json
 > {
->   "command": "onememory",
+>   "command": "monomem",
 >   "args": ["mcp"],
->   "env": { "ONEMEMORY_TOOLS": "all" }
+>   "env": { "MONOMEM_TOOLS": "all" }
 > }
 > ```
 >
 > You can name individual tools instead of `all`:
-> `"ONEMEMORY_TOOLS": "memory_index,memory_timeline,memory_get,session_list"`.
+> `"MONOMEM_TOOLS": "memory_index,memory_timeline,memory_get,session_list"`.
 > The default ten are always kept, so a typo cannot leave you unable to read
 > or write. See [docs/configuration.md](./docs/configuration.md).
 >
 > Working from a git clone instead? `npm install && npm run build && npm link`
-> gives you the same `onememory` command.
+> gives you the same `monomem` command.
 
 ---
 
-## The easy way: `onememory setup`
+## The easy way: `monomem setup`
 
 ```bash
-npx onememory-mcp setup --dry-run     # shows exactly what it would change; writes nothing
-npx onememory-mcp setup               # does it, after you type y; backs up every file; --undo reverses it
+npx monomem setup --dry-run     # shows exactly what it would change; writes nothing
+npx monomem setup               # does it, after you type y; backs up every file; --undo reverses it
 ```
 
-It finds Claude Code, Claude Desktop, Cursor, Codex CLI, Gemini CLI, Muse, VS Code and Zed, adds only the OneMemory entry, and can move an old `claude-bridge` entry across keeping your data.
+It finds Claude Code, Claude Desktop, Cursor, Codex CLI, Gemini CLI, Muse, VS Code and Zed, adds only the Monomem entry, and can move an old `claude-bridge` entry across keeping your data.
 Details and troubleshooting: [docs/live-claude-code.md](./docs/live-claude-code.md). The manual steps for each app follow.
 
 ## Claude Code
 
 ```bash
-claude mcp add onememory -- onememory mcp
+claude mcp add monomem -- monomem mcp
 ```
 
 ## Claude Desktop
@@ -59,8 +59,8 @@ Edit `claude_desktop_config.json` (Settings → Developer → Edit Config):
 ```json
 {
   "mcpServers": {
-    "onememory": {
-      "command": "onememory",
+    "monomem": {
+      "command": "monomem",
       "args": ["mcp"]
     }
   }
@@ -74,8 +74,8 @@ Create `.cursor/mcp.json` in your project (or the global one in `~/.cursor/`):
 ```json
 {
   "mcpServers": {
-    "onememory": {
-      "command": "onememory",
+    "monomem": {
+      "command": "monomem",
       "args": ["mcp"]
     }
   }
@@ -91,9 +91,9 @@ Create `.vscode/mcp.json` in your project, or use the user one (`MCP: Open User 
 ```json
 {
   "servers": {
-    "onememory": {
+    "monomem": {
       "type": "stdio",
-      "command": "onememory",
+      "command": "monomem",
       "args": ["mcp"]
     }
   }
@@ -105,13 +105,13 @@ Create `.vscode/mcp.json` in your project, or use the user one (`MCP: Open User 
 `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`). `setup` adds only this table and leaves the rest of the file as it is:
 
 ```toml
-[mcp_servers.onememory]
-command = "onememory"
+[mcp_servers.monomem]
+command = "monomem"
 args = ["mcp"]
 ```
 
 With `--capture`, `setup` also writes `~/.codex/hooks.json` (SessionStart, UserPromptSubmit, PostToolUse, Stop). Codex
-runs a new hook only after you trust it: type `/hooks` in Codex and approve the OneMemory ones.
+runs a new hook only after you trust it: type `/hooks` in Codex and approve the Monomem ones.
 
 ## Gemini CLI
 
@@ -120,8 +120,8 @@ runs a new hook only after you trust it: type `/hooks` in Codex and approve the 
 ```json
 {
   "mcpServers": {
-    "onememory": {
-      "command": "onememory",
+    "monomem": {
+      "command": "monomem",
       "args": ["mcp"]
     }
   }
@@ -140,9 +140,9 @@ spelling; otherwise it uses `"mcp_servers"` (Meta's documented key):
 {
   "schema_version": 1,
   "mcp_servers": {
-    "onememory": {
+    "monomem": {
       "transport": "stdio",
-      "command": "onememory",
+      "command": "monomem",
       "args": ["mcp"],
       "mode": "optional"
     }
@@ -150,7 +150,7 @@ spelling; otherwise it uses `"mcp_servers"` (Meta's documented key):
 }
 ```
 
-With `--capture`, `setup` adds hooks under `"hooks"` in the same file. Each OneMemory hook group holds only its command
+With `--capture`, `setup` adds hooks under `"hooks"` in the same file. Each Monomem hook group holds only its command
 (Muse skips a group that has a key it does not know). Muse has not published its hook input fields, so recording there
 is best effort.
 
@@ -161,8 +161,8 @@ is best effort.
 ```json
 {
   "context_servers": {
-    "onememory": {
-      "command": "onememory",
+    "monomem": {
+      "command": "monomem",
       "args": ["mcp"]
     }
   }
@@ -172,13 +172,13 @@ is best effort.
 ## Windsurf / Cline / Continue / other MCP agents
 
 They all accept the same stdio launch. Find the client's MCP config and add
-a server whose command is `onememory` and whose argument is `mcp`. Example (Windsurf `~/.codeium/windsurf/mcp_config.json`):
+a server whose command is `monomem` and whose argument is `mcp`. Example (Windsurf `~/.codeium/windsurf/mcp_config.json`):
 
 ```json
 {
   "mcpServers": {
-    "onememory": {
-      "command": "onememory",
+    "monomem": {
+      "command": "monomem",
       "args": ["mcp"]
     }
   }

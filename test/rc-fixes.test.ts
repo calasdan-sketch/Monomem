@@ -67,7 +67,7 @@ describe("1: multi-process create() never throws SQLITE_BUSY", () => {
           const s = new Store(process.argv[1]); let e = 0;
           for (let i = 0; i < ${per}; i++) { try { s.create({ title: "c" + process.pid + "-" + i, body: "alpha beta gamma deploy server " + i }); } catch (x) { e++; console.error(x.message); } }
           console.log(e); s.close();`;
-        const res = await runProcs(procs, script, path, { ONEMEMORY_HOME: dir });
+        const res = await runProcs(procs, script, path, { MONOMEM_HOME: dir });
         const errors = res.reduce((a, r) => a + (Number(r.out.trim()) || 0) + (r.code ? 1 : 0), 0);
         assert.equal(errors, 0, res.map((r) => r.err).join("\n").slice(0, 400));
         const db = new DatabaseSync(path);
@@ -104,7 +104,7 @@ describe("7: concurrent legacy migration never swaps the db under a writer", () 
         while (!existsSync(${JSON.stringify(go)})) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2);
         migrateLegacyData(${JSON.stringify(from)}, process.argv[1]);
         const s = new Store(process.argv[1] + "/state.db"); s.create({ title: "w" + process.pid, body: "x" }); s.close();`;
-      const pending = runProcs(8, script, to, { ONEMEMORY_HOME: to });
+      const pending = runProcs(8, script, to, { MONOMEM_HOME: to });
       await new Promise((r) => setTimeout(r, 700)); // let every child load and reach the barrier
       writeFileSync(go, "");
       const res = await pending;
@@ -147,22 +147,22 @@ describe("6: data dir and files are owner-only (POSIX)", { skip: !posix }, () =>
       const r = spawnSync(
         process.execPath,
         ["--no-warnings", "--input-type=module", "-e", `(await import(${JSON.stringify("file://" + CONFIG_JS)})).prepareDataDir();`],
-        { env: { ...process.env, ONEMEMORY_HOME: dir }, encoding: "utf8" }
+        { env: { ...process.env, MONOMEM_HOME: dir }, encoding: "utf8" }
       );
       assert.equal(r.status, 0, r.stderr);
       assert.equal(modeOf(dir), 0o700);
       for (const f of ["audit.log", ".token", "state.db"]) assert.equal(modeOf(join(dir, f)), 0o600, f);
       // a freshly created audit log is owner-only too
       const log = join(dir, "fresh-audit.log");
-      const prev = process.env.ONEMEMORY_AUDIT_LOG;
-      process.env.ONEMEMORY_AUDIT_LOG = log;
+      const prev = process.env.MONOMEM_AUDIT_LOG;
+      process.env.MONOMEM_AUDIT_LOG = log;
       try {
         const s = new Store(":memory:");
         s.create({ title: "t", body: "b" });
         s.close();
       } finally {
-        if (prev === undefined) delete process.env.ONEMEMORY_AUDIT_LOG;
-        else process.env.ONEMEMORY_AUDIT_LOG = prev;
+        if (prev === undefined) delete process.env.MONOMEM_AUDIT_LOG;
+        else process.env.MONOMEM_AUDIT_LOG = prev;
       }
       assert.equal(modeOf(log), 0o600);
     } finally {
@@ -181,7 +181,7 @@ describe("6: data dir and files are owner-only (POSIX)", { skip: !posix }, () =>
       chmodSync(out, 0o644);
       const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
       const r = spawnSync(process.execPath, ["--no-warnings", CLI, "export", "--format", "json", "--out", out], {
-        env: { ...process.env, ONEMEMORY_HOME: dir },
+        env: { ...process.env, MONOMEM_HOME: dir },
         encoding: "utf8",
       });
       assert.equal(r.status, 0, r.stderr);
@@ -299,7 +299,7 @@ describe("8: change_log doesn't keep titles of deleted / renamed notes", () => {
     s.close();
   });
 
-  test("onememory changes --purge empties the change log", () => {
+  test("monomem changes --purge empties the change log", () => {
     const dir = mkdtempSync(join(tmpdir(), "om-purge-"));
     try {
       const s = new Store(join(dir, "state.db"));
@@ -307,7 +307,7 @@ describe("8: change_log doesn't keep titles of deleted / renamed notes", () => {
       s.close();
       const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
       const r = spawnSync(process.execPath, ["--no-warnings", CLI, "changes", "--purge"], {
-        env: { ...process.env, ONEMEMORY_HOME: dir },
+        env: { ...process.env, MONOMEM_HOME: dir },
         encoding: "utf8",
       });
       assert.equal(r.status, 0, r.stderr);
@@ -385,16 +385,16 @@ describe("5: a taken port is a friendly exit 1, not a crash", () => {
     await new Promise((r) => s.close(r));
     return p;
   }
-  for (const which of ["ONEMEMORY_PORT", "ONEMEMORY_MCP_PORT"] as const) {
+  for (const which of ["MONOMEM_PORT", "MONOMEM_MCP_PORT"] as const) {
     test(`${which} in use -> message names the port and ${which}, exit 1`, async () => {
       const dir = mkdtempSync(join(tmpdir(), "om-port-"));
       const busy = await listenOn();
       try {
         const env = {
           ...process.env,
-          ONEMEMORY_HOME: dir,
-          ONEMEMORY_PORT: String(await freePort()),
-          ONEMEMORY_MCP_PORT: String(await freePort()),
+          MONOMEM_HOME: dir,
+          MONOMEM_PORT: String(await freePort()),
+          MONOMEM_MCP_PORT: String(await freePort()),
           [which]: String(portOf(busy)),
         };
         const r = spawnSync(process.execPath, ["--no-warnings", START], { env, encoding: "utf8", timeout: 15_000 });

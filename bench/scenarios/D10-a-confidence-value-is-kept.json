@@ -2,7 +2,7 @@
   "id": "D10",
   "suite": "provenance",
   "title": "A confidence value is kept",
-  "what": "A writer says how sure it is (0.3). A system that has a confidence field returns it on read. OneMemory has none: it accepts the request and drops the value without telling the client.",
+  "what": "A writer says how sure it is (0.3). A system that has a confidence field returns it on read. Monomem has none: it accepts the request and drops the value without telling the client.",
   "actors": {
     "alice": {
       "scope": "write"

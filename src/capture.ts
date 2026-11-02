@@ -1,6 +1,6 @@
 // Automatic memory, part 1: turning a hook payload into one stored capture event.
 //
-// The agent's hooks (`onememory hook <event>`, see hook.ts) hand us Claude Code's JSON. Here it is normalized to one
+// The agent's hooks (`monomem hook <event>`, see hook.ts) hand us Claude Code's JSON. Here it is normalized to one
 // small CaptureEvent, checked against the capture settings (kill switch, excluded folders, skipped tools), REDACTED
 // (<private> blocks and secrets, see redact.ts) and truncated, and only then written: to the capture_events table, or,
 // when the database cannot be used right now, to a JSONL spool in the data directory that a later hook drains. The
@@ -46,7 +46,7 @@ export interface CaptureSettings {
 const list = (v: unknown): string[] =>
   (Array.isArray(v) ? v.map(String) : typeof v === "string" ? v.split(",") : []).map((s) => s.trim()).filter(Boolean);
 
-/** Settings: ONEMEMORY_CAPTURE / _EXCLUDE / _SKIP_TOOLS, else <data dir>/capture.json ({capture, exclude, skip_tools}). Env wins. */
+/** Settings: MONOMEM_CAPTURE / _EXCLUDE / _SKIP_TOOLS, else <data dir>/capture.json ({capture, exclude, skip_tools}). Env wins. */
 export function captureSettings(dataDir: string, env: NodeJS.ProcessEnv = process.env): CaptureSettings {
   let file: Record<string, unknown> = {};
   try {
@@ -58,11 +58,11 @@ export function captureSettings(dataDir: string, env: NodeJS.ProcessEnv = proces
   } catch {
     /* unreadable settings file: defaults (env still applies) */
   }
-  const sw = (env.ONEMEMORY_CAPTURE ?? (typeof file.capture === "string" ? file.capture : "")).trim().toLowerCase();
+  const sw = (env.MONOMEM_CAPTURE ?? (typeof file.capture === "string" ? file.capture : "")).trim().toLowerCase();
   return {
     enabled: !["off", "0", "false", "no"].includes(sw),
-    exclude: env.ONEMEMORY_CAPTURE_EXCLUDE !== undefined ? list(env.ONEMEMORY_CAPTURE_EXCLUDE) : list(file.exclude),
-    skipTools: env.ONEMEMORY_CAPTURE_SKIP_TOOLS !== undefined ? list(env.ONEMEMORY_CAPTURE_SKIP_TOOLS) : list(file.skip_tools),
+    exclude: env.MONOMEM_CAPTURE_EXCLUDE !== undefined ? list(env.MONOMEM_CAPTURE_EXCLUDE) : list(file.exclude),
+    skipTools: env.MONOMEM_CAPTURE_SKIP_TOOLS !== undefined ? list(env.MONOMEM_CAPTURE_SKIP_TOOLS) : list(file.skip_tools),
   };
 }
 
@@ -84,9 +84,9 @@ export function globMatch(glob: string, path: string, platform: NodeJS.Platform 
   return new RegExp(`^${re}$`, platform === "win32" ? "i" : "").test(slash(path));
 }
 
-/** OneMemory's own tools are never recorded (reading memory is not work worth remembering, and it would loop). */
+/** Monomem's own tools are never recorded (reading memory is not work worth remembering, and it would loop). */
 export function isOwnTool(tool: string): boolean {
-  return /^mcp__onememory__/.test(tool);
+  return /^mcp__monomem__/.test(tool);
 }
 
 export function shouldCapture(ev: CaptureEvent, s: CaptureSettings): boolean {

@@ -39,8 +39,8 @@ export function describeWriter(writtenBy: unknown): string {
   const w = oneLine(writtenBy, 100);
   if (!w) return "an unknown writer (stored before writers were recorded)";
   if (w === "stdio") return "stdio (local MCP client, no token)";
-  if (w === "cli") return "cli (the local onememory command)";
-  if (w === "server") return "server (OneMemory's own background job)";
+  if (w === "cli") return "cli (the local monomem command)";
+  if (w === "server") return "server (Monomem's own background job)";
   if (w === "runner") return "runner (the command runner process on the owner's PC)";
   return `${w} (token)`;
 }
@@ -298,13 +298,13 @@ export function scanForSecrets(text: string | undefined): string | null {
 // ---- Origin check (DNS-rebinding defense for browser-based callers) ----------
 // Non-browser clients (Claude Code, curl, the MCP SDK) send no Origin header --
 // those are allowed. A browser sends Origin; we allow it only if explicitly
-// listed in ONEMEMORY_ALLOWED_ORIGINS (comma-separated). Default: no
+// listed in MONOMEM_ALLOWED_ORIGINS (comma-separated). Default: no
 // browser origins allowed, which blocks a malicious web page from reaching a
 // localhost/tunnelled server via DNS rebinding.
 export function originAllowed(req: IncomingMessage): boolean {
   const origin = req.headers["origin"];
   if (!origin || Array.isArray(origin)) return true; // no Origin = non-browser
-  const allowed = (process.env.ONEMEMORY_ALLOWED_ORIGINS || "")
+  const allowed = (process.env.MONOMEM_ALLOWED_ORIGINS || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -330,8 +330,8 @@ export function originAllowed(req: IncomingMessage): boolean {
 export class RateLimiter {
   private hits = new Map<string, { count: number; resetAt: number }>();
   constructor(
-    private max = Number(process.env.ONEMEMORY_RATE_MAX || 120),
-    private windowMs = Number(process.env.ONEMEMORY_RATE_WINDOW_MS || 10_000)
+    private max = Number(process.env.MONOMEM_RATE_MAX || 120),
+    private windowMs = Number(process.env.MONOMEM_RATE_WINDOW_MS || 10_000)
   ) {}
   /** true = allowed, false = over limit. */
   check(key: string): boolean {
@@ -371,8 +371,8 @@ export class AuthTarpit {
   private fails = new Map<string, { n: number; resetAt: number; pending: number }>();
   constructor(
     private freeFailures = 5,
-    private stepMs = Number(process.env.ONEMEMORY_TARPIT_STEP_MS || 250),
-    private capMs = Number(process.env.ONEMEMORY_TARPIT_CAP_MS || 2000),
+    private stepMs = Number(process.env.MONOMEM_TARPIT_STEP_MS || 250),
+    private capMs = Number(process.env.MONOMEM_TARPIT_CAP_MS || 2000),
     private windowMs = 60_000,
     private maxPending = 16
   ) {}
@@ -417,14 +417,14 @@ export function clientKey(req: IncomingMessage): string {
   // can set either to any value, which would hand each forged value its own
   // rate-limit bucket and defeat the limiter. So trust a forwarded client IP
   // ONLY when the operator has declared they run behind that proxy:
-  //   - ONEMEMORY_TRUST_CLOUDFLARE=1 -> trust cf-connecting-ip
-  //   - ONEMEMORY_TRUST_PROXY=1      -> trust x-forwarded-for
+  //   - MONOMEM_TRUST_CLOUDFLARE=1 -> trust cf-connecting-ip
+  //   - MONOMEM_TRUST_PROXY=1      -> trust x-forwarded-for
   // Otherwise key on the real socket address, which cannot be spoofed.
-  if (process.env.ONEMEMORY_TRUST_CLOUDFLARE === "1") {
+  if (process.env.MONOMEM_TRUST_CLOUDFLARE === "1") {
     const cf = req.headers["cf-connecting-ip"];
     if (typeof cf === "string" && cf) return cf;
   }
-  if (process.env.ONEMEMORY_TRUST_PROXY === "1") {
+  if (process.env.MONOMEM_TRUST_PROXY === "1") {
     const xff = req.headers["x-forwarded-for"];
     if (typeof xff === "string" && xff) return xff.split(",")[0].trim();
   }
@@ -489,24 +489,24 @@ export function authenticate(req: IncomingMessage, tokens: TokenEntry[]): Scope 
 
 // ---- Append-only audit log (no note content, no secrets) --------------------
 // Path resolved at call time (not a module constant) so the destination honors
-// ONEMEMORY_AUDIT_LOG set at runtime and is unit-testable. The entry records
+// MONOMEM_AUDIT_LOG set at runtime and is unit-testable. The entry records
 // only the operation and metadata (op/id/namespace/byte count) -- never the
 // note title or body, so the audit trail can't itself become a leak.
 function auditPath(): string {
-  return process.env.ONEMEMORY_AUDIT_LOG || join(DATA_DIR, "audit.log");
+  return process.env.MONOMEM_AUDIT_LOG || join(DATA_DIR, "audit.log");
 }
 
 let auditWrites = 0;
 
 /**
- * Size-based rotation: when audit.log passes ONEMEMORY_AUDIT_MAX_BYTES
+ * Size-based rotation: when audit.log passes MONOMEM_AUDIT_MAX_BYTES
  * (default 5 MB) it becomes audit.log.1, the old .1 becomes .2, and so on up
- * to ONEMEMORY_AUDIT_KEEP rotated files (default 5; the oldest is dropped). Checked
+ * to MONOMEM_AUDIT_KEEP rotated files (default 5; the oldest is dropped). Checked
  * every 50 writes (and on the first), so it costs almost nothing per request.
  */
 function rotateAuditIfNeeded(path: string): void {
-  const max = Number(process.env.ONEMEMORY_AUDIT_MAX_BYTES || 5_000_000);
-  const keep = Math.max(1, Math.floor(Number(process.env.ONEMEMORY_AUDIT_KEEP || 5)));
+  const max = Number(process.env.MONOMEM_AUDIT_MAX_BYTES || 5_000_000);
+  const keep = Math.max(1, Math.floor(Number(process.env.MONOMEM_AUDIT_KEEP || 5)));
   if (!(max > 0)) return;
   if (auditWrites++ % 50 !== 0) return;
   let size = 0;

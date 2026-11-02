@@ -177,7 +177,7 @@ describe("staleness: annotateStaleness()", () => {
 });
 
 describe("staleness: stalenessConfig()", () => {
-  const KEYS = ["ONEMEMORY_STALE_DAYS", "ONEMEMORY_STALE_TAGS", "ONEMEMORY_STALE_TAG_DAYS"] as const;
+  const KEYS = ["MONOMEM_STALE_DAYS", "MONOMEM_STALE_TAGS", "MONOMEM_STALE_TAG_DAYS"] as const;
   const saved = new Map<string, string | undefined>();
 
   function snapshot(): void {
@@ -209,9 +209,9 @@ describe("staleness: stalenessConfig()", () => {
   test("env overrides", () => {
     snapshot();
     try {
-      process.env.ONEMEMORY_STALE_DAYS = "60";
-      process.env.ONEMEMORY_STALE_TAGS = "#status, #wip ,todo";
-      process.env.ONEMEMORY_STALE_TAG_DAYS = "14";
+      process.env.MONOMEM_STALE_DAYS = "60";
+      process.env.MONOMEM_STALE_TAGS = "#status, #wip ,todo";
+      process.env.MONOMEM_STALE_TAG_DAYS = "14";
       assert.deepEqual(stalenessConfig(), {
         staleDays: 60,
         staleTags: ["#status", "#wip", "todo"],
@@ -225,9 +225,9 @@ describe("staleness: stalenessConfig()", () => {
   test("invalid values fall back to defaults", () => {
     snapshot();
     try {
-      process.env.ONEMEMORY_STALE_DAYS = "banana";
-      process.env.ONEMEMORY_STALE_TAGS = " , ,";
-      process.env.ONEMEMORY_STALE_TAG_DAYS = "-5";
+      process.env.MONOMEM_STALE_DAYS = "banana";
+      process.env.MONOMEM_STALE_TAGS = " , ,";
+      process.env.MONOMEM_STALE_TAG_DAYS = "-5";
       assert.deepEqual(stalenessConfig(), {
         staleDays: 90,
         staleTags: ["#status"],
@@ -277,10 +277,10 @@ describe("staleness: search ranking penalty", () => {
 
   test("semantic: stale note ranks below an equally-similar fresh note", async () => {
     const realFetch = globalThis.fetch;
-    const SAVE = process.env.ONEMEMORY_EMBEDDINGS;
+    const SAVE = process.env.MONOMEM_EMBEDDINGS;
     const store = new Store(":memory:");
     try {
-      process.env.ONEMEMORY_EMBEDDINGS = "on";
+      process.env.MONOMEM_EMBEDDINGS = "on";
       // Constant embedding: every note ties on cosine, so the stale penalty
       // alone decides the order.
       globalThis.fetch = (async () => ({
@@ -300,8 +300,8 @@ describe("staleness: search ranking penalty", () => {
       assert.equal(results[1].id, stale.id);
     } finally {
       globalThis.fetch = realFetch;
-      if (SAVE === undefined) delete process.env.ONEMEMORY_EMBEDDINGS;
-      else process.env.ONEMEMORY_EMBEDDINGS = SAVE;
+      if (SAVE === undefined) delete process.env.MONOMEM_EMBEDDINGS;
+      else process.env.MONOMEM_EMBEDDINGS = SAVE;
       store.close();
     }
   });

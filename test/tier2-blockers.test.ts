@@ -33,7 +33,7 @@ import { runSearch } from "../src/search-service.js";
 
 /** A scratch file-backed store plus its directory (for cleanup). */
 function tempStore(tag: string): { dir: string; path: string; store: Store } {
-  const dir = mkdtempSync(join(tmpdir(), `onememory-tier2-${tag}-`));
+  const dir = mkdtempSync(join(tmpdir(), `monomem-tier2-${tag}-`));
   const path = join(dir, "test.db");
   return { dir, path, store: new Store(path) };
 }
@@ -353,7 +353,7 @@ describe("blocker 1: cooperative edge rebuild", () => {
         "node",
         ["dist/src/cli.js", "rebuild-edges", "--yes"],
         {
-          env: { ...process.env, ONEMEMORY_DB_PATH: t.path },
+          env: { ...process.env, MONOMEM_DB_PATH: t.path },
           encoding: "utf8",
           stdio: ["ignore", "pipe", "pipe"],
         }

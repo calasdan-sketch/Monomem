@@ -23,7 +23,7 @@ function sandbox() {
   roots.push(root);
   const home = join(root, "home dir");
   mkdirSync(home, { recursive: true });
-  const e: SetupEnv = { home, platform: "linux", env: { HOME: home, ONEMEMORY_HOME: join(root, "om-home") }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "1.7.1", now: () => new Date("2026-10-25T12:00:00Z") };
+  const e: SetupEnv = { home, platform: "linux", env: { HOME: home, MONOMEM_HOME: join(root, "om-home") }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "1.7.1", now: () => new Date("2026-10-25T12:00:00Z") };
   return { root, home, e, cc: join(home, ".claude.json") };
 }
 function makeIO(): SetupIO & { all: () => string } {
@@ -31,14 +31,14 @@ function makeIO(): SetupIO & { all: () => string } {
   return { interactive: false, out: (x) => void l.push(x), err: (x) => void l.push(x), ask: async () => "", all: () => l.join("\n") };
 }
 const opts = (o: Partial<SetupOptions> = {}): SetupOptions => ({ ...DEFAULT_OPTIONS, noDoctor: true, ...o });
-const SET_OPS = [{ op: "set" as const, path: ["mcpServers"], key: "onememory", value: { command: "node" } }];
+const SET_OPS = [{ op: "set" as const, path: ["mcpServers"], key: "monomem", value: { command: "node" } }];
 
-describe("1.7.1 migrateEntry: ONEMEMORY_ wins over CLAUDE_BRIDGE_", () => {
+describe("1.7.1 migrateEntry: MONOMEM_ wins over CLAUDE_BRIDGE_", () => {
   test("both set: the new name wins, whichever comes first in the entry", () => {
     const { e } = sandbox();
-    for (const env of [{ CLAUDE_BRIDGE_DB_PATH: "/old.db", ONEMEMORY_DB_PATH: "/new.db" }, { ONEMEMORY_DB_PATH: "/new.db", CLAUDE_BRIDGE_DB_PATH: "/old.db" }]) {
+    for (const env of [{ CLAUDE_BRIDGE_DB_PATH: "/old.db", MONOMEM_DB_PATH: "/new.db" }, { MONOMEM_DB_PATH: "/new.db", CLAUDE_BRIDGE_DB_PATH: "/old.db" }]) {
       const m = migrateEntry(e, { command: "node" }, { command: "node", args: ["x"], env }, true);
-      assert.equal(m.entry.env!.ONEMEMORY_DB_PATH, "/new.db");
+      assert.equal(m.entry.env!.MONOMEM_DB_PATH, "/new.db");
       assert.equal(m.db, "/new.db");
       assert.equal(Object.keys(m.entry.env!).filter((k) => k.endsWith("DB_PATH")).length, 1);
     }
@@ -46,7 +46,7 @@ describe("1.7.1 migrateEntry: ONEMEMORY_ wins over CLAUDE_BRIDGE_", () => {
   test("only the old name: it is renamed with its value", () => {
     const { e } = sandbox();
     const m = migrateEntry(e, { command: "node" }, { command: "node", env: { CLAUDE_BRIDGE_DB_PATH: "/old.db", CLAUDE_BRIDGE_TOKEN: "t" } }, true);
-    assert.deepEqual(m.entry.env, { ONEMEMORY_DB_PATH: "/old.db", ONEMEMORY_TOKEN: "t" });
+    assert.deepEqual(m.entry.env, { MONOMEM_DB_PATH: "/old.db", MONOMEM_TOKEN: "t" });
   });
 });
 
@@ -67,7 +67,7 @@ describe("1.7.1 an old entry with comments inside it", () => {
     const io = makeIO();
     assert.equal(await runSetup(s.e, io, opts({ yes: true, noTestNote: true })), 0, io.all());
     const out = readFileSync(s.cc, "utf8");
-    assert.match(out, /"onememory"/);
+    assert.match(out, /"monomem"/);
     assert.doesNotMatch(out, /claude-bridge/);
     assert.ok(out.includes('"keep": { "command": "k" }'));
     assert.ok(out.includes(JSON.stringify(db).slice(1, -1)) || out.includes(JSON.stringify(db)));
@@ -103,7 +103,7 @@ describe("1.7.1 an empty config file is not replaced", () => {
     const s = sandbox();
     writeFileSync(s.cc, "");
     assert.equal(await runSetup(s.e, makeIO(), opts({ yes: true, noTestNote: true, forceEmpty: true })), 0);
-    assert.ok(JSON.parse(readFileSync(s.cc, "utf8")).mcpServers.onememory);
+    assert.ok(JSON.parse(readFileSync(s.cc, "utf8")).mcpServers.monomem);
   });
   test("writeChange itself refuses a file that became empty after planning", () => {
     const s = sandbox();
@@ -148,7 +148,7 @@ describe("1.7.1 undo after the database was upgraded", () => {
     assert.match(t, /cannot open an upgraded database/);
     assert.ok(t.includes(`${oldDb}.pre-v${SCHEMA_VERSION}-backup`));
     assert.ok(t.includes(`${oldDb}-wal`) && t.includes(`${oldDb}-shm`), "wal and shm are named");
-    assert.match(t, /onememory backup --out/);
+    assert.match(t, /monomem backup --out/);
     assert.equal(Store.peekSchemaVersion(oldDb), SCHEMA_VERSION, "undo still never touches the database");
     assert.ok(JSON.parse(readFileSync(s.cc, "utf8")).mcpServers["claude-bridge"], "the old entry is back");
   });
@@ -182,7 +182,7 @@ describe("1.7.1 history and backups hold secrets: permissions", { skip: process.
     await runSetup(s.e, makeIO(), opts({ yes: true, noTestNote: true }));
     assert.equal(statSync(historyFile(s.e)).mode & 0o777, 0o600);
     assert.equal(statSync(dirname(historyFile(s.e))).mode & 0o777, 0o700);
-    const bak = readdirSync(s.home).find((f) => f.includes("onememory-backup"))!;
+    const bak = readdirSync(s.home).find((f) => f.includes("monomem-backup"))!;
     assert.equal(statSync(join(s.home, bak)).mode & 0o777, 0o600);
   });
 });

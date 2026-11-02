@@ -1,4 +1,4 @@
-// `onememory import --claude`: layout as documented at https://code.claude.com/docs/en/memory
+// `monomem import --claude`: layout as documented at https://code.claude.com/docs/en/memory
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -281,13 +281,13 @@ describe("import --claude: running it", () => {
   });
   test("a secret is skipped even if the store's own policy would only warn", async () => {
     const f = fixture();
-    process.env.ONEMEMORY_LINT = "warn";
+    process.env.MONOMEM_LINT = "warn";
     try {
       f.w(join(f.proj, "CLAUDE.md"), `## Keys\ntoken: ${SECRET}\n`);
       await runClaudeImport(f.e, io(), o(f.db));
       assert.ok(!allNotes(f.db).some((n) => n.body.includes(SECRET)));
     } finally {
-      delete process.env.ONEMEMORY_LINT;
+      delete process.env.MONOMEM_LINT;
     }
   });
   test("the dry-run table also counts the skipped secrets without showing them", async () => {
@@ -348,7 +348,7 @@ describe("import --claude: from the command line", () => {
     const r = spawnSync(process.execPath, [CLI, "import", "--claude", "--dry-run", "--project", f.proj], {
       encoding: "utf8",
       cwd: f.root,
-      env: { PATH: process.env.PATH ?? "", HOME: f.home, USERPROFILE: f.home, ONEMEMORY_HOME: join(f.root, "om") },
+      env: { PATH: process.env.PATH ?? "", HOME: f.home, USERPROFILE: f.home, MONOMEM_HOME: join(f.root, "om") },
     });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /Dry run: nothing was written/);
@@ -356,7 +356,7 @@ describe("import --claude: from the command line", () => {
   });
   test("`import --claude --yes` really imports, and a second run imports nothing", () => {
     const f = fixture();
-    const env = { PATH: process.env.PATH ?? "", HOME: f.home, USERPROFILE: f.home, ONEMEMORY_HOME: join(f.root, "om") };
+    const env = { PATH: process.env.PATH ?? "", HOME: f.home, USERPROFILE: f.home, MONOMEM_HOME: join(f.root, "om") };
     const a = spawnSync(process.execPath, [CLI, "import", "--claude", "--yes", "--project", f.proj], { encoding: "utf8", env });
     assert.equal(a.status, 0, a.stderr);
     assert.match(a.stdout, /Imported \d+ new note/);

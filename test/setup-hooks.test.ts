@@ -19,11 +19,11 @@ function sandbox(): { e: SetupEnv; settings: string; db: string } {
   roots.push(root);
   const home = join(root, "home");
   mkdirSync(join(home, ".claude"), { recursive: true });
-  writeFileSync(join(home, ".claude.json"), '{"mcpServers":{"onememory":{"type":"stdio","command":"onememory","args":["mcp"]}}}');
+  writeFileSync(join(home, ".claude.json"), '{"mcpServers":{"monomem":{"type":"stdio","command":"monomem","args":["mcp"]}}}');
   return {
     settings: join(home, ".claude", "settings.json"),
     db: join(root, "data", "state.db"),
-    e: { home, platform: "linux", env: { HOME: home, ONEMEMORY_HOME: join(root, "om") }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "2.0.0", now: () => new Date("2026-10-30T12:00:00Z") },
+    e: { home, platform: "linux", env: { HOME: home, MONOMEM_HOME: join(root, "om") }, cwd: root, nodeVersion: "24.4.1", execPath: process.execPath, cliPath: CLI, version: "2.0.0", now: () => new Date("2026-10-30T12:00:00Z") },
   };
 }
 function io(answers: string[] = [], interactive = false): SetupIO & { all: () => string; asked: string[] } {
@@ -96,7 +96,7 @@ describe("setup: automatic memory hooks", () => {
     assert.equal(back.theme, "light");
     assert.deepEqual(back.hooks.PostToolUse, JSON.parse(USER_HOOKS).hooks.PostToolUse);
     assert.deepEqual(back.hooks.Stop, JSON.parse(USER_HOOKS).hooks.Stop);
-    assert.ok(!JSON.stringify(back).includes(" hook "), "no onememory hook is left");
+    assert.ok(!JSON.stringify(back).includes(" hook "), "no monomem hook is left");
   });
 
   test("interactive: the consent question is asked and a no keeps capture out", async () => {

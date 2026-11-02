@@ -21,7 +21,7 @@ beforeEach(() => {
   store = new Store(":memory:");
 });
 afterEach(() => {
-  for (const k of ["ONEMEMORY_HISTORY_VERSIONS", "ONEMEMORY_HISTORY_MAX_BYTES"]) delete process.env[k];
+  for (const k of ["MONOMEM_HISTORY_VERSIONS", "MONOMEM_HISTORY_MAX_BYTES"]) delete process.env[k];
 });
 
 const edit = (who: string, id: number, body: string): NoteRecord => as(who, () => store.update(id, { body }))!;
@@ -55,7 +55,7 @@ describe("history is kept on every edit", () => {
   });
 
   test("history is bounded by the number of versions, and the original is never dropped", () => {
-    process.env.ONEMEMORY_HISTORY_VERSIONS = "4";
+    process.env.MONOMEM_HISTORY_VERSIONS = "4";
     const n = make("alice", "t", "original");
     for (let i = 0; i < 30; i++) edit(i % 2 ? "bob" : "carol", n.id, `edit ${i}`);
     const h = store.historyOf(n.id);
@@ -65,7 +65,7 @@ describe("history is kept on every edit", () => {
   });
 
   test("one writer flooding edits cannot push another writer's version out", () => {
-    process.env.ONEMEMORY_HISTORY_VERSIONS = "5";
+    process.env.MONOMEM_HISTORY_VERSIONS = "5";
     const n = make("alice", "t", "alice's text");
     edit("bob", n.id, "bob's text");
     for (let i = 0; i < 40; i++) edit("mallory", n.id, `spam ${i}`);
@@ -76,7 +76,7 @@ describe("history is kept on every edit", () => {
   });
 
   test("history is bounded by size too: huge bodies cannot grow the file without end", () => {
-    process.env.ONEMEMORY_HISTORY_MAX_BYTES = "20000";
+    process.env.MONOMEM_HISTORY_MAX_BYTES = "20000";
     const n = make("alice", "t", "x".repeat(9000));
     for (let i = 0; i < 12; i++) edit("bob", n.id, String(i).repeat(9000));
     const total = store.historyOf(n.id).reduce((a, e) => a + e.bytes, 0);
@@ -85,7 +85,7 @@ describe("history is kept on every edit", () => {
   });
 
   test("turning history off (0) keeps nothing new", () => {
-    process.env.ONEMEMORY_HISTORY_VERSIONS = "0";
+    process.env.MONOMEM_HISTORY_VERSIONS = "0";
     const n = make("alice", "t", "v1");
     edit("bob", n.id, "v2");
     assert.equal(store.historyCount(n.id), 0);
@@ -93,10 +93,10 @@ describe("history is kept on every edit", () => {
 
   test("the settings are bounded and fall back to the defaults", () => {
     assert.deepEqual(historyLimits(), { versions: 20, bytes: 2_000_000 });
-    process.env.ONEMEMORY_HISTORY_VERSIONS = "99999";
-    process.env.ONEMEMORY_HISTORY_MAX_BYTES = "1";
+    process.env.MONOMEM_HISTORY_VERSIONS = "99999";
+    process.env.MONOMEM_HISTORY_MAX_BYTES = "1";
     assert.deepEqual(historyLimits(), { versions: 500, bytes: 10_000 });
-    process.env.ONEMEMORY_HISTORY_VERSIONS = "nonsense";
+    process.env.MONOMEM_HISTORY_VERSIONS = "nonsense";
     assert.equal(historyLimits().versions, 20);
   });
 

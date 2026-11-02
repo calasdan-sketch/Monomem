@@ -190,7 +190,7 @@ const PROMPT_MAX = 500;
 
 /**
  * One session: its row, summary, observations (oldest first) and the prompts typed in it. The prompts are the capture
- * events' already-redacted text, so they are only there while the raw events are kept (ONEMEMORY_CAPTURE_RETENTION_DAYS);
+ * events' already-redacted text, so they are only there while the raw events are kept (MONOMEM_CAPTURE_RETENTION_DAYS);
  * the summary's "Request:" line outlives them.
  */
 export function sessionGet(store: Store, scope: ReadScope, id: string): { session: SessionRow; summary: NoteRecord | null; rows: IndexRow[]; prompts: Array<{ at: string; text: string }> } | null {

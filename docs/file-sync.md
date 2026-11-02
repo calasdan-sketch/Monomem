@@ -4,9 +4,9 @@ Your memory as a folder of Markdown files you can read, grep, edit in any
 editor, diff in git, and sync with anything that syncs files.
 
 ```bash
-onememory export --format md --dir ~/memory     # store -> files
-onememory import --dir ~/memory --dry-run       # what would merge back?
-onememory import --dir ~/memory                 # files -> store
+monomem export --format md --dir ~/memory     # store -> files
+monomem import --dir ~/memory --dry-run       # what would merge back?
+monomem import --dir ~/memory                 # files -> store
 ```
 
 ## Layout
@@ -69,7 +69,7 @@ Export **prunes** only stale copies it can account for: the old file of a
 note this store renamed, and the file of a note this store deleted (its own
 notes, and another machine's notes it imported and then deleted) — and
 only while the file still holds what was last synced. Another machine's file
-this store never imported is never pruned, nor are files without OneMemory
+this store never imported is never pruned, nor are files without Monomem
 front-matter. `--no-prune` keeps everything.
 
 **Deleting an imported note is remembered.** When you delete a note that
@@ -153,8 +153,8 @@ mkdir ~/memory && cd ~/memory && git init && git remote add origin git@github.co
 # on each machine, e.g. from cron or a shell alias
 cd ~/memory
 git pull --rebase
-onememory import --dir .          # merge others' edits in
-onememory export --format md --dir .
+monomem import --dir .          # merge others' edits in
+monomem export --format md --dir .
 git add -A && git commit -m "memory sync $(hostname) $(date -u +%FT%TZ)" && git push
 ```
 
@@ -166,14 +166,14 @@ conflicts locally only. Use a **private** repository: notes are plaintext.
 
 ```bash
 git clone git@github.com:you/my-private-memory.git ~/my-private-memory     # a PRIVATE repository you own
-onememory sync --git ~/my-private-memory --dry-run      # look first: nothing is fetched, written or pushed
-onememory sync --git ~/my-private-memory --encrypt      # fetch, merge, write back, commit, push
+monomem sync --git ~/my-private-memory --dry-run      # look first: nothing is fetched, written or pushed
+monomem sync --git ~/my-private-memory --encrypt      # fetch, merge, write back, commit, push
 ```
 
-There is no OneMemory server in this: it is the export/import above with git carrying the files. Each run fetches, merges what
+There is no Monomem server in this: it is the export/import above with git carrying the files. Each run fetches, merges what
 your other computers pushed (git's own merge first; if git cannot, it stops and leaves your memory untouched), merges the files into
 the local database with the same three-way rules as `import --dir`, writes the result back, commits and pushes. Only the
-`onememory/` folder (or `onememory-enc/` with `--encrypt`) of the repository is ever committed; other files in the repository are
+`monomem/` folder (or `monomem-enc/` with `--encrypt`) of the repository is ever committed; other files in the repository are
 not touched. A push that loses a race with another computer is retried once after merging again. `--no-push` commits locally only.
 
 - **Readable or sealed.** Without `--encrypt` the repository holds your notes as readable Markdown (the command asks you to confirm the
@@ -181,7 +181,7 @@ not touched. A push that loses a race with another computer is retried once afte
   [at-rest encryption](./encryption-retention.md)) before it is committed: the repository holds only opaque file names and ciphertext,
   not even titles. File names are a keyed hash (HMAC-SHA-256 with the sync key) of the note's path, so a name cannot be matched to a guessed note title without the key; the number of notes, their approximate sizes and when they change are still visible. (Files sealed by the unreleased 1.7.0 build used an unkeyed hash and are not readable by 1.7.1: seal them again from a plain vault.) The sealed text is kept byte-for-byte when a note did not change, so git history stays small.
 - **The key stays out of the repository.** It is a 32-byte file on your computers: your at-rest key if you use one, otherwise
-  `<data folder>/.sync-key`, created on the first `--encrypt` run (or `--key-file`, or `ONEMEMORY_SYNC_KEY_FILE`). A key file inside
+  `<data folder>/.sync-key`, created on the first `--encrypt` run (or `--key-file`, or `MONOMEM_SYNC_KEY_FILE`). A key file inside
   the repository is refused. **Copy the key to your other computers yourself, never through the repository.** A computer without the
   key is told so and does not invent a new one over sealed notes; the wrong key stops everything before the database is changed.
   Lose the key and the sealed copies cannot be read: keep a copy of it somewhere safe, apart from the repository.

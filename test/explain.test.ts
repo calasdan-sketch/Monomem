@@ -19,11 +19,11 @@ import {
 
 function freshStore(): { store: Store; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), "om-explain-"));
-  const saved = process.env.ONEMEMORY_KEY_FILE;
-  process.env.ONEMEMORY_KEY_FILE = join(dir, "no-such-key");
+  const saved = process.env.MONOMEM_KEY_FILE;
+  process.env.MONOMEM_KEY_FILE = join(dir, "no-such-key");
   const store = new Store(join(dir, "state.db"));
-  if (saved === undefined) delete process.env.ONEMEMORY_KEY_FILE;
-  else process.env.ONEMEMORY_KEY_FILE = saved;
+  if (saved === undefined) delete process.env.MONOMEM_KEY_FILE;
+  else process.env.MONOMEM_KEY_FILE = saved;
   return { store, dir };
 }
 
@@ -146,18 +146,18 @@ describe("explain: parity with plain search", () => {
     }
   });
 
-  test("ONEMEMORY_ACCESS_BOOST=0 yields boost and penalty of exactly 1", async () => {
+  test("MONOMEM_ACCESS_BOOST=0 yields boost and penalty of exactly 1", async () => {
     const { store, dir } = freshStore();
-    const prev = process.env.ONEMEMORY_ACCESS_BOOST;
+    const prev = process.env.MONOMEM_ACCESS_BOOST;
     try {
-      process.env.ONEMEMORY_ACCESS_BOOST = "0";
+      process.env.MONOMEM_ACCESS_BOOST = "0";
       store.create({ title: "native ranking note", body: "native" });
       const hits = await runSearchExplained(store, "native");
       assert.equal(hits[0].breakdown.accessBoost, 1);
       assert.equal(hits[0].breakdown.stalePenalty, 1);
     } finally {
-      if (prev === undefined) delete process.env.ONEMEMORY_ACCESS_BOOST;
-      else process.env.ONEMEMORY_ACCESS_BOOST = prev;
+      if (prev === undefined) delete process.env.MONOMEM_ACCESS_BOOST;
+      else process.env.MONOMEM_ACCESS_BOOST = prev;
       cleanup(dir, store);
     }
   });

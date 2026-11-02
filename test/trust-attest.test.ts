@@ -30,18 +30,18 @@ describe("attestations: signing and verifying", () => {
   let dir: string;
   let a: Store;
   let b: Store;
-  const prevEnv = process.env.ONEMEMORY_TRUSTED_ATTESTERS;
+  const prevEnv = process.env.MONOMEM_TRUSTED_ATTESTERS;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "om-attest-"));
     a = new Store(join(dir, "a.db"));
     b = new Store(":memory:");
-    delete process.env.ONEMEMORY_TRUSTED_ATTESTERS;
+    delete process.env.MONOMEM_TRUSTED_ATTESTERS;
   });
   afterEach(() => {
     a.close();
     b.close();
-    if (prevEnv === undefined) delete process.env.ONEMEMORY_TRUSTED_ATTESTERS;
-    else process.env.ONEMEMORY_TRUSTED_ATTESTERS = prevEnv;
+    if (prevEnv === undefined) delete process.env.MONOMEM_TRUSTED_ATTESTERS;
+    else process.env.MONOMEM_TRUSTED_ATTESTERS = prevEnv;
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -78,7 +78,7 @@ describe("attestations: signing and verifying", () => {
 
   test("the export header names the server, key id and public key", () => {
     const h = a.exportHeader();
-    assert.equal(h.format, "onememory-export");
+    assert.equal(h.format, "monomem-export");
     assert.equal(h.server_id, a.serverId());
     assert.equal(h.public_key, a.identity().public_key);
     assert.equal(h.key_id, a.identity().key_id);
@@ -205,21 +205,21 @@ describe("attestations: signing and verifying", () => {
     console.error = (...x: unknown[]) => void warned.push(x.join(" "));
     try {
       // a bare key (no server id) is refused: it could claim to be any server
-      process.env.ONEMEMORY_TRUSTED_ATTESTERS = id.public_key;
+      process.env.MONOMEM_TRUSTED_ATTESTERS = id.public_key;
       assert.equal((await importInto(b, notes)).att.verified, 0);
       assert.ok(warned.some((w) => /no usable entry/.test(w)), "a variable that yields nothing is reported loudly");
       // env var pinned to a different server id: not believed
-      process.env.ONEMEMORY_TRUSTED_ATTESTERS = `99999999-9999-4999-8999-999999999999=${id.public_key}`;
+      process.env.MONOMEM_TRUSTED_ATTESTERS = `99999999-9999-4999-8999-999999999999=${id.public_key}`;
       assert.deepEqual((await importInto(b, notes)).att.reasons, { "server id does not match the trusted key": 1 });
-      process.env.ONEMEMORY_TRUSTED_ATTESTERS = `${id.server_id}=${id.public_key}, garbage;;`;
+      process.env.MONOMEM_TRUSTED_ATTESTERS = `${id.server_id}=${id.public_key}, garbage;;`;
       assert.equal((await importInto(b, notes)).att.verified, 1);
       // the documented JSON array form
-      process.env.ONEMEMORY_TRUSTED_ATTESTERS = JSON.stringify([{ public_key: id.public_key, server_id: id.server_id, label: "a" }]);
+      process.env.MONOMEM_TRUSTED_ATTESTERS = JSON.stringify([{ public_key: id.public_key, server_id: id.server_id, label: "a" }]);
       assert.equal((await importInto(b, notes)).att.verified, 1);
     } finally {
       console.error = realErr;
     }
-    delete process.env.ONEMEMORY_TRUSTED_ATTESTERS;
+    delete process.env.MONOMEM_TRUSTED_ATTESTERS;
     assert.equal((await importInto(b, notes)).att.verified, 0);
     // admin list, then removal
     b.attesterAdd({ public_key: id.public_key, server_id: id.server_id, label: "a" });
@@ -233,7 +233,7 @@ describe("attestations: signing and verifying", () => {
     assert.throws(() => b.attesterAdd({ public_key: "short" }), /public_key/);
     assert.throws(() => b.attesterAdd({ public_key: a.identity().public_key, server_id: "nope" }), /UUID/);
     // A key pinned to THIS server's own id is a "retired own key" (a rotation, or a restore that lost the key file): allowed,
-    // the same way an ONEMEMORY_TRUSTED_ATTESTERS entry naming this server's id is. Its CURRENT key is refused.
+    // the same way an MONOMEM_TRUSTED_ATTESTERS entry naming this server's id is. Its CURRENT key is refused.
     const retired = b.attesterAdd({ public_key: a.identity().public_key, server_id: b.serverId() });
     assert.equal(retired.server_id, b.serverId());
     assert.equal(b.attesterRemove(retired.key_id), true);
@@ -379,13 +379,13 @@ describe("attestations: HTTP export / import and the CLI", () => {
 
   test("an export still succeeds when the signing key cannot be created (read-only data directory)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "om-attest-ro-"));
-    const prev = process.env.ONEMEMORY_ATTEST_KEY_FILE;
+    const prev = process.env.MONOMEM_ATTEST_KEY_FILE;
     try {
       const s = new Store(join(dir, "s.db"));
       s.create({ title: "n", body: "b" });
       // point the key at a path that cannot be created (a file used as a directory)
       writeFileSync(join(dir, "blocker"), "x");
-      process.env.ONEMEMORY_ATTEST_KEY_FILE = join(dir, "blocker", "key");
+      process.env.MONOMEM_ATTEST_KEY_FILE = join(dir, "blocker", "key");
       const server = createApiServer(s, [{ token: "adm", scope: "admin", label: "a" }]);
       await new Promise<void>((r) => server.listen(0, r));
       const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -397,8 +397,8 @@ describe("attestations: HTTP export / import and the CLI", () => {
       await new Promise<void>((r) => server.close(() => r()));
       s.close();
     } finally {
-      if (prev === undefined) delete process.env.ONEMEMORY_ATTEST_KEY_FILE;
-      else process.env.ONEMEMORY_ATTEST_KEY_FILE = prev;
+      if (prev === undefined) delete process.env.MONOMEM_ATTEST_KEY_FILE;
+      else process.env.MONOMEM_ATTEST_KEY_FILE = prev;
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -410,7 +410,7 @@ describe("attestations: HTTP export / import and the CLI", () => {
       const run = (db: string, ...args: string[]) =>
         spawnSync(process.execPath, [cli, ...args], {
           // one data directory per database: the signing key lives beside the db file
-          env: { ...process.env, ONEMEMORY_DB_PATH: join(dir, db, "state.db"), ONEMEMORY_HOME: join(dir, "home-" + db) },
+          env: { ...process.env, MONOMEM_DB_PATH: join(dir, db, "state.db"), MONOMEM_HOME: join(dir, "home-" + db) },
           encoding: "utf8",
           timeout: 60000,
         });

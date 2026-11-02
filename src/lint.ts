@@ -11,22 +11,22 @@
 //                      chat-template / system-prompt markers, tool-call
 //                      coercion such as "... without telling the user").
 //
-// What happens on a hit is a policy, set by ONEMEMORY_LINT (read live):
+// What happens on a hit is a policy, set by MONOMEM_LINT (read live):
 //
 //   block       refuse the write (ValidationError, HTTP 400)
 //   quarantine  hold the write in the quarantine table; it is NOT a note,
 //               so it is invisible to search / list / recall / export until
-//               an admin approves it (memory_quarantine / onememory quarantine)
+//               an admin approves it (memory_quarantine / monomem quarantine)
 //   warn        store it and return the findings as `warnings`
 //
-// ONEMEMORY_LINT accepts one value for both categories ("warn"), or a
+// MONOMEM_LINT accepts one value for both categories ("warn"), or a
 // per-category list ("secrets=block,injection=warn"). Default:
 // secrets=block, injection=quarantine. Patterns are deliberately narrow:
 // a false positive costs a user a confusing refusal, so every pattern needs
 // an instruction-shaped context, not a single scary word.
 //
 // A bare high-entropy token (no known key prefix) is its own category,
-// "entropy", which only warns by default (ONEMEMORY_LINT=entropy=quarantine
+// "entropy", which only warns by default (MONOMEM_LINT=entropy=quarantine
 // to hold them). Text is normalized first (security.normalizeForScan).
 // This is best-effort hygiene, NOT a security boundary: the read-side
 // untrusted-data banner is what agents must rely on.
@@ -58,10 +58,10 @@ const ACTIONS: readonly LintAction[] = ["block", "quarantine", "warn"];
 let warnedBadPolicy = false;
 
 /**
- * Parse ONEMEMORY_LINT. Unknown values fall back to the default (with one
+ * Parse MONOMEM_LINT. Unknown values fall back to the default (with one
  * stderr warning) -- a typo must never silently disable the linter.
  */
-export function lintPolicy(raw: string | undefined = process.env.ONEMEMORY_LINT): LintPolicy {
+export function lintPolicy(raw: string | undefined = process.env.MONOMEM_LINT): LintPolicy {
   const policy: LintPolicy = { ...DEFAULT_LINT_POLICY };
   if (!raw || !raw.trim()) return policy;
   const v = raw.trim().toLowerCase();
@@ -82,7 +82,7 @@ export function lintPolicy(raw: string | undefined = process.env.ONEMEMORY_LINT)
   if (!ok && !warnedBadPolicy) {
     warnedBadPolicy = true;
     console.error(
-      `[onememory] ONEMEMORY_LINT="${raw}" has unrecognized parts; using ` +
+      `[monomem] MONOMEM_LINT="${raw}" has unrecognized parts; using ` +
         `secrets=${policy.secret}, injection=${policy.injection}`
     );
   }

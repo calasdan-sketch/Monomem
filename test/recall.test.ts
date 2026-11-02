@@ -84,7 +84,7 @@ describe("recall: hook JSON shape", () => {
   });
 
   test("runRecall resolves valid JSON with hookEventName SessionStart", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "onememory-recall-"));
+    const dir = mkdtempSync(join(tmpdir(), "monomem-recall-"));
     try {
       const store = new Store(join(dir, "state.db"));
       store.create({ title: "Pref", body: "Keep replies short." });
@@ -107,9 +107,9 @@ describe("recall: fail-silent", () => {
     assert.equal(parsed.hookSpecificOutput.additionalContext, "");
   });
 
-  test("CLI: bogus ONEMEMORY_DB_PATH -> exit 0, valid JSON on stdout", () => {
+  test("CLI: bogus MONOMEM_DB_PATH -> exit 0, valid JSON on stdout", () => {
     const r = spawnSync(process.execPath, [CLI, "recall"], {
-      env: { ...process.env, ONEMEMORY_DB_PATH: "/nonexistent-dir-xyz/db.sqlite" },
+      env: { ...process.env, MONOMEM_DB_PATH: "/nonexistent-dir-xyz/db.sqlite" },
       encoding: "utf8",
       timeout: 15000,
     });
@@ -120,14 +120,14 @@ describe("recall: fail-silent", () => {
   });
 
   test("CLI: --budget-ms 1 against a real DB still exits 0 fast with valid JSON", () => {
-    const dir = mkdtempSync(join(tmpdir(), "onememory-recall-"));
+    const dir = mkdtempSync(join(tmpdir(), "monomem-recall-"));
     try {
       const store = new Store(join(dir, "state.db"));
       for (let i = 0; i < 20; i++) store.create({ title: `N${i}`, body: `body ${i}` });
       store.close();
       const started = Date.now();
       const r = spawnSync(process.execPath, [CLI, "recall", "--budget-ms", "1"], {
-        env: { ...process.env, ONEMEMORY_DB_PATH: join(dir, "state.db") },
+        env: { ...process.env, MONOMEM_DB_PATH: join(dir, "state.db") },
         encoding: "utf8",
         timeout: 15000,
       });
@@ -144,7 +144,7 @@ describe("recall: fail-silent", () => {
 
   test("CLI: garbage flag values fall back to defaults, exit 0", () => {
     const r = spawnSync(process.execPath, [CLI, "recall", "--budget-ms", "abc", "--limit", "0"], {
-      env: { ...process.env, ONEMEMORY_DB_PATH: "/nonexistent-dir-xyz/db.sqlite" },
+      env: { ...process.env, MONOMEM_DB_PATH: "/nonexistent-dir-xyz/db.sqlite" },
       encoding: "utf8",
       timeout: 15000,
     });
@@ -154,7 +154,7 @@ describe("recall: fail-silent", () => {
 });
 
 describe("recall: namespace isolation (regression)", () => {
-  const SPACES_KEY = "ONEMEMORY_SPACES";
+  const SPACES_KEY = "MONOMEM_SPACES";
 
   function setSpaces(value: string | undefined): string | undefined {
     const prev = process.env[SPACES_KEY];
@@ -170,7 +170,7 @@ describe("recall: namespace isolation (regression)", () => {
 
   /** Seeds a temp DB with notes in two namespaces; returns the DB path. */
   function seedTwoNamespaces(): string {
-    const dir = mkdtempSync(join(tmpdir(), "onememory-recall-ns-"));
+    const dir = mkdtempSync(join(tmpdir(), "monomem-recall-ns-"));
     const dbFile = join(dir, "state.db");
     const store = new Store(dbFile);
     store.create({ title: "ProjA note", body: "alpha secret", namespace: "proj-a" });
@@ -265,7 +265,7 @@ describe("recall: namespace isolation (regression)", () => {
   });
 
   test("hook output wraps injected notes with the untrusted-data banner", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "onememory-recall-banner-"));
+    const dir = mkdtempSync(join(tmpdir(), "monomem-recall-banner-"));
     const dbFile = join(dir, "state.db");
     try {
       const store = new Store(dbFile);

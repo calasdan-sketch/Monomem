@@ -1,13 +1,13 @@
-// `onememory hook <event>`: the agent's lifecycle hooks (Claude Code: SessionStart, UserPromptSubmit, PostToolUse,
+// `monomem hook <event>`: the agent's lifecycle hooks (Claude Code: SessionStart, UserPromptSubmit, PostToolUse,
 // PostToolUseFailure, Stop, SubagentStop, SessionEnd; Codex, Gemini CLI and Muse are mapped onto the same events in setup.ts hookHosts).
 //
 // FAIL-OPEN, ALWAYS: whatever happens (garbage on stdin, no database, a database from another version, a locked file, a
 // bug) the process exits 0 and prints either nothing or one valid hook JSON object on stdout. Capture is a bonus; it must
 // never cost the agent a turn. The database is opened WITHOUT migrating (a one-way upgrade is never the hook's call) and
 // with a short lock wait; when it cannot be used, the already-redacted event goes to a JSONL spool in the data directory
-// (or, when ONEMEMORY_HOOK_URL and ONEMEMORY_HOOK_TOKEN are set, to POST <url>/capture first) and a later hook drains it.
+// (or, when MONOMEM_HOOK_URL and MONOMEM_HOOK_TOKEN are set, to POST <url>/capture first) and a later hook drains it.
 //
-// session-start also prints the start-of-session context (recall.ts / context-inject.ts), exactly like `onememory recall`.
+// session-start also prints the start-of-session context (recall.ts / context-inject.ts), exactly like `monomem recall`.
 // file-context (PreToolUse on Read) prints what memory knows about the file about to be read (file-context.ts); advisory only.
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -83,8 +83,8 @@ function spawnLlmSummary(sessionId: string, dbPath: string, env: NodeJS.ProcessE
 }
 
 async function postCapture(env: NodeJS.ProcessEnv, ev: CaptureEvent & { namespace: string }): Promise<boolean> {
-  const url = (env.ONEMEMORY_HOOK_URL ?? "").trim().replace(/\/+$/, "");
-  const token = (env.ONEMEMORY_HOOK_TOKEN ?? "").trim();
+  const url = (env.MONOMEM_HOOK_URL ?? "").trim().replace(/\/+$/, "");
+  const token = (env.MONOMEM_HOOK_TOKEN ?? "").trim();
   if (!url || !token) return false;
   try {
     const r = await fetch(`${url}/capture`, {
@@ -136,12 +136,12 @@ export async function captureHook(event: HookEvent, payload: Record<string, unkn
       try {
         store.sweepDecay(); // idle captured rows are archived (never deleted) on the same pass
       } catch (e) {
-        process.stderr.write(`onememory hook: decay sweep skipped: ${(e as Error).message}\n`); // the event itself is stored
+        process.stderr.write(`monomem hook: decay sweep skipped: ${(e as Error).message}\n`); // the event itself is stored
       }
     }
     return "stored";
   } catch (e) {
-    process.stderr.write(`onememory hook ${event}: ${(e as Error).message}; keeping the event for later\n`);
+    process.stderr.write(`monomem hook ${event}: ${(e as Error).message}; keeping the event for later\n`);
     if (await postCapture(env, { ...ev, namespace })) return "posted";
     return spoolEvent(dataDir, { ...ev, namespace }) ? "spooled" : "dropped";
   } finally {
@@ -182,14 +182,14 @@ export async function runHook(eventArg: string, stdinText: string, opts: HookOpt
         store.close();
       }
     } catch (e) {
-      process.stderr.write(`onememory hook llm-summary: ${(e as Error).message}
+      process.stderr.write(`monomem hook llm-summary: ${(e as Error).message}
 `);
     }
     return "";
   }
   const event = (HOOK_EVENTS as readonly string[]).includes(eventArg) ? (eventArg as HookEvent) : null;
   if (!event) {
-    process.stderr.write(`onememory hook: unknown event "${eventArg}" (one of ${HOOK_EVENTS.join(", ")}); ignored\n`);
+    process.stderr.write(`monomem hook: unknown event "${eventArg}" (one of ${HOOK_EVENTS.join(", ")}); ignored\n`);
     return "";
   }
   const raw = parsePayload(stdinText);
@@ -200,7 +200,7 @@ export async function runHook(eventArg: string, stdinText: string, opts: HookOpt
   try {
     await captureHook(event, payload, opts);
   } catch (e) {
-    process.stderr.write(`onememory hook ${event}: ${(e as Error).message}\n`);
+    process.stderr.write(`monomem hook ${event}: ${(e as Error).message}\n`);
   }
   if (event !== "session-start") return "";
   try {

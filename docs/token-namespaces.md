@@ -1,6 +1,6 @@
 # Per-token namespace permissions
 
-One shared OneMemory server, several agents, each confined to its own
+One shared Monomem server, several agents, each confined to its own
 namespace — by **token**, not by running a separate process per agent.
 
 This is the feature that makes a shared bridge safe. Without it, every
@@ -16,7 +16,7 @@ leaks secrets between projects.
 Before per-token namespaces, isolation was **per-process**: the namespace was
 resolved once at startup from the server's working directory and was a
 constant for the whole process. To give two agents separate namespaces you
-had to run two server processes (different cwds, or `ONEMEMORY_SPACE`).
+had to run two server processes (different cwds, or `MONOMEM_SPACE`).
 
 That is real isolation, but it does not survive the common case: a Docker
 one-liner plus a tunnel, three agents, three tokens, one bridge. All three
@@ -25,7 +25,7 @@ tokens saw one namespace.
 ## Configuration
 
 Add an optional `namespace` to any secondary token in `tokens.json` (or
-`ONEMEMORY_TOKENS`):
+`MONOMEM_TOKENS`):
 
 ```json
 [
@@ -55,7 +55,7 @@ For each request:
    pin (byte-identical legacy behavior).
 3. **Disabled** — no pin, no server namespace: the legacy permissive mode.
 
-The **primary token** (`~/.onememory/.token` / `ONEMEMORY_TOKEN`) never
+The **primary token** (`~/.monomem/.token` / `MONOMEM_TOKEN`) never
 carries a pin. It is always the operator's unrestricted admin — your escape
 hatch to see and repair everything. Only explicitly-namespaced secondary
 tokens get confined.
@@ -63,7 +63,7 @@ tokens get confined.
 ## Grants are operator-controlled, never token-supplied
 
 `reads_from` grants stay in the server's config (`spaces.json` /
-`ONEMEMORY_SPACES`), keyed by namespace. A token says **where it lives**;
+`MONOMEM_SPACES`), keyed by namespace. A token says **where it lives**;
 only the operator can say **what it may additionally read**. A token pinned
 to `work` inherits `reads_from["work"]` — a token can never grant itself
 access to another namespace, because the grant map is never read from the

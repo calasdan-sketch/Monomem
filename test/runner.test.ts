@@ -190,11 +190,11 @@ describe("execution", () => {
   });
 
   test("the runner secret is stripped from the child environment", async () => {
-    process.env.ONEMEMORY_RUNNER_SECRET = "super-secret-value";
-    const out = await runCommand("sh", ["-c", "echo [$ONEMEMORY_RUNNER_SECRET]"], {
+    process.env.MONOMEM_RUNNER_SECRET = "super-secret-value";
+    const out = await runCommand("sh", ["-c", "echo [$MONOMEM_RUNNER_SECRET]"], {
       timeoutMs: 10_000,
     });
-    delete process.env.ONEMEMORY_RUNNER_SECRET;
+    delete process.env.MONOMEM_RUNNER_SECRET;
     assert.match(out.stdout, /\[\]/);
   });
 
@@ -373,15 +373,15 @@ describe("single instance lock", () => {
 });
 
 describe("allowlist loading", () => {
-  afterEach(() => delete process.env.ONEMEMORY_RUNNER_ALLOW);
+  afterEach(() => delete process.env.MONOMEM_RUNNER_ALLOW);
 
   test("invalid JSON yields an empty (deny-all) allowlist", () => {
-    process.env.ONEMEMORY_RUNNER_ALLOW = "{{{";
+    process.env.MONOMEM_RUNNER_ALLOW = "{{{";
     assert.deepEqual(loadAllowlist(), {});
   });
 
   test("a JSON array is rejected as an allowlist", () => {
-    process.env.ONEMEMORY_RUNNER_ALLOW = "[]";
+    process.env.MONOMEM_RUNNER_ALLOW = "[]";
     assert.deepEqual(loadAllowlist(), {});
   });
 });

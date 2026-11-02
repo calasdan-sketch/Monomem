@@ -89,11 +89,11 @@ describe("sync --git: two computers settle", { skip }, () => {
     put(w.a, "Origin note", "x");
     await sync(w.a);
     await sync(w.b);
-    const f = readdirSync(join(w.a.repo, "onememory"), { recursive: true }).map(String).find((x) => x.endsWith(".md"))!;
-    const text = readFileSync(join(w.a.repo, "onememory", f), "utf8");
+    const f = readdirSync(join(w.a.repo, "monomem"), { recursive: true }).map(String).find((x) => x.endsWith(".md"))!;
+    const text = readFileSync(join(w.a.repo, "monomem", f), "utf8");
     const claim = /origin_writer: (".*")/.exec(text)![1];
     for (const d of [w.b, w.a, w.b]) await sync(d);
-    const after = readFileSync(join(w.a.repo, "onememory", f), "utf8");
+    const after = readFileSync(join(w.a.repo, "monomem", f), "utf8");
     assert.equal(/origin_writer: (".*")/.exec(after)![1], claim);
     assert.notEqual(JSON.parse(claim), "", "never blank");
   });

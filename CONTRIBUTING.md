@@ -1,4 +1,4 @@
-# Contributing to OneMemory
+# Contributing to Monomem
 
 Thanks for your interest — small, focused contributions are very welcome.
 

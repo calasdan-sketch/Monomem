@@ -2,7 +2,7 @@
 // MCP server, and the HTTP/SSE MCP server so all three point at the same
 // state file and accept the same token.
 
-import "./legacy-env.js"; // first: CLAUDE_BRIDGE_* (the old name) are read as ONEMEMORY_*
+import "./legacy-env.js"; // first: CLAUDE_BRIDGE_* (the old name) are read as MONOMEM_*
 import { randomBytes } from "node:crypto";
 import {
   chmodSync,
@@ -30,7 +30,7 @@ export const PROJECT_ROOT = join(__dirname, "..", "..");
 
 /** Where 1.0.x kept its state: inside the package (lost on npm update / npx cache purge). */
 /**
- * The real package version (package.json): reported by `onememory --version`
+ * The real package version (package.json): reported by `monomem --version`
  * and the MCP serverInfo so clients see the build they are talking to.
  */
 export const PACKAGE_VERSION: string = (() => {
@@ -44,26 +44,45 @@ export const PACKAGE_VERSION: string = (() => {
 
 export const LEGACY_DATA_DIR = join(PROJECT_ROOT, "data");
 
+/** Where the store lived when this package was called OneMemory. */
+export const LEGACY_HOME_DIR_NAME = ".onememory";
+/** Where it lives now. */
+export const HOME_DIR_NAME = ".monomem";
+
 /**
  * The data directory (database, token, tokens.json, spaces.json):
- *   1. ONEMEMORY_HOME, when set;
+ *   1. MONOMEM_HOME, when set (ONEMEMORY_HOME still works -- see legacy-env.ts);
  *   2. the package's own ./data, when running from a git checkout that
  *      already has ./data/state.db (a from-source install keeps working
  *      exactly as before);
- *   3. otherwise ~/.onememory (Windows: %USERPROFILE%\.onememory) --
- *      outside the installed package, so updates never touch it.
+ *   3. ~/.onememory, IF it already holds a store and ~/.monomem does not --
+ *      the rename must never make an existing user's notes vanish, and
+ *      silently starting them on an empty database would be exactly that;
+ *   4. otherwise ~/.monomem (Windows: %USERPROFILE%\.monomem) -- outside the
+ *      installed package, so updates never touch it.
+ *
+ * Rule 3 is the whole reason this function is not a one-liner. An existing
+ * store always wins over the new default, and nothing is moved or copied:
+ * the old directory is used in place, so downgrading to an older version
+ * keeps working too.
  */
 export function resolveDataDir(
   env: NodeJS.ProcessEnv = process.env,
   root: string = PROJECT_ROOT
-): { dir: string; why: "env" | "checkout" | "home" } {
-  if (env.ONEMEMORY_HOME && env.ONEMEMORY_HOME.trim()) {
-    return { dir: resolve(env.ONEMEMORY_HOME.trim()), why: "env" };
+): { dir: string; why: "env" | "checkout" | "home" | "legacy-home" } {
+  const home = env.MONOMEM_HOME ?? env.ONEMEMORY_HOME;
+  if (home && home.trim()) {
+    return { dir: resolve(home.trim()), why: "env" };
   }
   if (existsSync(join(root, ".git")) && existsSync(join(root, "data", "state.db"))) {
     return { dir: join(root, "data"), why: "checkout" };
   }
-  return { dir: join(homedir(), ".onememory"), why: "home" };
+  const newHome = join(homedir(), HOME_DIR_NAME);
+  const oldHome = join(homedir(), LEGACY_HOME_DIR_NAME);
+  if (!existsSync(join(newHome, "state.db")) && existsSync(join(oldHome, "state.db"))) {
+    return { dir: oldHome, why: "legacy-home" };
+  }
+  return { dir: newHome, why: "home" };
 }
 
 const DATA = resolveDataDir();
@@ -71,7 +90,7 @@ export const DATA_DIR = DATA.dir;
 /** Why DATA_DIR was chosen (doctor reports it). */
 export const DATA_DIR_SOURCE = DATA.why;
 
-export const DB_PATH = process.env.ONEMEMORY_DB_PATH || join(DATA_DIR, "state.db");
+export const DB_PATH = process.env.MONOMEM_DB_PATH || join(DATA_DIR, "state.db");
 
 export const TOKEN_FILE = join(DATA_DIR, ".token");
 
@@ -82,9 +101,9 @@ export function insideNodeModules(p: string): boolean {
 
 /** chmod that is a no-op on Windows and never throws (permissions are best-effort hardening). */
 export function chmodQuiet(p: string, mode: number): void {
-  // ONEMEMORY_NO_CHMOD=1 leaves permissions alone (deliberately shared dirs,
+  // MONOMEM_NO_CHMOD=1 leaves permissions alone (deliberately shared dirs,
   // e.g. a Docker volume read by a backup sidecar running as another uid).
-  if (process.platform === "win32" || process.env.ONEMEMORY_NO_CHMOD === "1") return;
+  if (process.platform === "win32" || process.env.MONOMEM_NO_CHMOD === "1") return;
   try {
     chmodSync(p, mode);
   } catch {
@@ -203,7 +222,7 @@ let prepared = false;
 /**
  * Call once at startup, before opening the database: migrates 1.0.x state
  * out of the package into DATA_DIR (see migrateLegacyData) and says so on
- * stderr. Skipped when ONEMEMORY_DB_PATH pins the database explicitly.
+ * stderr. Skipped when MONOMEM_DB_PATH pins the database explicitly.
  * Never throws: on failure it warns and the server starts on DATA_DIR.
  */
 export function prepareDataDir(): void {
@@ -214,38 +233,38 @@ export function prepareDataDir(): void {
   try {
     privateDir(DATA_DIR);
     for (const f of PRIVATE_FILES) chmodQuiet(join(DATA_DIR, f), 0o600);
-    // The encryption key lives beside the database or at ONEMEMORY_KEY_FILE.
+    // The encryption key lives beside the database or at MONOMEM_KEY_FILE.
     chmodQuiet(join(dirname(DB_PATH), ".key"), 0o600);
-    if (process.env.ONEMEMORY_KEY_FILE) chmodQuiet(process.env.ONEMEMORY_KEY_FILE, 0o600);
+    if (process.env.MONOMEM_KEY_FILE) chmodQuiet(process.env.MONOMEM_KEY_FILE, 0o600);
     // The attestation signing key (a sync tool or a restore may have left it 0644) and any pre-upgrade copy of the database.
-    if (process.env.ONEMEMORY_ATTEST_KEY_FILE) chmodQuiet(process.env.ONEMEMORY_ATTEST_KEY_FILE, 0o600);
+    if (process.env.MONOMEM_ATTEST_KEY_FILE) chmodQuiet(process.env.MONOMEM_ATTEST_KEY_FILE, 0o600);
     for (const f of readdirSync(dirname(DB_PATH))) {
       if (/^state\.db\.pre-v\d+-backup(\.\d+\.partial)?$/.test(f) || f === ".attest-key") chmodQuiet(join(dirname(DB_PATH), f), 0o600);
     }
   } catch {
     /* read-only or foreign-owned dir: hardening is best-effort */
   }
-  if (process.env.ONEMEMORY_DB_PATH) return;
-  // A client that sets a different ONEMEMORY_HOME than the one a previous run
+  if (process.env.MONOMEM_DB_PATH) return;
+  // A client that sets a different MONOMEM_HOME than the one a previous run
   // used would otherwise start empty without a word.
-  const homeDefault = join(homedir(), ".onememory");
+  const homeDefault = join(homedir(), ".monomem");
   if (
     resolve(DATA_DIR) !== resolve(homeDefault) &&
     !existsSync(join(DATA_DIR, "state.db")) &&
     existsSync(join(homeDefault, "state.db"))
   ) {
     console.error(
-      `[onememory] ${DATA_DIR} has no store yet, but ${homeDefault} does. ` +
-        `To keep using it, unset ONEMEMORY_HOME or copy ${homeDefault} into ${DATA_DIR}.`
+      `[monomem] ${DATA_DIR} has no store yet, but ${homeDefault} does. ` +
+        `To keep using it, unset MONOMEM_HOME or copy ${homeDefault} into ${DATA_DIR}.`
     );
   }
   try {
     const lines = migrateLegacyData(LEGACY_DATA_DIR, DATA_DIR);
-    for (const l of lines) console.error(`[onememory] data migration: ${l}`);
+    for (const l of lines) console.error(`[monomem] data migration: ${l}`);
   } catch (e) {
     console.error(
-      `[onememory] data migration from ${LEGACY_DATA_DIR} failed: ${(e as Error).message}. ` +
-        `Copy state.db and .token into ${DATA_DIR} by hand, or set ONEMEMORY_HOME=${LEGACY_DATA_DIR}.`
+      `[monomem] data migration from ${LEGACY_DATA_DIR} failed: ${(e as Error).message}. ` +
+        `Copy state.db and .token into ${DATA_DIR} by hand, or set MONOMEM_HOME=${LEGACY_DATA_DIR}.`
     );
   }
 }
@@ -259,11 +278,11 @@ export function prepareDataDir(): void {
 export const MIN_TOKEN_LENGTH = 32;
 
 export function resolveToken(): string {
-  if (process.env.ONEMEMORY_TOKEN && process.env.ONEMEMORY_TOKEN.trim()) {
-    const t = process.env.ONEMEMORY_TOKEN.trim();
+  if (process.env.MONOMEM_TOKEN && process.env.MONOMEM_TOKEN.trim()) {
+    const t = process.env.MONOMEM_TOKEN.trim();
     if (t.length < MIN_TOKEN_LENGTH) {
       throw new Error(
-        `onememory: ONEMEMORY_TOKEN is too short (${t.length} chars); use at least ${MIN_TOKEN_LENGTH}. ` +
+        `monomem: MONOMEM_TOKEN is too short (${t.length} chars); use at least ${MIN_TOKEN_LENGTH}. ` +
           `Generate one with: openssl rand -hex 32`
       );
     }
@@ -281,7 +300,7 @@ export function resolveToken(): string {
   // future log-shipping, and the token is a full-access credential valid
   // over the public tunnel. Reference only the file path it was saved to.
   // eslint-disable-next-line no-console
-  console.error(`[onememory] Generated new bearer token, saved to ${TOKEN_FILE}`);
+  console.error(`[monomem] Generated new bearer token, saved to ${TOKEN_FILE}`);
   return token;
 }
 
@@ -319,9 +338,9 @@ function isScope(s: unknown): s is Scope {
 
 /**
  * All accepted bearer tokens with their scope. The primary token
- * (ONEMEMORY_TOKEN or <data dir>/.token) is always admin, so single-token
+ * (MONOMEM_TOKEN or <data dir>/.token) is always admin, so single-token
  * setups behave exactly as before. Extra scoped tokens are optional and come
- * from ONEMEMORY_TOKENS (a JSON array) and/or a <data dir>/tokens.json file,
+ * from MONOMEM_TOKENS (a JSON array) and/or a <data dir>/tokens.json file,
  * each entry { "token": "...", "scope": "read|write|admin", "label": "...",
  * "namespace": "..." }. `namespace` optionally PINS that token to one
  * namespace (see TokenEntry.namespace) -- per-token isolation on a shared
@@ -345,7 +364,7 @@ export function resolveTokens(): TokenEntry[] {
     const t = token.trim();
     if (!lock && t.length < MIN_TOKEN_LENGTH) {
       console.error(
-        `[onememory] ignoring token ${typeof label === "string" && label ? `"${label}"` : "(unnamed)"}: ` +
+        `[monomem] ignoring token ${typeof label === "string" && label ? `"${label}"` : "(unnamed)"}: ` +
           `it is ${t.length} characters; user-supplied tokens must be at least ${MIN_TOKEN_LENGTH}. ` +
           `Generate one with: openssl rand -hex 32`
       );
@@ -359,9 +378,9 @@ export function resolveTokens(): TokenEntry[] {
     // confined became unrestricted. Reject the whole token instead, loudly.
     if (namespace !== undefined && namespace !== null && (typeof namespace !== "string" || !namespace.trim())) {
       console.error(
-        `[onememory] ignoring token ${typeof label === "string" && label ? `"${label}"` : "(unnamed)"}: ` +
+        `[monomem] ignoring token ${typeof label === "string" && label ? `"${label}"` : "(unnamed)"}: ` +
           `its "namespace" must be a non-empty string (got ${JSON.stringify(namespace)}). ` +
-          `Fix the entry in ONEMEMORY_TOKENS / tokens.json; the token will not work until then.`
+          `Fix the entry in MONOMEM_TOKENS / tokens.json; the token will not work until then.`
       );
       return;
     }
@@ -380,7 +399,7 @@ export function resolveTokens(): TokenEntry[] {
           const nextNs = pinTighter ? ns : existing.namespace;
           if (ns !== undefined && existing.namespace !== undefined && ns !== existing.namespace) {
             console.error(
-              `[onememory] token ${existing.label || "(unnamed)"} is listed with two different ` +
+              `[monomem] token ${existing.label || "(unnamed)"} is listed with two different ` +
                 `namespaces ("${existing.namespace}" and "${ns}"); keeping "${existing.namespace}"`
             );
           }
@@ -392,7 +411,7 @@ export function resolveTokens(): TokenEntry[] {
           });
         } else if (ns !== undefined && existing.namespace !== undefined && ns !== existing.namespace) {
           console.error(
-            `[onememory] token ${existing.label || "(unnamed)"} is listed with two different ` +
+            `[monomem] token ${existing.label || "(unnamed)"} is listed with two different ` +
               `namespaces ("${existing.namespace}" and "${ns}"); keeping "${existing.namespace}"`
           );
         }
@@ -412,7 +431,7 @@ export function resolveTokens(): TokenEntry[] {
   try {
     add(resolveToken(), "admin", "primary", true);
   } catch (e) {
-    if (/ONEMEMORY_TOKEN is too short/.test((e as Error).message)) throw e;
+    if (/MONOMEM_TOKEN is too short/.test((e as Error).message)) throw e;
     /* no primary token available (e.g. doctor on a fresh box) */
   }
 
@@ -421,12 +440,12 @@ export function resolveTokens(): TokenEntry[] {
     try {
       arr = JSON.parse(raw);
     } catch {
-      console.error(`[onememory] ignoring ${where}: not valid JSON`);
+      console.error(`[monomem] ignoring ${where}: not valid JSON`);
       return;
     }
     if (!Array.isArray(arr)) {
       console.error(
-        `[onememory] ignoring ${where}: expected a JSON array of { token, scope, label }`
+        `[monomem] ignoring ${where}: expected a JSON array of { token, scope, label }`
       );
       return;
     }
@@ -436,8 +455,8 @@ export function resolveTokens(): TokenEntry[] {
     }
   };
 
-  if (process.env.ONEMEMORY_TOKENS && process.env.ONEMEMORY_TOKENS.trim()) {
-    parseList(process.env.ONEMEMORY_TOKENS, "ONEMEMORY_TOKENS");
+  if (process.env.MONOMEM_TOKENS && process.env.MONOMEM_TOKENS.trim()) {
+    parseList(process.env.MONOMEM_TOKENS, "MONOMEM_TOKENS");
   }
   const tokensFile = join(DATA_DIR, "tokens.json");
   if (existsSync(tokensFile)) {
@@ -453,18 +472,18 @@ function parsePort(envVal: string | undefined, def: number): number {
   if (!envVal) return def;
   const n = Number(envVal);
   if (!Number.isInteger(n) || n < 1 || n > 65535) {
-    console.error(`[onememory] invalid port "${envVal}"; falling back to ${def}`);
+    console.error(`[monomem] invalid port "${envVal}"; falling back to ${def}`);
     return def;
   }
   return n;
 }
 
-export const API_PORT = parsePort(process.env.ONEMEMORY_PORT, 8790);
-export const MCP_HTTP_PORT = parsePort(process.env.ONEMEMORY_MCP_PORT, 8791);
+export const API_PORT = parsePort(process.env.MONOMEM_PORT, 8790);
+export const MCP_HTTP_PORT = parsePort(process.env.MONOMEM_MCP_PORT, 8791);
 
 // Bind to loopback by default. Public exposure is opt-in and is expected to
 // sit behind an authenticated tunnel (e.g. Cloudflare Tunnel + Access).
-export const BIND_HOST = process.env.ONEMEMORY_BIND || "127.0.0.1";
+export const BIND_HOST = process.env.MONOMEM_BIND || "127.0.0.1";
 
 export function isLoopback(host: string): boolean {
   return host === "127.0.0.1" || host === "::1" || host === "localhost";
@@ -498,26 +517,26 @@ export function parseIntervalToMs(raw: string | undefined): number | null {
  * weaker candidates are logged for review, never merged blindly.
  */
 export const AUTO_CONSOLIDATE_INTERVAL_MS = parseIntervalToMs(
-  process.env.ONEMEMORY_AUTO_CONSOLIDATE_INTERVAL
+  process.env.MONOMEM_AUTO_CONSOLIDATE_INTERVAL
 );
 
 /**
  * Fail closed: never open a non-loopback listener without an explicit token.
  * An auto-generated token is fine for a local-only server, but if the
- * operator binds to a public interface they must set ONEMEMORY_TOKEN
+ * operator binds to a public interface they must set MONOMEM_TOKEN
  * deliberately rather than relying on an auto-minted one.
  */
 export function assertSafeExposure(): void {
   // Read the bind host from the environment here (not the cached BIND_HOST
   // constant) so this guard reflects the actual configured bind and stays
   // unit-testable. Default matches BIND_HOST.
-  const bind = process.env.ONEMEMORY_BIND || "127.0.0.1";
+  const bind = process.env.MONOMEM_BIND || "127.0.0.1";
   const hasExplicitToken = !!(
-    process.env.ONEMEMORY_TOKEN && process.env.ONEMEMORY_TOKEN.trim()
+    process.env.MONOMEM_TOKEN && process.env.MONOMEM_TOKEN.trim()
   );
   if (!isLoopback(bind) && !hasExplicitToken) {
     throw new Error(
-      "Refusing to bind to a non-loopback address without ONEMEMORY_TOKEN set. " +
+      "Refusing to bind to a non-loopback address without MONOMEM_TOKEN set. " +
         "Set an explicit token, or keep the default localhost bind and expose it " +
         "through an authenticated tunnel (see INFRA.md)."
     );
@@ -526,12 +545,12 @@ export function assertSafeExposure(): void {
 
 /**
  * IANA timezone used to interpret natural-language time phrases
- * ("yesterday", "last week") in time-aware search. Set ONEMEMORY_TIMEZONE,
- * e.g. ONEMEMORY_TIMEZONE=America/Winnipeg; unset, the host's system
+ * ("yesterday", "last week") in time-aware search. Set MONOMEM_TIMEZONE,
+ * e.g. MONOMEM_TIMEZONE=America/Winnipeg; unset, the host's system
  * timezone is used. Invalid names log to stderr and fall back to "UTC"
  * (never throw at import time).
  */
-export const TIME_ZONE = resolveTimeZone(process.env.ONEMEMORY_TIMEZONE);
+export const TIME_ZONE = resolveTimeZone(process.env.MONOMEM_TIMEZONE);
 
 /**
  * Staleness detection (time-aware memory): notes older than these thresholds
@@ -569,8 +588,8 @@ function parseTagList(raw: string | undefined, def: string): string[] {
  */
 export function stalenessConfig(): StalenessConfig {
   return {
-    staleDays: parsePositiveDays(process.env.ONEMEMORY_STALE_DAYS, 90),
-    staleTags: parseTagList(process.env.ONEMEMORY_STALE_TAGS, "#status"),
-    staleTagDays: parsePositiveDays(process.env.ONEMEMORY_STALE_TAG_DAYS, 30),
+    staleDays: parsePositiveDays(process.env.MONOMEM_STALE_DAYS, 90),
+    staleTags: parseTagList(process.env.MONOMEM_STALE_TAGS, "#status"),
+    staleTagDays: parsePositiveDays(process.env.MONOMEM_STALE_TAG_DAYS, 30),
   };
 }

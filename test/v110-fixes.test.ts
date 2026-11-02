@@ -10,7 +10,7 @@
 //  6  namespace path matching is case-insensitive on win32/darwin.
 //  7  doctor warns when a store has notes but no edges.
 //  8  default timezone is the host's, not UTC.
-//  9  ONEMEMORY_ACCESS_BOOST=0 disables the access/staleness re-rank.
+//  9  MONOMEM_ACCESS_BOOST=0 disables the access/staleness re-rank.
 // 10  rebuilds are single-flight and never re-insert a changed note's edges.
 // 11  REST POST /rebuild-edges has the confirm gate + single-flight.
 
@@ -217,7 +217,7 @@ describe("2: edge scoring uses a cached inverted index", () => {
   });
 
   test("the index sees writes from another connection", () => {
-    const dir = mkdtempSync(join(tmpdir(), "onememory-v110-idx-"));
+    const dir = mkdtempSync(join(tmpdir(), "monomem-v110-idx-"));
     const a = new Store(join(dir, "t.db"));
     const b = new Store(join(dir, "t.db"));
     try {
@@ -405,8 +405,8 @@ describe("6: namespace paths are case-insensitive on win32/darwin", () => {
   const cfg = (spaces: Record<string, string>) => ({ spaces, default_namespace: "default" });
 
   test("win32 paths match regardless of case and separator", () => {
-    const saved = process.env.ONEMEMORY_SPACE;
-    delete process.env.ONEMEMORY_SPACE;
+    const saved = process.env.MONOMEM_SPACE;
+    delete process.env.MONOMEM_SPACE;
     try {
       const c = cfg({ "c:/users/avery/work": "work" });
       assert.equal(resolveNamespace("C:\\Users\\Avery\\Work\\proj", c, { platform: "win32" }), "work");
@@ -422,14 +422,14 @@ describe("6: namespace paths are case-insensitive on win32/darwin", () => {
         "default"
       );
     } finally {
-      if (saved !== undefined) process.env.ONEMEMORY_SPACE = saved;
+      if (saved !== undefined) process.env.MONOMEM_SPACE = saved;
     }
   });
 });
 
 describe("7: doctor flags a store with notes but no edges", () => {
   test("warns until rebuild-edges runs", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "onememory-v110-doctor-"));
+    const dir = mkdtempSync(join(tmpdir(), "monomem-v110-doctor-"));
     const path = join(dir, "t.db");
     const s = new Store(path);
     // Simulates a 1.0.0 store: notes written before the edge graph existed.
@@ -437,7 +437,7 @@ describe("7: doctor flags a store with notes but no edges", () => {
     s.create({ title: "alpha project status two", body: "alpha project report" }, { skipEdges: true });
     const doctor = (): string =>
       execFileSync("node", ["dist/src/cli.js", "doctor"], {
-        env: { ...process.env, ONEMEMORY_DB_PATH: path, ONEMEMORY_HOME: dir },
+        env: { ...process.env, MONOMEM_DB_PATH: path, MONOMEM_HOME: dir },
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
       }) as unknown as string;
@@ -453,37 +453,37 @@ describe("7: doctor flags a store with notes but no edges", () => {
 });
 
 describe("8: default timezone", () => {
-  test("unset ONEMEMORY_TIMEZONE means the host timezone", () => {
-    const saved = { tz: process.env.TZ, om: process.env.ONEMEMORY_TIMEZONE };
-    delete process.env.ONEMEMORY_TIMEZONE;
+  test("unset MONOMEM_TIMEZONE means the host timezone", () => {
+    const saved = { tz: process.env.TZ, om: process.env.MONOMEM_TIMEZONE };
+    delete process.env.MONOMEM_TIMEZONE;
     process.env.TZ = "Asia/Taipei";
     try {
       assert.equal(resolveTimeZone(), "Asia/Taipei");
     } finally {
       if (saved.tz === undefined) delete process.env.TZ;
       else process.env.TZ = saved.tz;
-      if (saved.om !== undefined) process.env.ONEMEMORY_TIMEZONE = saved.om;
+      if (saved.om !== undefined) process.env.MONOMEM_TIMEZONE = saved.om;
     }
   });
 });
 
-describe("9: ONEMEMORY_ACCESS_BOOST=0", () => {
+describe("9: MONOMEM_ACCESS_BOOST=0", () => {
   test("restores native relevance order", async () => {
     const s = new Store(":memory:");
-    const saved = process.env.ONEMEMORY_ACCESS_BOOST;
+    const saved = process.env.MONOMEM_ACCESS_BOOST;
     try {
       const a = s.create({ title: "falcon report", body: "falcon migration notes" });
       const b = s.create({ title: "falcon report", body: "falcon migration notes" });
       for (let i = 0; i < 5; i++) s.touch(b.id);
-      delete process.env.ONEMEMORY_ACCESS_BOOST;
+      delete process.env.MONOMEM_ACCESS_BOOST;
       const boosted = await runSearch(s, "falcon", { mode: "keyword" });
       assert.deepEqual(boosted.map((n) => n.id), [b.id, a.id]);
-      process.env.ONEMEMORY_ACCESS_BOOST = "0";
+      process.env.MONOMEM_ACCESS_BOOST = "0";
       const native = await runSearch(s, "falcon", { mode: "keyword" });
       assert.deepEqual(native.map((n) => n.id), [a.id, b.id]);
     } finally {
-      if (saved === undefined) delete process.env.ONEMEMORY_ACCESS_BOOST;
-      else process.env.ONEMEMORY_ACCESS_BOOST = saved;
+      if (saved === undefined) delete process.env.MONOMEM_ACCESS_BOOST;
+      else process.env.MONOMEM_ACCESS_BOOST = saved;
       s.close();
     }
   });

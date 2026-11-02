@@ -1,6 +1,6 @@
-// onememory bench: the small contract between the benchmark engine and the memory system under test.
+// monomem bench: the small contract between the benchmark engine and the memory system under test.
 //
-// The engine knows nothing about OneMemory. It talks to a `MemoryAdapter` and judges what comes back. To measure
+// The engine knows nothing about Monomem. It talks to a `MemoryAdapter` and judges what comes back. To measure
 // another memory system, implement the four core operations (write, update, delete, search) and declare which optional
 // ones you support; scenarios that need an operation your adapter lacks are reported as SKIPPED, never as passed.
 // See docs/BENCHMARK.md.
@@ -11,7 +11,7 @@ export interface ActorSpec {
   scope?: "read" | "write" | "admin";
   /** The tenant this actor is confined to (the system's own word for it: namespace, workspace, project). */
   namespace?: string;
-  /** The writer identity (a token label in OneMemory). Defaults to the actor's name. */
+  /** The writer identity (a token label in Monomem). Defaults to the actor's name. */
   writer?: string;
   /** Which server instance in the scenario this actor talks to. Default "main". Used to move notes between two servers. */
   server?: string;
@@ -20,7 +20,7 @@ export interface ActorSpec {
 /** What a scenario asks the adapter to set up before the first step. */
 export interface WorldSpec {
   actors: Record<string, Required<Pick<ActorSpec, "scope" | "writer" | "server">> & { namespace?: string }>;
-  /** Operator read grants: tenant -> tenants it may additionally read (OneMemory `reads_from`). */
+  /** Operator read grants: tenant -> tenants it may additionally read (Monomem `reads_from`). */
   grants: Record<string, string[]>;
   /** Server settings a scenario needs (for example a very short confirmation window). Applied for this scenario only. */
   settings?: { supersede_ttl_seconds?: number };
@@ -195,7 +195,7 @@ export interface MemoryAdapter {
 export interface CaptureInput {
   /** Hook event name (default "post-tool"). */
   event?: string;
-  /** The tool whose work this is (default "WebFetch"); OneMemory's own tools are never recorded. */
+  /** The tool whose work this is (default "WebFetch"); Monomem's own tools are never recorded. */
   tool?: string;
   input?: string;
   output?: string;

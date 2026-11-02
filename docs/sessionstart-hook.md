@@ -1,11 +1,11 @@
-# OneMemory SessionStart hook
+# Monomem SessionStart hook
 
-Injects your recent OneMemory notes into the agent's context **before its
+Injects your recent Monomem notes into the agent's context **before its
 first message** — pre-prompt memory, no model opt-in needed.
 
 ## What it does
 
-`onememory recall` reads the most recently updated notes from your local
+`monomem recall` reads the most recently updated notes from your local
 SQLite store and prints them as a Claude Code hook JSON payload:
 
 ```json
@@ -59,30 +59,30 @@ Why shown, in {}: files = linked to files you changed, kw = matches your branch,
 
 - The profile is built from stored notes only (no model): decisions, notes
   tagged `convention`, the files memory mentions most, the last session and
-  the open-task count. It is capped by `ONEMEMORY_PROFILE_TOKENS` (default
-  300, never more than half the budget); `ONEMEMORY_PROFILE=off` drops it.
+  the open-task count. It is capped by `MONOMEM_PROFILE_TOKENS` (default
+  300, never more than half the budget); `MONOMEM_PROFILE=off` drops it.
 - A note tagged `never-show` is never injected (nor in the profile or the
-  file-context hint). `onememory never-show <id>` sets it, `--undo` clears it;
+  file-context hint). `monomem never-show <id>` sets it, `--undo` clears it;
   the dashboard has a **never show** button on each note.
-- When Claude Code passes a `session_id` (the `onememory hook session-start`
-  path), the size of what was injected is added to the meter (`onememory
-  doctor`, `GET /stats`, the dashboard's Meter view). Plain `onememory recall`
+- When Claude Code passes a `session_id` (the `monomem hook session-start`
+  path), the size of what was injected is added to the meter (`monomem
+  doctor`, `GET /stats`, the dashboard's Meter view). Plain `monomem recall`
   is not metered.
 
 ## Install (Claude Code settings)
 
-### Prerequisites: how will the hook invoke `onememory`?
+### Prerequisites: how will the hook invoke `monomem`?
 
-The hook command runs in a plain shell at session start. `onememory recall`
+The hook command runs in a plain shell at session start. `monomem recall`
 on PATH is **not** guaranteed -- pick the invocation that matches how you
 installed it, and verify it (next section) before wiring the hook:
 
 | Install path | Hook command to use |
 |---|---|
-| `npm i -g onememory-mcp` | `onememory recall --budget-ms 800` -- **only if** `command -v onememory` prints a path (npm's global bin dir must be on your PATH; check that `$(npm prefix -g)/bin` is on your PATH; `npm bin -g` was removed in npm 9+) |
-| Source checkout | `node /abs/path/to/onememory/dist/src/cli.js recall --budget-ms 800` (absolute path; run `npm run build` first) |
-| npx (no install) | `npx -y onememory-mcp recall --budget-ms 800` (adds startup latency; prefer a real install) |
-| Docker only | The hook runs on your **host**, not in the container -- use one of the rows above, pointed at the same SQLite file (`ONEMEMORY_DB_PATH`), or `docker exec <container> node dist/src/cli.js recall` |
+| `npm i -g monomem` | `monomem recall --budget-ms 800` -- **only if** `command -v monomem` prints a path (npm's global bin dir must be on your PATH; check that `$(npm prefix -g)/bin` is on your PATH; `npm bin -g` was removed in npm 9+) |
+| Source checkout | `node /abs/path/to/monomem/dist/src/cli.js recall --budget-ms 800` (absolute path; run `npm run build` first) |
+| npx (no install) | `npx -y monomem recall --budget-ms 800` (adds startup latency; prefer a real install) |
+| Docker only | The hook runs on your **host**, not in the container -- use one of the rows above, pointed at the same SQLite file (`MONOMEM_DB_PATH`), or `docker exec <container> node dist/src/cli.js recall` |
 
 If the command from your row doesn't work in a fresh terminal, the hook
 will fail silently (by design) and you'll get no memory with no error --
@@ -101,7 +101,7 @@ debugging anything else.
 ```bash
 jq '.hooks.SessionStart += [{
   "matcher": "startup|clear",
-  "hooks": [{ "type": "command", "command": "onememory recall --budget-ms 800" }]
+  "hooks": [{ "type": "command", "command": "monomem recall --budget-ms 800" }]
 }]' ~/.claude/settings.json > /tmp/settings.json \
   && mv /tmp/settings.json ~/.claude/settings.json
 ```
@@ -116,7 +116,7 @@ Or edit by hand -- the result should look like:
       {
         "matcher": "startup|clear",
         "hooks": [
-          { "type": "command", "command": "onememory recall --budget-ms 800" }
+          { "type": "command", "command": "monomem recall --budget-ms 800" }
         ]
       }
     ]
@@ -148,18 +148,18 @@ This hook **blocks session start**, so it is engineered to never break it:
   fires if an awaited step hangs; the 800ms soft budget is the one that
   matters day to day.
 
-Safe to install and forget: if OneMemory is ever broken or uninstalled,
+Safe to install and forget: if Monomem is ever broken or uninstalled,
 your sessions start normally, just without injected memory.
 
 ## Verifying it works
 
 ```bash
-command -v onememory || echo "NOT ON PATH -- use the node /abs/path form from the table above"
-onememory recall                       # pretty-prints nothing; it's JSON
-onememory recall | python3 -m json.tool
-ONEMEMORY_DB_PATH=/nope/db.sqlite onememory recall   # fail-silent check
+command -v monomem || echo "NOT ON PATH -- use the node /abs/path form from the table above"
+monomem recall                       # pretty-prints nothing; it's JSON
+monomem recall | python3 -m json.tool
+MONOMEM_DB_PATH=/nope/db.sqlite monomem recall   # fail-silent check
 echo $?                                # 0
-onememory recall --limt 5 2>&1 >/dev/null  # unknown-flag warning goes to stderr
+monomem recall --limt 5 2>&1 >/dev/null  # unknown-flag warning goes to stderr
 ```
 
 Then the "did it actually fire" check — the common silent failure is a
@@ -172,8 +172,8 @@ working `recall` that never runs:
 3. Ask the agent: "What's the most recent thing in my memory?"
    If it mentions `hook-probe-9417`, the hook fired. If not, re-check the
    command row from the prerequisites table — the usual cause is
-   `onememory` not resolving on the hook's PATH.
-4. `onememory doctor` also runs a recall smoke test, a budget check, and
+   `monomem` not resolving on the hook's PATH.
+4. `monomem doctor` also runs a recall smoke test, a budget check, and
    reports whether the SessionStart hook is present in
    `~/.claude/settings.json`.
 

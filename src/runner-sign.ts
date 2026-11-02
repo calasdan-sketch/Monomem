@@ -58,12 +58,12 @@ const USAGE = `Usage: npm run runner:sign -- <action> [key=value ...] [--target 
   key=value     a parameter the action declares
   --target      only let the machine with this runner id execute it
   --post        send it to the store instead of just printing it
-                (needs ONEMEMORY_URL and ONEMEMORY_TOKEN)
+                (needs MONOMEM_URL and MONOMEM_TOKEN)
 
   verify-result checks that a result or heartbeat note body was really
   written by your runner (pass the JSON, or - to read it from stdin).
 
-Requires ONEMEMORY_RUNNER_SECRET to be set.`;
+Requires MONOMEM_RUNNER_SECRET to be set.`;
 
 /**
  * `verify-result`: is this result/heartbeat body really from the runner?
@@ -90,9 +90,9 @@ export function verifyResultCli(secret: string, args: string[]): number {
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
-  const secret = process.env.ONEMEMORY_RUNNER_SECRET?.trim();
+  const secret = process.env.MONOMEM_RUNNER_SECRET?.trim();
   if (!secret) {
-    console.error("ONEMEMORY_RUNNER_SECRET is not set — cannot sign anything.\n");
+    console.error("MONOMEM_RUNNER_SECRET is not set — cannot sign anything.\n");
     console.error(USAGE);
     return 1;
   }
@@ -118,17 +118,17 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 0;
   }
 
-  const url = process.env.ONEMEMORY_URL;
-  const token = process.env.ONEMEMORY_TOKEN;
+  const url = process.env.MONOMEM_URL;
+  const token = process.env.MONOMEM_TOKEN;
   if (!url || !token) {
-    console.error("--post needs ONEMEMORY_URL and ONEMEMORY_TOKEN set.");
+    console.error("--post needs MONOMEM_URL and MONOMEM_TOKEN set.");
     return 1;
   }
   const res = await fetch(`${url.replace(/\/$/, "")}/notes`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      namespace: process.env.ONEMEMORY_RUNNER_NAMESPACE || "commands",
+      namespace: process.env.MONOMEM_RUNNER_NAMESPACE || "commands",
       title: `cmd ${parsed.action}`,
       body,
       tags: ["command"],

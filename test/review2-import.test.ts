@@ -32,7 +32,7 @@ describe("import: headings are found without backtracking", () => {
     roots.push(root);
     mkdirSync(join(root, "h", ".claude"), { recursive: true });
     writeFileSync(join(root, "h", ".claude", "CLAUDE.md"), "# a" + " ".repeat(20000) + "b\nsome text\n");
-    const r = spawnSync(process.execPath, [CLI, "import", "--claude", "--dry-run"], { encoding: "utf8", timeout: 20000, env: { ...process.env, HOME: join(root, "h"), USERPROFILE: join(root, "h"), ONEMEMORY_HOME: join(root, "om") } });
+    const r = spawnSync(process.execPath, [CLI, "import", "--claude", "--dry-run"], { encoding: "utf8", timeout: 20000, env: { ...process.env, HOME: join(root, "h"), USERPROFILE: join(root, "h"), MONOMEM_HOME: join(root, "om") } });
     assert.equal(r.status, 0, r.stderr);
   });
   test("normal headings parse as before", () => {

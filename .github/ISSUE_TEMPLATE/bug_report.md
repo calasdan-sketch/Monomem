@@ -15,7 +15,7 @@ A clear description of the bug.
 What you expected instead.
 
 **Environment**
-- onememory version / commit:
+- monomem version / commit:
 - Node version (`node -v`):
 - OS:
 - How you run it (source / Docker / npx):

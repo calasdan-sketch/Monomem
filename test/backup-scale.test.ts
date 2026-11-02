@@ -144,7 +144,7 @@ describe("backup: streaming export shape", () => {
       assert.deepEqual(JSON.parse(text), { notes: [] });
       const withHeader = JSON.parse(await (await call(base, "GET", "/export?attest=1")).text());
       assert.deepEqual(withHeader.notes, []);
-      assert.equal(withHeader.export.format, "onememory-export");
+      assert.equal(withHeader.export.format, "monomem-export");
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
       store.close();
@@ -249,7 +249,7 @@ describe("backup: deferred similarity-graph rebuild", () => {
 });
 
 describe("backup: months of revisions piled up", () => {
-  // The "a few months of revisions" case from the field: OneMemory keeps
+  // The "a few months of revisions" case from the field: Monomem keeps
   // only the LATEST version of a note (rev is a counter, not a snapshot),
   // so a long-edited note must (a) export as ONE entry with its latest body
   // and (b) restore with its rev counter intact, not reset to 1.

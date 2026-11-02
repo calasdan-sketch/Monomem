@@ -30,7 +30,7 @@ export interface SuiteSummary {
 }
 
 export interface Report {
-  tool: "onememory-bench";
+  tool: "monomem-bench";
   version: string;
   adapter: string;
   seed: number;
@@ -123,7 +123,7 @@ export function buildReport(
   }));
   const failing = count("fail") + count("gap_closed") + (strictGaps ? count("known_gap") : 0);
   return {
-    tool: "onememory-bench",
+    tool: "monomem-bench",
     version: info.version,
     adapter: info.adapter,
     seed: info.seed,
@@ -176,7 +176,7 @@ function headline(suite: Suite, m: Record<string, unknown>): string[] {
 
 export function renderTable(r: Report, opts: { verbose?: boolean } = {}): string {
   const L: string[] = [];
-  L.push(`onememory bench ${r.version}   adapter: ${r.adapter}   seed: ${r.seed}`);
+  L.push(`monomem bench ${r.version}   adapter: ${r.adapter}   seed: ${r.seed}`);
   L.push("");
   L.push(`${pad("Suite", 28)}${padL("Scenarios", 10)}${padL("Pass", 6)}${padL("Fail", 6)}${padL("Known gap", 11)}${padL("Skipped", 9)}`);
   L.push("-".repeat(70));
@@ -210,7 +210,7 @@ export function renderTable(r: Report, opts: { verbose?: boolean } = {}): string
   }
   if (r.known_gaps.length) {
     L.push("");
-    L.push("KNOWN GAPS (OneMemory does not do this yet; these scenarios fail on purpose and do not fail the run)");
+    L.push("KNOWN GAPS (Monomem does not do this yet; these scenarios fail on purpose and do not fail the run)");
     for (const g of r.known_gaps) {
       L.push(`  ${g.id} ${g.title} [${g.status}${g.fixed_in ? ` in ${g.fixed_in}` : ""}] scenarios: ${g.scenarios.join(", ")}`);
       if (opts.verbose) L.push(`      ${g.summary}`);

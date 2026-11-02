@@ -45,10 +45,10 @@ function envInt(name: string, def: number, min: number, max: number): number {
 }
 
 /** Poll interval for writes from other processes (read lazily so tests can set it). */
-export const waitPollMs = (): number => envInt("ONEMEMORY_WAIT_POLL_MS", 1000, 20, 60_000);
-const maxPerKey = (): number => envInt("ONEMEMORY_WAIT_MAX_PER_TOKEN", 16, 1, 100);
-const maxPerScope = (): number => envInt("ONEMEMORY_WAIT_MAX_PER_NAMESPACE", 32, 1, 500);
-const maxTotal = (): number => envInt("ONEMEMORY_WAIT_MAX_TOTAL", 64, 1, 1000);
+export const waitPollMs = (): number => envInt("MONOMEM_WAIT_POLL_MS", 1000, 20, 60_000);
+const maxPerKey = (): number => envInt("MONOMEM_WAIT_MAX_PER_TOKEN", 16, 1, 100);
+const maxPerScope = (): number => envInt("MONOMEM_WAIT_MAX_PER_NAMESPACE", 32, 1, 500);
+const maxTotal = (): number => envInt("MONOMEM_WAIT_MAX_TOTAL", 64, 1, 1000);
 
 const active = new Map<string, number>();
 const activeScopes = new Map<string, number>();
@@ -71,7 +71,7 @@ function acquire(key: string, scopeKey: string): () => void {
   if (activeTotal >= maxTotal()) {
     throw new WaitBusyError(
       `too many live waits on this server (max ${maxTotal()}); retry shortly or poll without \`wait\`` +
-        " (raise ONEMEMORY_WAIT_MAX_TOTAL if this is expected)"
+        " (raise MONOMEM_WAIT_MAX_TOTAL if this is expected)"
     );
   }
   const n = active.get(key) ?? 0;
@@ -79,14 +79,14 @@ function acquire(key: string, scopeKey: string): () => void {
     throw new WaitBusyError(
       `429: too many concurrent waits for this token (max ${maxPerKey()}). Each wait holds one slot until it returns, ` +
         "times out or the client disconnects; close an idle wait, reuse one wait loop per consumer, or poll without `wait` " +
-        "(raise ONEMEMORY_WAIT_MAX_PER_TOKEN if this is expected)"
+        "(raise MONOMEM_WAIT_MAX_PER_TOKEN if this is expected)"
     );
   }
   const sc = activeScopes.get(scopeKey) ?? 0;
   if (sc >= maxPerScope()) {
     throw new WaitBusyError(
       `429: too many concurrent waits on this namespace scope (max ${maxPerScope()}, shared by all tokens); ` +
-        "retry shortly or poll without `wait` (raise ONEMEMORY_WAIT_MAX_PER_NAMESPACE if this is expected)"
+        "retry shortly or poll without `wait` (raise MONOMEM_WAIT_MAX_PER_NAMESPACE if this is expected)"
     );
   }
   active.set(key, n + 1);

@@ -1,4 +1,4 @@
-// Retrieval metrics for `onememory bench --longmemeval / --locomo`. Pure functions, no I/O.
+// Retrieval metrics for `monomem bench --longmemeval / --locomo`. Pure functions, no I/O.
 // `ranked` is the retrieved unit ids best-first (already de-duplicated); `gold` the ids that answer the question.
 
 /** 1 when any gold id is in the top k, else 0. */
