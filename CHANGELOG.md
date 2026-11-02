@@ -4,10 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.2] - 2026-11-02
+
+The rename shipped with the product still calling itself by the old name in
+the one place a user actually looks at it. This release fixes that, and the
+test that was holding it in place.
 
 ### Fixed
 
+- **The dashboard called itself `onememory`.** The wordmark is split across a
+  tag — `<h1>one<span>memory</span></h1>` in the header, and again on the
+  token gate — so every search for `onememory` or `OneMemory` missed it,
+  including the ones run to confirm the 1.0.0 rename was complete. Anyone who
+  opened the dashboard on 1.0.0 or 1.0.1 saw the old name. Both now read
+  `mono<span>mem</span>`.
+- **The test for this asserted the bug.** `test/dashboard-review.test.ts` had
+  a case titled *"the page says Monomem, not the old name"* whose body was
+  `assert.match(DASHBOARD_HTML, /one<span/)`. The title was updated at the
+  rename and the assertion was not, so the test pinned the old wordmark and
+  failed the fix for it. It now asserts the new wordmark, asserts the absence
+  of the old one, and counts both occurrences. It asserts the split form
+  deliberately: a plain `/monomem/` check passes on the `<title>` while the
+  header still says something else, which is exactly how this survived a
+  rename and two greps.
 - The brand images still read **OneMemory**. `docs/brand/monomem-banner.png`
   (the first thing on the README and on the npm package page) and
   `docs/brand/social-preview.png` were renamed to `monomem-*` during the 1.0.0
@@ -20,9 +39,15 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   than guessed: Segoe UI Bold pixel-matches the replaced wordmark with 16%
   edge-only mismatch, against 34% for Arial Bold and 96% for Calibri Bold.
 
-No version bump accompanies this: the README references both images by absolute
-`raw.githubusercontent.com` URL, so the npm page renders whatever is on `main`
-and the published 1.0.1 tarball is unaffected.
+The images themselves needed no release — the README references both by
+absolute `raw.githubusercontent.com` URL, so the npm page already picked them
+up from `main`. They are recorded here because they landed in this cycle.
+
+### Note
+
+Unlike 1.0.1, which was packaging only, this release changes shipped code:
+`dist/src/dashboard.js` differs. Upgrading is worthwhile only if you use the
+dashboard; nothing else in the product behaves differently.
 
 ## [1.0.1] - 2026-11-02
 
