@@ -1,6 +1,6 @@
 {
   "name": "monomem",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Auditable shared memory for AI coding agents. Provenance on every note, injection-linted writes, one-command undo. Self-hosted, MIT.",
   "license": "MIT",
   "author": "Calas Automations Inc.",

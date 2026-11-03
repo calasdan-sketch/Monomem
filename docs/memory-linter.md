@@ -91,6 +91,12 @@ monomem quarantine approve 3
 monomem quarantine reject 3
 ```
 
+The `memory_quarantine` MCP tool never returns the held text. `list`
+gives id, reasons, namespace and time only, and `approve` returns only the
+new note's id. The flagged text is exactly what must not reach a model, and
+an "untrusted data" wrapper is not the same as not reading it. A human reads
+the content in the dashboard or with `monomem quarantine`.
+
 - **Approve** applies the write exactly as requested (same namespace, tags,
   `created_at`; for an update, the same `if_rev` compare-and-swap). If the
   target note has since changed or vanished, approval fails and the entry

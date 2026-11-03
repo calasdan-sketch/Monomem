@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-11-03
+
+### Security
+
+- **The `memory_quarantine` MCP tool no longer shows held text to the model.** `list` returned each
+  quarantined write's title and body, wrapped as untrusted data, and `approve` echoed the new note
+  back. A held write is by definition text the linter flagged as a likely prompt injection, so
+  wrapping it is not the same as not reading it. `list` now returns id, reasons, namespace and time
+  only, and `approve` returns only the note id. Humans still review the content in the dashboard or
+  with `monomem quarantine`. The tool is opt-in (not in the default set) and needs an admin token.
+  Raised by a reader of the launch post.
+
 ## [1.0.4] - 2026-11-03
 
 ### Fixed
