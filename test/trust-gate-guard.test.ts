@@ -38,6 +38,7 @@ const EXPECTED_SITES: Record<string, string[]> = {
   ],
   "cli.ts": [
     "local shell command (reindex): the operator owns the database file",
+    "local shell command (permanent delete): the operator owns the database file",
     "local shell command (show): the operator owns the database file",
     "local shell command (lint scan): the operator owns the database file",
     "local shell command (export): the operator owns the database file",
@@ -53,6 +54,7 @@ const EXPECTED_SITES: Record<string, string[]> = {
     "tag-guard lookup only (no content returned)",
     "access probe: readVisible decides before anything is returned",
     "admin delete: namespace check only",
+    "admin forget: existence + archived check only, nothing returned",
     "consolidation candidates (admin): filtered with filterVisible",
     "consolidation candidates (admin): filtered with filterVisible",
     "admin consolidate: namespace check only",

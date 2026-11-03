@@ -210,7 +210,31 @@ export interface ConnectionCtx {
   label?: string;
   /** True when `label` came from an authenticated token: it then becomes the verified `written_by`. */
   authed?: boolean;
+  /**
+   * The local stdio transport. It runs as admin with no token, so the agent on the other end was
+   * never deliberately given admin by anyone: OPERATOR_ONLY_TOOLS stay off for it unless the
+   * operator sets MONOMEM_STDIO_ADMIN_TOOLS=1.
+   */
+  local?: boolean;
 }
+
+/**
+ * Tools that act as the operator, not as a memory user: approve held injections, change who is
+ * trusted, erase history, merge (hard-deleting sources), approve commands for the runner.
+ */
+export const OPERATOR_ONLY_TOOLS: readonly string[] = [
+  "memory_quarantine",
+  "trust_policy",
+  "memory_history_purge",
+  "memory_consolidate",
+  "task_approve",
+];
+
+const STDIO_ADMIN_HINT =
+  "This is an operator action and is off over the local stdio connection. Do it yourself in the dashboard " +
+  "or the monomem CLI, or set MONOMEM_STDIO_ADMIN_TOOLS=1 to let the agent do it.";
+
+const stdioAdminToolsAllowed = (env: NodeJS.ProcessEnv = process.env): boolean => env.MONOMEM_STDIO_ADMIN_TOOLS === "1";
 
 /**
  * Build the MCP server. `scope` is the caller's access level (from their
@@ -282,6 +306,7 @@ export function createMcpServer(
   // by running each tool handler inside the actor context.
   const enabled =
     opts.tools === "all" ? null : opts.tools ? new Set(opts.tools) : enabledToolNames();
+  const localGuard = conn.local === true && !stdioAdminToolsAllowed();
   const registerRaw = server.registerTool.bind(server) as (...a: unknown[]) => unknown;
   (server as unknown as { registerTool: (...a: unknown[]) => unknown }).registerTool = (name: unknown, cfg: unknown, handler: unknown) => {
     // Every registered tool's name and description is sent to the model on
@@ -290,10 +315,14 @@ export function createMcpServer(
     // context bill, and gave the model a long menu to pick the wrong item from
     // (several hosts also cap how many tools they will accept).
     if (enabled && !enabled.has(name as string)) return undefined;
+    if (localGuard && OPERATOR_ONLY_TOOLS.includes(name as string)) return undefined;
     return registerRaw(name, cfg, (...args: unknown[]) => {
       // include_distrusted turns the trust policy OFF for the call: admin only, for every tool.
       // A read/write connection (or an agent a hostile note talked into asking) gets a refusal.
       const first = args[0] as { include_distrusted?: unknown; namespace?: unknown } | undefined;
+      if (localGuard && first && first.include_distrusted === true) {
+        return errorResult(`include_distrusted shows notes from writers the operator distrusted. ${STDIO_ADMIN_HINT}`);
+      }
       if (first && first.include_distrusted === true && !scopeAllows(scope, "admin")) {
         return errorResult("include_distrusted needs an admin connection: it shows notes from writers the admin put on the distrust list");
       }
@@ -534,7 +563,7 @@ export function createMcpServer(
         // Authorized: the ONE gated read, with tracking (and neighbors, when asked)
         // so the returned counters include this read. A distrusted writer's note
         // reads as "no note" unless an admin opts in (then it is marked).
-        const note = store.readVisible(id, { trackAccess: true, withNeighbors: neighbors === true, includeDistrusted: include_distrusted === true && (!nsActive || probe.namespace === ownNs) });
+        const note = store.readVisible(id, { hideArchived: true, trackAccess: true, withNeighbors: neighbors === true, includeDistrusted: include_distrusted === true && (!nsActive || probe.namespace === ownNs) });
         if (!note) return errorResult(`no note with id ${id}`);
         // Round edge scores to 3 decimals for readability (stored raw in
         // SQLite), mirroring memory_consolidation_candidates.
@@ -826,10 +855,13 @@ export function createMcpServer(
   server.registerTool(
     "state_delete",
     {
-      title: "Delete shared state",
+      title: "Forget a note (archive)",
       annotations: { destructiveHint: true },
       description:
-        "Delete a note from the shared state store by id. Returns whether a note was removed.",
+        "Forget a note by id: it is archived, so it no longer appears in search, lists or recall. " +
+        "It is NOT erased: a person can bring it back with `monomem restore <id>` or the dashboard, " +
+        "and only a person can delete it permanently (dashboard or `monomem delete <id>`). " +
+        "Tell the user this when they ask you to forget something sensitive.",
       inputSchema: {
         id: z.number().int().describe("Id of the note to delete."),
       },
@@ -847,9 +879,18 @@ export function createMcpServer(
             return errorResult(`no note with id ${id}`);
           }
         }
-        const removed = store.delete(id);
-        if (!removed) return errorResult(`no note with id ${id}`);
-        return textResult({ deleted: id });
+        // An agent never erases: archive keeps the row so a mistaken or injected "forget" can be undone.
+        const before = store.read(id); // gate-ok: admin forget: existence + archived check only, nothing returned
+        if (!before) return errorResult(`no note with id ${id}`);
+        if (before.archived_at) return errorResult(`note ${id} is already archived`);
+        store.archive(id);
+        audit({ op: "note.archive", id, namespace: before.namespace, label: conn.label, kind: "note", detail: "state_delete" });
+        return textResult({
+          archived: id,
+          message:
+            "Archived: hidden from search, lists and recall, not erased. Restore with `monomem restore " + id +
+            "` or the dashboard; a permanent delete is done by a person in the dashboard or with `monomem delete " + id + "`.",
+        });
       } catch (e) {
         return errorFor(e);
       }
@@ -1282,6 +1323,7 @@ export function createMcpServer(
         const denied = denyIfUnder("write");
         if (denied) return errorResult(denied);
         if (approve) {
+          if (localGuard) return errorResult(`approve:true lets a command run on this machine. ${STDIO_ADMIN_HINT}`);
           const d = denyIfUnder("admin");
           if (d) return errorResult(`approve:true needs an admin token (${d}); an admin can call task_approve`);
           if (id !== undefined || !command) return errorResult("approve:true applies when creating a command task");

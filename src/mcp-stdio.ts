@@ -18,7 +18,8 @@ const store = new Store(DB_PATH);
 // Server-side namespace resolution: resolved ONCE at startup from the
 // process working directory. Null when unconfigured (legacy behavior).
 const nsOpts = resolveStartupNamespace(process.cwd());
-const server = createMcpServer(store, "admin", nsOpts ?? undefined);
+// local: admin with no token was never a deliberate grant, so operator-only tools stay off for the agent.
+const server = createMcpServer(store, "admin", nsOpts ?? undefined, { local: true });
 const transport = new StdioServerTransport();
 
 await server.connect(transport);

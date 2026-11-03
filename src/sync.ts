@@ -422,10 +422,12 @@ export function exportMarkdown(
   // A vault is a folder other tools and agents read, outside every read gate: notes touched by a
   // distrusted writer are left out (and their earlier, unedited files pruned) unless asked for,
   // and then each such file is marked `distrusted: true`.
-  const notes = opts.includeDistrusted ? everything : store.filterVisible(everything);
+  // An archived note was forgotten (often by an agent's state_delete): it is not written to the vault,
+  // and its earlier unedited file is pruned like a hidden note's, so "forget" also leaves the folder.
+  const notes = (opts.includeDistrusted ? everything : store.filterVisible(everything)).filter((n) => !n.archived_at);
   // A Set of the visible ids: `notes.includes(n)` per note made this quadratic in the number of hidden notes.
   const visibleIds = new Set<number>(notes.map((n) => n.id));
-  const hiddenIds = new Set<number>(opts.includeDistrusted ? [] : everything.filter((n) => !visibleIds.has(n.id)).map((n) => n.id));
+  const hiddenIds = new Set<number>(everything.filter((n) => !visibleIds.has(n.id)).map((n) => n.id));
   const marked = new Set<number>(opts.includeDistrusted ? store.markDistrusted(everything).filter((n) => n.distrusted).map((n) => n.id) : []);
   const keep = new Set<string>();
   /** local id -> [merge base before this export, current content hash] */

@@ -992,6 +992,8 @@ export interface ReadOpts {
   trackAccess?: boolean;
   /** When true, attach up to EDGE_NEIGHBOR_LIMIT same-namespace neighbors. */
   withNeighbors?: boolean;
+  /** readVisible only: an archived note reads as missing (null). */
+  hideArchived?: boolean;
   /** Neighbors from distrusted writers are left out unless this is set. */
   includeDistrusted?: boolean;
 }
@@ -2613,6 +2615,9 @@ export class Store {
   readVisible(id: number, opts: ReadOpts = {}): (NoteRecord & { neighbors?: NeighborEntry[]; distrusted?: true }) | null {
     const probe = this.read(id);
     if (!probe) return null;
+    // "Forget" archives, so the by-id reads that hand content to an agent or app (MCP state_read,
+    // REST GET /notes/:id) pass hideArchived. Archive management (restore, undo, history) does not.
+    if (probe.archived_at && probe.superseded_by == null && opts.hideArchived === true) return null; // replaced notes stay readable: they carry superseded_by
     const hidden = this.isDistrusted(probe);
     if (hidden && opts.includeDistrusted !== true) return null;
     const rec = opts.trackAccess || opts.withNeighbors ? this.read(id, opts) : probe;

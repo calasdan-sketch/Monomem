@@ -95,7 +95,7 @@ immediately visible through the others:
 | `state_search` | read | Keyword / semantic / hybrid search, optional `when` time filter |
 | `state_relevant` | read | Extract keywords from a natural message, permissive OR search |
 | `state_list` | read | Newest-first page of notes |
-| `state_delete` | admin | Delete a note |
+| `state_delete` | admin | Forget a note: archives it (restorable); permanent delete is dashboard/CLI only |
 | `memory_stats` | read | Totals, most-read notes, never-read and stale counts |
 | `memory_since` | read | Change feed: what was created/updated/deleted since a time ([change-feed.md](./change-feed.md)) |
 | `task_put` | write | Create/update a task on the shared board (status, next_step, owner, priority, due, parent, blockers, `client_key`, `if_rev`; `command` + `target` queues a runner command) ([tasks.md](./tasks.md)) |

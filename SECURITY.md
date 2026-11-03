@@ -47,7 +47,12 @@ content as untrusted input to your agents** — see "Memory safety" below.
   who steals a disk image or backup.
 - **Trusted:** the CLI and the stdio MCP transport run with full local trust
   and use no token. Anyone with shell access to the machine and its data
-  directory owns the store.
+  directory owns the store. Since 1.1.0 the *agent* on the stdio connection
+  does not inherit all of that: its `state_delete` archives instead of
+  erasing, and the operator-only tools (`memory_quarantine`, `trust_policy`,
+  `memory_history_purge`, `memory_consolidate`, `task_approve`), the
+  `include_distrusted` flag and `task_put` with `approve: true` are off for
+  it unless the operator sets `MONOMEM_STDIO_ADMIN_TOOLS=1`.
 - **Not covered:** a live attacker holding a valid admin token; an attacker
   who can read both the database and the key file; prompt injection is
   mitigated, not eliminated (OWASP GenAI #1); there is no OAuth, only static

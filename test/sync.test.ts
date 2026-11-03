@@ -92,6 +92,21 @@ describe("export / import", () => {
     s.close();
   });
 
+  test("an archived (forgotten) note is not exported and its old file is pruned", () => {
+    const s = new Store(":memory:");
+    const a = s.create({ title: "Keep", namespace: "work" });
+    const b = s.create({ title: "Forget me", body: "db pass is Winter2026", namespace: "work" });
+    exportMarkdown(s, dir);
+    assert.equal(files(dir).length, 2);
+    s.archive(b.id);
+    const r = exportMarkdown(s, dir);
+    assert.equal(r.removed, 1);
+    assert.deepEqual(files(dir).length, 1);
+    assert.ok(files(dir).every((f) => !readFileSync(join(dir, f), "utf8").includes("Winter2026")));
+    assert.ok(s.read(a.id));
+    s.close();
+  });
+
   test("prune removes files of deleted / renamed notes, never foreign files", () => {
     const s = new Store(":memory:");
     const a = s.create({ title: "Alpha", namespace: "work" });
