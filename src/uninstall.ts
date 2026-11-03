@@ -21,25 +21,48 @@ export interface UninstallOptions {
 type Change = HistorySession["changes"][number];
 const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 
-/** Total bytes of the files under `dir` (0 when it is missing). */
-export function dirBytes(dir: string): number {
+/** How long `dirBytes` scans before giving up and reporting what it has so far (ms). */
+export const DIR_BYTES_BUDGET_MS = 2000;
+
+export interface DirSize {
+  /** Bytes counted before the budget ran out (or the real total, when `truncated` is false). */
+  bytes: number;
+  /** True when the scan hit DIR_BYTES_BUDGET_MS before finishing — `bytes` is a lower bound, not the real size. */
+  truncated: boolean;
+}
+
+/**
+ * Total bytes of the files under `dir` ({ bytes: 0, truncated: false } when it is missing).
+ * A synchronous recursive walk, same as before, but now time-boxed: a data folder that has
+ * picked up unrelated junk (a user's own scripts dumping large backups next to it, say) used
+ * to make `doctor`/`uninstall` hang for as long as the walk took, with no feedback at all —
+ * this stops after DIR_BYTES_BUDGET_MS and says so, instead of blocking the whole CLI.
+ */
+export function dirBytes(dir: string, deadline: number = Date.now() + DIR_BYTES_BUDGET_MS): DirSize {
   let n = 0;
+  if (Date.now() > deadline) return { bytes: n, truncated: true };
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
   } catch {
-    return 0;
+    return { bytes: 0, truncated: false };
   }
   for (const d of entries) {
+    if (Date.now() > deadline) return { bytes: n, truncated: true };
     const p = join(dir, d.name);
     try {
-      if (d.isDirectory()) n += dirBytes(p);
-      else if (d.isFile()) n += statSync(p).size;
+      if (d.isDirectory()) {
+        const sub = dirBytes(p, deadline);
+        n += sub.bytes;
+        if (sub.truncated) return { bytes: n, truncated: true };
+      } else if (d.isFile()) {
+        n += statSync(p).size;
+      }
     } catch {
       /* gone meanwhile */
     }
   }
-  return n;
+  return { bytes: n, truncated: false };
 }
 
 /** What undo will do to one recorded change, in words (nothing is written). */
@@ -95,7 +118,11 @@ export async function runUninstall(e: SetupEnv, io: SetupIO, opts: UninstallOpti
   if (opts.purge) {
     if (existsSync(dir)) {
       if (!opts.noBackup) io.out(`  ${n++}. Make a final backup of ${dir} at ${backupDir}`);
-      io.out(`  ${n++}. DELETE the data folder ${dir} (${(dirBytes(dir) / 1e6).toFixed(1)} MB): every note, key and token in it${opts.noBackup ? ", with NO backup (--no-backup)" : ""}`);
+      {
+        const size = dirBytes(dir);
+        const mb = `${(size.bytes / 1e6).toFixed(1)} MB${size.truncated ? "+, scan stopped early — folder is very large" : ""}`;
+        io.out(`  ${n++}. DELETE the data folder ${dir} (${mb}): every note, key and token in it${opts.noBackup ? ", with NO backup (--no-backup)" : ""}`);
+      }
     } else io.out(`  (no data folder at ${dir}; nothing to delete)`);
     for (const b of configBackups) io.out(`  ${n++}. Delete setup's copy ${b}`);
   } else io.out(`  Your notes in ${dir} are kept (add --purge to delete them too).`);
