@@ -1861,6 +1861,10 @@ export function createMcpServer(
       try {
         const denied = denyIfUnder("write");
         if (denied) return errorResult(denied);
+        // A RED FLAG is accepted by a person, not by the agent that would benefit from accepting it.
+        if (a.acknowledge_risk === true && localGuard) {
+          return errorResult(`acknowledge_risk accepts a red-flagged replacement. ${STDIO_ADMIN_HINT} (monomem supersede confirm asks you at the keyboard.)`);
+        }
         const out = supersedeConfirm(store, callerNow(), { token: a.token, new_note: newNoteFrom(a), acknowledge_risk: a.acknowledge_risk });
         await maybeEmbed(store, out.replacement);
         return untrustedResult(out);

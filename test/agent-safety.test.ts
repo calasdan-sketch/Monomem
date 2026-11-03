@@ -71,6 +71,29 @@ describe("state_delete archives instead of erasing", () => {
     store.close();
   });
 
+  test("the change feed keeps no title for a forgotten note", async () => {
+    const store = new Store(":memory:");
+    const n = store.create({ title: "TITLESECRET door 4471", body: "x" });
+    const c = await connect(store);
+    await c.callTool({ name: "state_delete", arguments: { id: n.id } });
+    const feed = store.changes({ since: "2000-01-01T00:00:00.000Z" });
+    assert.doesNotMatch(JSON.stringify(feed), /TITLESECRET/);
+    const cu: any = await c.callTool({ name: "catch_up", arguments: {} });
+    assert.doesNotMatch(JSON.stringify(cu), /TITLESECRET/);
+    await c.close();
+    store.close();
+  });
+
+  test("expiry sweeps drop the embeddings of what they archive", () => {
+    const store = new Store(":memory:");
+    const n = store.create({ title: "t", body: "b", forget_after: 1 });
+    store.setVector(n.id, new Float32Array([0.1, 0.2]), "m");
+    store.sweepExpired(Date.now() + 3 * 86_400_000);
+    assert.ok(store.read(n.id)?.archived_at);
+    assert.equal(store.vectorCount(), 0);
+    store.close();
+  });
+
   test("archiving twice says it is already archived", async () => {
     const store = new Store(":memory:");
     const n = store.create({ title: "x", body: "y" });
@@ -112,6 +135,9 @@ describe("stdio keeps operator-only tools away from the agent", () => {
     const t: any = await c.callTool({ name: "task_put", arguments: { title: "x", command: { action: "echo" }, target: "pc", approve: true } });
     assert.equal(t.isError, true);
     assert.match(t.content[0].text, /MONOMEM_STDIO_ADMIN_TOOLS/);
+    const k: any = await c.callTool({ name: "memory_supersede_confirm", arguments: { token: "x", acknowledge_risk: true } });
+    assert.equal(k.isError, true);
+    assert.match(k.content[0].text, /MONOMEM_STDIO_ADMIN_TOOLS/);
     await c.close();
     store.close();
   });

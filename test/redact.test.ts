@@ -64,6 +64,12 @@ describe("redactSecrets: passwords with no key shape (capture is never reviewed)
     ['curl -H "Authorization: Bearer abc123def456ghi789jkl0" https://x', "abc123def456ghi789jkl0"],
     ["my db password is Winter2026!", "Winter2026!"],
     ["api_key: q8RtYv2w", "q8RtYv2w"],
+    ["PGPASSWORD=abc12345 psql", "abc12345"],
+    ['dbPassword: "abc123x"', "abc123x"],
+    ["clientSecret=Zz9secretValue", "Zz9secretValue"],
+    ["redis-cli -u redis://:pass123x@cache:6379", "pass123x"],
+    ["mysql://u:p@ss9word@db/x", "p@ss9word"],
+    ["Authorization: Basic dXNlcjpwYXNz", "dXNlcjpwYXNz"],
   ];
   for (const [input, secret] of cases) {
     test(`removes the secret from: ${input.replace(secret, "<secret>")}`, () => {

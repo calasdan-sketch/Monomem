@@ -3353,7 +3353,18 @@ export class Store {
     }
     this.sweepCaptureEvents(now, namespaces);
     this.sweepDecay(now, namespaces);
+    this.dropArchivedVectors();
     return n;
+  }
+
+  /**
+   * Archived (forgotten, not replaced) notes keep no embedding: it is a lossy, unencrypted copy of the
+   * text, and archived notes are never searched. Replaced notes keep theirs for supersede undo.
+   */
+  private dropArchivedVectors(): void {
+    this.db
+      .prepare("DELETE FROM note_vectors WHERE note_id IN (SELECT id FROM notes WHERE archived_at IS NOT NULL AND superseded_by IS NULL)")
+      .run();
   }
 
   /**
@@ -5875,6 +5886,7 @@ export class Store {
              e.note_id AS id, e.namespace AS namespace, e.title AS title, e.source AS source,
              e.changed_at AS at, e.rev AS rev, e.written_by AS written_by,
              ${cur.writer} AS cur_writer, (n.id IS NOT NULL) AS live,
+             (n.archived_at IS NOT NULL AND n.superseded_by IS NULL) AS forgotten,
              ${cur.attWriter} AS cur_att_writer, ${cur.attBy} AS cur_att_by, ${cur.merged} AS cur_merged
         FROM g JOIN change_log e ON e.seq = g.last
         LEFT JOIN notes n ON n.id = e.note_id
@@ -5900,6 +5912,7 @@ export class Store {
       written_by: string | null;
       cur_writer: string | null;
       live: number;
+      forgotten: number;
       cur_att_writer: string | null;
       cur_att_by: string | null;
       cur_merged: string | null;
@@ -5923,7 +5936,8 @@ export class Store {
         kind: r.kind,
         id: Number(r.id),
         namespace: r.namespace,
-        title: r.title,
+        // A forgotten (archived, not replaced) note keeps no title in the feed: the title can be the secret.
+        title: Number(r.forgotten) === 1 ? "" : r.title,
         source: r.source ?? "",
         written_by: r.written_by ?? "",
         writer_id: makeWriterId(sid, r.written_by ?? ""),

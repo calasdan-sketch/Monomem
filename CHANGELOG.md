@@ -7,8 +7,15 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [1.1.0] - 2026-11-03
 
 An AI agent can no longer permanently erase your memory or act as the operator. Prompted by an
-independent review (Agent Memory Atlas) and a security audit. Upgrading keeps every note: checked
+independent review (Agent Memory Atlas) and two security reviews. Upgrading erases nothing; checked
 on a copy of a real 332-note store.
+
+**On the first start after upgrading**, two kinds of note get archived (hidden, restorable with
+`monomem restore <id>`), because expiry now runs on its own:
+- notes already past their `forget_after` deadline;
+- captured observations idle for 30 days (summaries after 180), if you use capture.
+
+Before 1.1.0 this only happened when something called the sweep or a captured session ended.
 
 ### Changed
 
@@ -50,7 +57,28 @@ on a copy of a real 332-note store.
   the sweep unless something called `POST /sweep-expired`.
 - **`monomem doctor` on Windows** warns when the data folder is outside your user folder (where
   other accounts may read the token and notes) and prints the `icacls` command that limits it to you.
+- **Forgotten notes' titles leave the change feed.** `memory_since`, `catch_up` and `GET /changes`
+  report a forgotten note with an empty title (the title can be the sensitive part).
+- **More password shapes are redacted in capture:**
+  - names with no separator (`PGPASSWORD=`, `dbPassword:`, `clientSecret=`);
+  - URLs with an empty user (`redis://:pw@host`) or an `@` inside the password;
+  - `Authorization: Basic` values without digits.
+- **Over stdio the agent cannot accept a red-flagged replacement itself** (`acknowledge_risk`).
+  A person does it with `monomem supersede confirm` or `MONOMEM_STDIO_ADMIN_TOOLS=1`.
+- **Expiry and decay sweeps also drop the embeddings of what they archive.**
 - **Docs:** the memory linter guide now says plainly which modes keep a secret on disk.
+
+### Known limits
+
+- **Capture redaction catches a credential-named value only when it looks like a literal secret**
+  (letters and digits, no code). `password=hunter` (no digit) or `-pMyS3cret` is still recorded.
+  Don't paste real passwords into prompts or commands; use a password manager.
+- **Captured prompts are kept, redacted, for 7 days**, even if the session's summary note is
+  forgotten.
+- **A note restored from the CLI** is found by keyword search at once and by semantic search after
+  `monomem reindex` (a REST restore re-embeds it straight away).
+- **A forgotten note's text stays in the database file and in backups** until a person deletes it
+  permanently. That's what makes forgetting undoable.
 
 ### Tests
 

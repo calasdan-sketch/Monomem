@@ -70,13 +70,17 @@ export function redactSecrets(text: string): Redacted {
 // Values that are references, not secrets: $VAR, <...>, your_..., xxx, ***, example, placeholder, changeme, already redacted.
 const NOT_PLACEHOLDER = String.raw`(?!\$|<|\[REDACTED|your[_-]|xxx|\*\*\*|example|placeholder|changeme)`;
 const LITERAL_SECRET = String.raw`(?=[^\s"'\`<>]{0,200}\d)(?=[^\s"'\`<>]{0,200}[A-Za-z])(?![^\s"'\`<>]{0,200}[()])`;
-const CRED_NAME = String.raw`(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)`;
+// The prefix also covers names with no separator: PGPASSWORD, dbPassword, clientSecret.
+const CRED_NAME = String.raw`(?:[A-Za-z0-9]{1,30}[_-]){0,4}[A-Za-z0-9]{0,30}?(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)`;
 // Every repetition is bounded, so hostile input cannot make these slow (see the ReDoS test in lint tests).
 const PASSWORD_PATTERNS: [RegExp, string][] = [
-  // scheme://user:PASSWORD@host
-  [/(\b[a-z][a-z0-9+.-]{0,20}:\/\/[^\s/:@]{1,64}:)[^\s/@]{1,64}(?=@)/gi, "URL password"],
-  // Authorization: Bearer/Basic VALUE
-  [/(\b(?:bearer|basic)[ \t]{1,4})(?=[A-Za-z0-9._~+/=-]{0,400}\d)[A-Za-z0-9._~+/=-]{12,400}/gi, "auth header"],
+  // scheme://user:PASSWORD@host. The user may be empty (redis://:pw@host); the password runs to the
+  // LAST @ before the host, so one containing @ is covered whole.
+  [/(\b[a-z][a-z0-9+.-]{0,20}:\/\/[^\s/:@]{0,64}:)[^\s/]{1,128}(?=@[^\s/@]{1,253}(?:[/\s:?#]|$))/gi, "URL password"],
+  // Authorization: Bearer/Basic VALUE. A real value has a digit or mixed case; prose
+  // ("basic configuration", "bearer responsibilities") has neither.
+  // Not /i: the mixed-case test must see real case. The keyword is spelled out in its usual cases instead.
+  [/(\b(?:[Bb]earer|[Bb]asic|BEARER|BASIC)[ \t]{1,4})(?:(?=[A-Za-z0-9._~+/=-]{0,400}\d)|(?=[A-Za-z0-9._~+/=-]{0,400}[A-Z])(?=[A-Za-z0-9._~+/=-]{0,400}[a-z]))[A-Za-z0-9._~+/=-]{12,400}/g, "auth header"],
   // curl -u user:PASSWORD / --user user:PASSWORD
   [/((?:^|\s)(?:-u|--user)[ \t]{1,4}[^\s:]{1,64}:)[^\s]{1,128}/g, "password"],
   // --password VALUE / --password=VALUE
