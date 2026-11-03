@@ -333,12 +333,17 @@ describe("memory_quarantine MCP tool + state_write", () => {
     const denied: any = await writer.callTool({ name: "memory_quarantine", arguments: { action: "list" } });
     assert.equal(denied.isError, true);
     const admin = await connect(store, "admin");
-    const list = parseTool(await admin.callTool({ name: "memory_quarantine", arguments: { action: "list" } }));
+    const listRaw: any = await admin.callTool({ name: "memory_quarantine", arguments: { action: "list" } });
+    const list = parseTool(listRaw);
     assert.equal(list.count, 1);
-    const ok = parseTool(
-      await admin.callTool({ name: "memory_quarantine", arguments: { action: "approve", id: q.id } })
-    );
-    assert.equal(ok.note.title, "t");
+    // The held text must never reach a model: list is metadata only.
+    assert.deepEqual(Object.keys(list.quarantined[0]).sort(), ["created_at", "id", "namespace", "op", "reasons", "target_id"]);
+    assert.doesNotMatch(JSON.stringify(listRaw), /unrestricted assistant/);
+    const okRaw: any = await admin.callTool({ name: "memory_quarantine", arguments: { action: "approve", id: q.id } });
+    const ok = parseTool(okRaw);
+    assert.equal(typeof ok.note_id, "number");
+    assert.doesNotMatch(JSON.stringify(okRaw), /unrestricted assistant/);
+    assert.equal(store.read(ok.note_id)?.title, "t");
     const missing: any = await admin.callTool({
       name: "memory_quarantine",
       arguments: { action: "reject", id: 999 },

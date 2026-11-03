@@ -544,7 +544,9 @@ describe("recall: task board in the SessionStart hook", () => {
       const s = new Store(db);
       s.create({ title: "Only", body: "note" });
       s.close();
-      const ctx = ctxOf(await runRecall({ dbPath: db }));
+      // cwd outside any git repo: recall ranks by the current branch name, so running from the
+      // checkout made this test pass or fail depending on what the branch happened to be called.
+      const ctx = ctxOf(await runRecall({ dbPath: db, cwd: dir }));
       assert.ok(ctx.includes("Recent memory (1 note):\n- [Only] {recent 0d}: note"));
       assert.ok(!ctx.includes("Open tasks") && !ctx.includes("handoff"));
     } finally {
