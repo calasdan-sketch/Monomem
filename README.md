@@ -1,11 +1,13 @@
 <!-- Image URLs are absolute on purpose: GitHub resolves relative paths, npm does not. -->
 ![Monomem — one memory, every assistant](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/brand/monomem-banner.png)
 
-**Auditable shared memory for AI coding agents.** Tell Claude, Cursor, Codex or
+**Shared memory for AI coding agents that records who wrote what.** Tell Claude, Cursor, Codex or
 Gemini something once and the rest already know it — one self-hosted SQLite
 file, over MCP or plain REST. No API keys, no cloud, no hidden model calls.
-**Every note records who wrote it, is versioned, and is one undo away**, with
-[benchmarks](#benchmark) to prove it.
+**Every note records who wrote it and keeps its earlier versions. Replacing or
+editing a note can be undone; deleting one is permanent, by design.** Give each
+app its own token to tell them apart (the default local setup marks every note
+`stdio`). [Benchmarks](#benchmark) back each of these claims.
 
 [![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)

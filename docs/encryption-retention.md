@@ -93,6 +93,9 @@ curl -X POST localhost:8790/notes -H "Authorization: Bearer $TOKEN" \
   the existing one (an unrelated edit never silently drops your TTL).
 - The sweep archives every past-due note. It is idempotent and returns the
   count, so it is safe on a timer.
+- **Nothing runs the sweep for you.** Until something calls it, a note past
+  its deadline still appears in search and recall. Put the call on a timer
+  (cron, Task Scheduler) if you rely on TTLs.
 
 ```bash
 curl -X POST localhost:8790/sweep-expired -H "Authorization: Bearer $TOKEN"
