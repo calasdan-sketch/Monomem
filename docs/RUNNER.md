@@ -12,8 +12,9 @@ at home, and you want it to do something.
 
 The runner is **not** part of the published `monomem` package. A plain
 memory install contains no runner code and does not serve the signing page.
-Run it from a clone of this repository (a separate `monomem-runner` package
-is coming soon):
+It is experimental and not published anywhere. Run it from a clone of this
+repository. If enough people ask for it, it will be packaged separately; open
+an issue if you want that:
 
 ```
 git clone https://github.com/calasdan-sketch/monomem.git
