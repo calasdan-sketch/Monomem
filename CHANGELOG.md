@@ -15,6 +15,12 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`DIR_BYTES_BUDGET_MS`); past that it reports a lower-bound size and says the scan was truncated,
   instead of hanging.
 
+### Docs
+
+- README trimmed to what a new user needs: dropped the demo-GIF production notes, the Node 22.5 flag history, the
+  old-name migration notes and every pre-rename version number. The fixed-gaps table and the provenance-field breakdown moved,
+  unchanged, to `docs/BENCHMARK.md#known-gaps-history`.
+
 ## [1.0.3] - 2026-11-02
 
 ### Fixed
