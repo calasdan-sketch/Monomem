@@ -15,10 +15,22 @@ prepareDataDir();
 // No token on stdio: writes are stamped with the fixed marker "stdio" (written_by).
 setProcessWriter("stdio");
 const store = new Store(DB_PATH);
+// Most people never run the HTTP server (which sweeps hourly), so expired notes are archived here too:
+// at startup and then hourly, idempotent, and a failure never stops the MCP server.
+const sweepExpired = (): void => {
+  try {
+    store.sweepExpired();
+  } catch (e) {
+    process.stderr.write(`[monomem] expiry sweep failed: ${(e as Error).message}\n`);
+  }
+};
+sweepExpired();
+setInterval(sweepExpired, 3_600_000).unref();
 // Server-side namespace resolution: resolved ONCE at startup from the
 // process working directory. Null when unconfigured (legacy behavior).
 const nsOpts = resolveStartupNamespace(process.cwd());
-const server = createMcpServer(store, "admin", nsOpts ?? undefined);
+// local: admin with no token was never a deliberate grant, so operator-only tools stay off for the agent.
+const server = createMcpServer(store, "admin", nsOpts ?? undefined, { local: true });
 const transport = new StdioServerTransport();
 
 await server.connect(transport);

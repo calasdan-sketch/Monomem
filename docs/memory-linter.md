@@ -66,6 +66,16 @@ instruction-shaped context, never a single scary word:
 A single value sets `secrets` and `injection`; `entropy` changes only when
 named (`entropy=warn` or `entropy=quarantine`; it never blocks).
 
+> **Anything but `secrets=block` keeps the secret on disk.**
+> - With `secrets=warn` it is stored in the note, in the note's earlier versions, and (its title) in the
+>   change log for 90 days.
+> - With `secrets=quarantine` it sits in the quarantine table in plain text unless at-rest encryption is on,
+>   and approving it stores it as a note.
+> - The default `entropy=warn` also stores a random-looking token that matched no known key shape, and sends
+>   it to the embeddings endpoint if semantic search is on.
+>
+> Keep passwords and keys in a password manager and store a reference to them instead.
+
 The variable is read on every write (no restart). An unrecognized value
 falls back to the default with one stderr warning — a typo never disables
 the linter.

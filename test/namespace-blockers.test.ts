@@ -107,8 +107,8 @@ describe("blocker #3: reads_from grants never confer write access (MCP)", () => 
       name: "state_delete",
       arguments: { id: scratch.id },
     });
-    assert.equal(parseToolText(res).deleted, scratch.id);
-    assert.equal(store.read(scratch.id), null);
+    assert.equal(parseToolText(res).archived, scratch.id);
+    assert.ok(store.read(scratch.id)?.archived_at);
   });
 
   test("granted-namespace notes remain readable (grants stay read-only)", async () => {

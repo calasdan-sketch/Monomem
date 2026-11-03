@@ -4,6 +4,88 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-03
+
+An AI agent can no longer permanently erase your memory or act as the operator. Prompted by an
+independent review (Agent Memory Atlas) and two security reviews. Upgrading erases nothing; checked
+on a copy of a real 332-note store.
+
+**On the first start after upgrading**, two kinds of note get archived (hidden, restorable with
+`monomem restore <id>`), because expiry now runs on its own:
+- notes already past their `forget_after` deadline;
+- captured observations idle for 30 days (summaries after 180), if you use capture.
+
+Before 1.1.0 this only happened when something called the sweep or a captured session ended.
+
+### Changed
+
+- **`state_delete` now forgets instead of erasing.** Over MCP it archives the note: hidden from
+  search, lists, recall, reads by id and the vault export, but not erased. Bring it back with
+  `monomem restore <id>` or the dashboard. The tool returns `{ archived: id }` (it used to return
+  `{ deleted: id }`), and its description tells the agent to say plainly that nothing was erased.
+- **Permanent delete is for a person:** the dashboard, `DELETE /notes/:id` with an admin token, or
+  the new `monomem delete <id>`, which asks first and needs `--yes` when no terminal is attached.
+- **The local stdio connection no longer hands the agent operator powers.** stdio runs as admin
+  with no token, so nobody deliberately gave the agent those powers. `memory_quarantine`,
+  `trust_policy`, `memory_history_purge`, `memory_consolidate` and `task_approve` are not
+  registered for it, even under `MONOMEM_TOOLS=all`. `include_distrusted` and `task_put` with
+  `approve: true` are refused. Set `MONOMEM_STDIO_ADMIN_TOOLS=1` to allow them again. HTTP tokens
+  are unchanged.
+
+### Security
+
+- **A forgotten note no longer comes back by id.** `state_read` and `GET /notes/:id` treat an
+  archived note as missing (a replaced note stays readable, marked as replaced).
+- **Listing archived notes needs an admin token.** `GET /notes?archived=1` and `includeArchived=1`
+  were read-scoped.
+- **The vault export leaves archived notes out** and removes their earlier, unedited files.
+- **Captured events redact passwords that have no key shape:** `password=...`, `DB_PASS=...`,
+  `--password x`, `curl -u user:pw`, `scheme://user:pw@host`, `Authorization: Bearer ...`, and
+  "my password is ..." when the value has a digit. Placeholders such as `$VAR` and `<token>` are
+  left alone.
+- **Embeddings:** a non-local `MONOMEM_EMBED_URL` now prints a one-time notice that note text is
+  sent to that host, and redirects are refused so the text and key cannot be bounced to another
+  host.
+
+- **A forgotten note cannot be edited or have its history read by an agent.** `state_write` on its
+  id and `PUT /notes/:id` answer "not found" (restore it first), and the MCP `memory_history` /
+  `memory_restore_version` treat it as missing. People still see it in the dashboard and CLI.
+- **Forgetting drops the note's embedding** (a lossy, unencrypted copy of its text). A REST restore
+  recomputes it; otherwise `monomem reindex` does.
+- **Expiry dates now work on their own.** Notes past their `forget_after` deadline are archived
+  hourly by the server and at startup (and hourly) by the stdio MCP server. Before, nothing ran
+  the sweep unless something called `POST /sweep-expired`.
+- **`monomem doctor` on Windows** warns when the data folder is outside your user folder (where
+  other accounts may read the token and notes) and prints the `icacls` command that limits it to you.
+- **Forgotten notes' titles leave the change feed.** `memory_since`, `catch_up` and `GET /changes`
+  report a forgotten note with an empty title (the title can be the sensitive part).
+- **More password shapes are redacted in capture:**
+  - names with no separator (`PGPASSWORD=`, `dbPassword:`, `clientSecret=`);
+  - URLs with an empty user (`redis://:pw@host`) or an `@` inside the password;
+  - `Authorization: Basic` values without digits.
+- **Over stdio the agent cannot accept a red-flagged replacement itself** (`acknowledge_risk`).
+  A person does it with `monomem supersede confirm` or `MONOMEM_STDIO_ADMIN_TOOLS=1`.
+- **Expiry and decay sweeps also drop the embeddings of what they archive.**
+- **Docs:** the memory linter guide now says plainly which modes keep a secret on disk.
+
+### Known limits
+
+- **Capture redaction catches a credential-named value only when it looks like a literal secret**
+  (letters and digits, no code). `password=hunter` (no digit) or `-pMyS3cret` is still recorded.
+  Don't paste real passwords into prompts or commands; use a password manager.
+- **Captured prompts are kept, redacted, for 7 days**, even if the session's summary note is
+  forgotten.
+- **A note restored from the CLI** is found by keyword search at once and by semantic search after
+  `monomem reindex` (a REST restore re-embeds it straight away).
+- **A forgotten note's text stays in the database file and in backups** until a person deletes it
+  permanently. That's what makes forgetting undoable.
+
+### Tests
+
+- Two timing tests now wait for the actual reply instead of a fixed delay (they failed under load).
+- Password redaction keeps ordinary code and prose intact (`token = getToken(ctx)`,
+  `apiKey: options.apiKey`, `max_token=4096`, "basic configuration").
+
 ## [1.0.6] - 2026-11-03
 
 ### Docs

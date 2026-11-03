@@ -43,6 +43,7 @@ describe("REST: namespaces, tampered rows, validation", () => {
       { token: A, scope: "admin", label: "a", namespace: "nsA" },
       { token: B, scope: "admin", label: "b", namespace: "nsB" },
       { token: ROOT, scope: "admin", label: "root" },
+      { token: "tok-reader", scope: "read", label: "reader" },
     ];
     server = createApiServer(store, tokens);
     await new Promise<void>((r) => server.listen(0, r));
@@ -131,6 +132,11 @@ describe("REST: namespaces, tampered rows, validation", () => {
     assert.equal(r2.skipped, 1);
     const arch = await (await fetch(`${base}/notes?archived=1&namespace=default`, { headers: bearer(ROOT) })).json();
     assert.ok(arch.notes.some((n: any) => n.title === "imp" && n.expires_at));
+    // The archive holds what someone asked to forget: a read token cannot list it.
+    for (const q of ["archived=1", "includeArchived=1"]) {
+      const r = await fetch(`${base}/notes?${q}`, { headers: bearer("tok-reader") });
+      assert.equal(r.status, 403, q);
+    }
   });
 });
 

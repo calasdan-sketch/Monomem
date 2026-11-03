@@ -140,6 +140,8 @@ function usage(): void {
       "            Also runs on its own in the expiry sweep and at the end of a captured session.",
       "  archive <id> | restore <id>",
       "            Soft-archive a note, or bring an archived one back (the undo for decay and archive).",
+      "  delete <id> [--yes]",
+      "            Delete a note permanently, with all its earlier versions. Asks first; cannot be undone.",
       "  encrypt <enable|status|disable>",
       "            enable   Create the AES-256-GCM key and encrypt every note",
       "                     body at rest. Keyword search then covers title+tags",
@@ -215,6 +217,20 @@ async function doctor(): Promise<void> {
         ? "git checkout with an existing ./data/state.db — kept as-is; set MONOMEM_HOME to move it"
         : "default";
   ok(`data dir ${DATA_DIR} (${why})`);
+  // On Windows the token file and database get the folder's inherited permissions (chmod does nothing
+  // there). Inside the user profile that means "this user only"; elsewhere (D:\, a shared folder) often not.
+  // Changing ACLs automatically could break backup or indexing tools, so this says how instead of doing it.
+  if (process.platform === "win32") {
+    const { homedir } = await import("node:os");
+    const { resolve } = await import("node:path");
+    const home = resolve(homedir()).toLowerCase();
+    if (!resolve(DATA_DIR).toLowerCase().startsWith(home + "\\")) {
+      warn(
+        `data dir is outside your user folder, so other accounts on this PC may be able to read the token and notes. ` +
+          `To limit it to you: icacls "${DATA_DIR}" /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F" /grant:r "SYSTEM:(OI)(CI)F"`
+      );
+    }
+  }
   const { MAPPED_LEGACY_ENV } = await import("./legacy-env.js");
   if (MAPPED_LEGACY_ENV.length) {
     warn(
@@ -1826,6 +1842,42 @@ async function decayCmd(): Promise<void> {
   }
 }
 
+// `monomem delete <id> [--yes]`: the permanent delete, for a person. An agent's state_delete only archives.
+async function deleteCmd(): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { Store } = await import("./store.js");
+  const { audit } = await import("./security.js");
+  const id = Number(process.argv[3]);
+  if (!Number.isInteger(id)) {
+    console.error("Usage: monomem delete <id> [--yes]");
+    process.exit(1);
+  }
+  const store = new Store(DB_PATH);
+  try {
+    const note = store.read(id); // gate-ok: local shell command (permanent delete): the operator owns the database file
+    if (!note) {
+      console.error(`No note #${id}.`);
+      process.exit(1);
+    }
+    if (!process.argv.includes("--yes")) {
+      if (!process.stdin.isTTY) {
+        console.error("A permanent delete cannot be undone: run it at a terminal and answer the question, or add --yes.");
+        process.exit(1);
+      }
+      const ok = await askYesNo(`Permanently delete note #${id} "${note.title}" and all its earlier versions? This cannot be undone. [y/N] `);
+      if (!ok) {
+        console.log("Nothing deleted.");
+        return;
+      }
+    }
+    store.delete(id);
+    audit({ op: "note.delete", id, namespace: note.namespace, label: "cli", kind: "note" });
+    console.log(`Deleted #${id} "${note.title}" permanently.`);
+  } finally {
+    store.close();
+  }
+}
+
 // `monomem archive <id>` / `monomem restore <id>`: the same soft archive and restore as POST /notes/:id/archive|restore.
 async function archiveCmd(action: "archive" | "restore"): Promise<void> {
   const { DB_PATH } = await import("./config.js");
@@ -2233,6 +2285,9 @@ async function main(): Promise<void> {
     case "archive":
     case "restore":
       await archiveCmd(cmd);
+      break;
+    case "delete":
+      await deleteCmd();
       break;
     case "quality":
       await qualityCmd();

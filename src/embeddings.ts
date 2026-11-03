@@ -98,11 +98,14 @@ export async function embed(
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
 
+    warnIfRemote(cfg.url);
     const res = await fetch(cfg.url, {
       method: "POST",
       headers,
       body: JSON.stringify({ model: cfg.model, input: text }),
       signal: controller.signal,
+      // A redirect could send note text (and the API key) to a host nobody configured.
+      redirect: "error",
     });
     if (!res.ok) return fail(`[monomem] embeddings endpoint returned ${res.status}; using keyword search`);
     const json = (await res.json()) as unknown;
@@ -115,4 +118,22 @@ export async function embed(
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Note text goes to the embeddings endpoint. A remote one is allowed (hosted embedding APIs are a
+// documented choice), but never silently: say once, on stderr, where the text is going.
+const LOOPBACK = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\]|::1)$/i;
+let remoteWarned = false;
+function warnIfRemote(url: string): void {
+  if (remoteWarned) return;
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return;
+  }
+  if (LOOPBACK.test(host)) return;
+  remoteWarned = true;
+  process.stderr.write(`[monomem] embeddings: the text of each note and search is sent to ${host}, which is not this machine (MONOMEM_EMBED_URL)
+`);
 }

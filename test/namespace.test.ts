@@ -352,8 +352,8 @@ describe("MCP namespace resolution (active)", () => {
       name: "state_delete",
       arguments: { id: scratch.id },
     });
-    assert.equal(parseToolText(result).deleted, scratch.id);
-    assert.equal(store.read(scratch.id), null);
+    assert.equal(parseToolText(result).archived, scratch.id);
+    assert.ok(store.read(scratch.id)?.archived_at);
   });
 });
 

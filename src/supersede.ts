@@ -49,6 +49,8 @@ export interface Caller {
   ownNamespace?: string;
   /** Override for tests and the CLI; normally the server-stamped writer of the current call. */
   writer?: string;
+  /** An agent (MCP) caller: a forgotten (archived) note's history reads as missing. People use REST/CLI. */
+  hideArchived?: boolean;
 }
 
 const writerOf = (c: Caller): string => c.writer ?? currentWriter();
@@ -392,7 +394,7 @@ function historyGate(store: Store, c: Caller, id: number): NoteRecord {
   // Old text can contain what someone deliberately took out of a note, so it is for administrators.
   if (!scopeAllows(c.scope, "admin")) throw new SupersedeError("a note's history is for administrators: it can hold text that was taken out on purpose", 403);
   if (typeof id !== "number" || !Number.isInteger(id) || id < 1) throw new SupersedeError("give a note number");
-  const n = store.readVisible(id, { includeDistrusted: scopeAllows(c.scope, "admin") });
+  const n = store.readVisible(id, { includeDistrusted: scopeAllows(c.scope, "admin"), hideArchived: c.hideArchived === true });
   if (!n || (c.ownNamespace !== undefined && n.namespace !== c.ownNamespace)) throw missing(id);
   return n;
 }

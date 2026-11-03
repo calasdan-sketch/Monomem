@@ -992,6 +992,8 @@ export interface ReadOpts {
   trackAccess?: boolean;
   /** When true, attach up to EDGE_NEIGHBOR_LIMIT same-namespace neighbors. */
   withNeighbors?: boolean;
+  /** readVisible only: an archived note reads as missing (null). */
+  hideArchived?: boolean;
   /** Neighbors from distrusted writers are left out unless this is set. */
   includeDistrusted?: boolean;
 }
@@ -2613,6 +2615,9 @@ export class Store {
   readVisible(id: number, opts: ReadOpts = {}): (NoteRecord & { neighbors?: NeighborEntry[]; distrusted?: true }) | null {
     const probe = this.read(id);
     if (!probe) return null;
+    // "Forget" archives, so the by-id reads that hand content to an agent or app (MCP state_read,
+    // REST GET /notes/:id) pass hideArchived. Archive management (restore, undo, history) does not.
+    if (probe.archived_at && probe.superseded_by == null && opts.hideArchived === true) return null; // replaced notes stay readable: they carry superseded_by
     const hidden = this.isDistrusted(probe);
     if (hidden && opts.includeDistrusted !== true) return null;
     const rec = opts.trackAccess || opts.withNeighbors ? this.read(id, opts) : probe;
@@ -3348,7 +3353,18 @@ export class Store {
     }
     this.sweepCaptureEvents(now, namespaces);
     this.sweepDecay(now, namespaces);
+    this.dropArchivedVectors();
     return n;
+  }
+
+  /**
+   * Archived (forgotten, not replaced) notes keep no embedding: it is a lossy, unencrypted copy of the
+   * text, and archived notes are never searched. Replaced notes keep theirs for supersede undo.
+   */
+  private dropArchivedVectors(): void {
+    this.db
+      .prepare("DELETE FROM note_vectors WHERE note_id IN (SELECT id FROM notes WHERE archived_at IS NOT NULL AND superseded_by IS NULL)")
+      .run();
   }
 
   /**
@@ -3873,6 +3889,9 @@ export class Store {
     this.db
       .prepare("UPDATE notes SET archived_at = ? WHERE id = ? AND archived_at IS NULL")
       .run(iso, id);
+    // The embedding is a lossy copy of the text (and never encrypted): a forgotten note keeps none.
+    // A restore recomputes it on the REST path, or `monomem reindex` does; until then keyword search finds it.
+    this.db.prepare("DELETE FROM note_vectors WHERE note_id = ?").run(id);
     this.edgeIndexes.clear();
     this.announceChange();
     return this.read(id);
@@ -5867,6 +5886,7 @@ export class Store {
              e.note_id AS id, e.namespace AS namespace, e.title AS title, e.source AS source,
              e.changed_at AS at, e.rev AS rev, e.written_by AS written_by,
              ${cur.writer} AS cur_writer, (n.id IS NOT NULL) AS live,
+             (n.archived_at IS NOT NULL AND n.superseded_by IS NULL) AS forgotten,
              ${cur.attWriter} AS cur_att_writer, ${cur.attBy} AS cur_att_by, ${cur.merged} AS cur_merged
         FROM g JOIN change_log e ON e.seq = g.last
         LEFT JOIN notes n ON n.id = e.note_id
@@ -5892,6 +5912,7 @@ export class Store {
       written_by: string | null;
       cur_writer: string | null;
       live: number;
+      forgotten: number;
       cur_att_writer: string | null;
       cur_att_by: string | null;
       cur_merged: string | null;
@@ -5915,7 +5936,8 @@ export class Store {
         kind: r.kind,
         id: Number(r.id),
         namespace: r.namespace,
-        title: r.title,
+        // A forgotten (archived, not replaced) note keeps no title in the feed: the title can be the secret.
+        title: Number(r.forgotten) === 1 ? "" : r.title,
         source: r.source ?? "",
         written_by: r.written_by ?? "",
         writer_id: makeWriterId(sid, r.written_by ?? ""),

@@ -226,12 +226,13 @@ describe("5: low items", () => {
     try {
       let out = "";
       child.stdout.on("data", (d) => (out += d));
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 2000)); // generous: under full-suite load the child takes longer to start
       child.stdin.write("\n   \n\t\n\r\n");
       await new Promise((r) => setTimeout(r, 500));
       assert.equal(out, "", "blank lines produce no reply");
       child.stdin.write("{bad\n");
-      await new Promise((r) => setTimeout(r, 500));
+      // Wait for the reply itself, not a fixed time: under full-suite load the child answers slowly.
+      for (let i = 0; i < 100 && !out.includes("\n"); i++) await new Promise((r) => setTimeout(r, 50));
       const lines = out.split("\n").filter(Boolean);
       assert.equal(lines.length, 1);
       assert.equal(JSON.parse(lines[0]).error.code, -32700);

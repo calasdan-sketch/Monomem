@@ -151,6 +151,8 @@ const purgeNow = (): void => {
   try {
     store.purgeChangeLog();
     pruneStaleHeartbeats(store);
+    // TTLs used to need someone to call POST /sweep-expired; a note past its deadline stayed in search.
+    store.sweepExpired();
   } catch (e) {
     console.error(`[monomem] change-log purge failed: ${(e as Error).message}`);
   }

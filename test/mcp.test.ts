@@ -76,15 +76,15 @@ describe("MCP tool wrappers", () => {
     ]);
   });
 
-  test("state_delete removes a note from the real store", async () => {
+  test("state_delete archives a note in the real store (agents never erase)", async () => {
     const created = store.create({ title: "to delete", body: "bye" });
     const result = await client.callTool({
       name: "state_delete",
       arguments: { id: created.id },
     });
-    const { deleted } = parseToolText(result);
-    assert.equal(deleted, created.id);
-    assert.equal(store.read(created.id), null);
+    const { archived } = parseToolText(result);
+    assert.equal(archived, created.id);
+    assert.ok(store.read(created.id)?.archived_at);
   });
 
   test("state_delete on a missing id errors", async () => {

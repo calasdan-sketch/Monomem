@@ -54,3 +54,47 @@ describe("redactSecrets", () => {
     assert.deepEqual(r, { text: "ok", labels: [] });
   });
 });
+
+describe("redactSecrets: passwords with no key shape (capture is never reviewed)", () => {
+  const cases: [string, string][] = [
+    ["mysql --password=Winter2026x -u root", "Winter2026x"],
+    ["export DB_PASS=hunter22", "hunter22"],
+    ["psql postgres://app:S3cretPw@db.local/prod", "S3cretPw"],
+    ["curl -u admin:pa55word https://x.test", "pa55word"],
+    ['curl -H "Authorization: Bearer abc123def456ghi789jkl0" https://x', "abc123def456ghi789jkl0"],
+    ["my db password is Winter2026!", "Winter2026!"],
+    ["api_key: q8RtYv2w", "q8RtYv2w"],
+    ["PGPASSWORD=abc12345 psql", "abc12345"],
+    ['dbPassword: "abc123x"', "abc123x"],
+    ["clientSecret=Zz9secretValue", "Zz9secretValue"],
+    ["redis-cli -u redis://:pass123x@cache:6379", "pass123x"],
+    ["mysql://u:p@ss9word@db/x", "p@ss9word"],
+    ["Authorization: Basic dXNlcjpwYXNz", "dXNlcjpwYXNz"],
+  ];
+  for (const [input, secret] of cases) {
+    test(`removes the secret from: ${input.replace(secret, "<secret>")}`, () => {
+      const out = redactSecrets(input);
+      assert.ok(!out.text.includes(secret), out.text);
+      assert.ok(out.labels.length > 0);
+    });
+  }
+  test("leaves ordinary text and placeholders alone", () => {
+    for (const s of ["password reset flow works", "set PASSWORD=$DB_PASSWORD in .env", "token: <your-token>", "git push origin main"]) {
+      assert.equal(redactSecrets(s).text, s);
+    }
+  });
+});
+
+describe("redactSecrets: ordinary code and prose stay readable", () => {
+  for (const s of [
+    "const token = getToken(ctx)",
+    "apiKey: options.apiKey,",
+    "credentials: 'include'",
+    "max_token=4096 foo",
+    "grep 'token: string' src",
+    "Add basic configuration for the server",
+    "the password is required",
+  ]) {
+    test(`unchanged: ${s}`, () => assert.equal(redactSecrets(s).text, s));
+  }
+});

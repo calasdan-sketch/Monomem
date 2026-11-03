@@ -55,6 +55,9 @@ export function redactSecrets(text: string): Redacted {
     if (label === "private key block") continue;
     t = t.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g"), () => mark(label));
   }
+  // Passwords have no shape, so the patterns above miss them. Capture is never reviewed, so here a
+  // credential-named value is redacted even when short; the name is kept so the event still reads.
+  for (const [re, label] of PASSWORD_PATTERNS) t = t.replace(re, (_m, keep: string) => keep + mark(label));
   t = t.replace(TOKEN, (tok) => {
     if (hasOpenAiAnthropicKey(tok)) return mark("OpenAI/Anthropic key");
     if (hasJwt(tok)) return mark("JWT");
@@ -63,6 +66,32 @@ export function redactSecrets(text: string): Redacted {
   });
   return { text: t, labels: [...labels] };
 }
+
+// Values that are references, not secrets: $VAR, <...>, your_..., xxx, ***, example, placeholder, changeme, already redacted.
+const NOT_PLACEHOLDER = String.raw`(?!\$|<|\[REDACTED|your[_-]|xxx|\*\*\*|example|placeholder|changeme)`;
+const LITERAL_SECRET = String.raw`(?=[^\s"'\`<>]{0,200}\d)(?=[^\s"'\`<>]{0,200}[A-Za-z])(?![^\s"'\`<>]{0,200}[()])`;
+// The prefix also covers names with no separator: PGPASSWORD, dbPassword, clientSecret.
+const CRED_NAME = String.raw`(?:[A-Za-z0-9]{1,30}[_-]){0,4}[A-Za-z0-9]{0,30}?(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)`;
+// Every repetition is bounded, so hostile input cannot make these slow (see the ReDoS test in lint tests).
+const PASSWORD_PATTERNS: [RegExp, string][] = [
+  // scheme://user:PASSWORD@host. The user may be empty (redis://:pw@host); the password runs to the
+  // LAST @ before the host, so one containing @ is covered whole.
+  [/(\b[a-z][a-z0-9+.-]{0,20}:\/\/[^\s/:@]{0,64}:)[^\s/]{1,128}(?=@[^\s/@]{1,253}(?:[/\s:?#]|$))/gi, "URL password"],
+  // Authorization: Bearer/Basic VALUE. A real value has a digit or mixed case; prose
+  // ("basic configuration", "bearer responsibilities") has neither.
+  // Not /i: the mixed-case test must see real case. The keyword is spelled out in its usual cases instead.
+  [/(\b(?:[Bb]earer|[Bb]asic|BEARER|BASIC)[ \t]{1,4})(?:(?=[A-Za-z0-9._~+/=-]{0,400}\d)|(?=[A-Za-z0-9._~+/=-]{0,400}[A-Z])(?=[A-Za-z0-9._~+/=-]{0,400}[a-z]))[A-Za-z0-9._~+/=-]{12,400}/g, "auth header"],
+  // curl -u user:PASSWORD / --user user:PASSWORD
+  [/((?:^|\s)(?:-u|--user)[ \t]{1,4}[^\s:]{1,64}:)[^\s]{1,128}/g, "password"],
+  // --password VALUE / --password=VALUE
+  [new RegExp(String.raw`(--?(?:password|passwd|pass|pwd)[ =])` + NOT_PLACEHOLDER + String.raw`[^\s"'\`]{1,200}`, "gi"), "password"],
+  // NAME: VALUE / NAME=VALUE (DB_PASS=..., api_key: ...)
+  // The value must look like a literal secret: letters AND digits, no call parens. That keeps code
+  // (`token = getToken(ctx)`, `apiKey: options.apiKey`) and settings (`max_token=4096`) intact.
+  [new RegExp(String.raw`((?<![A-Za-z0-9])` + CRED_NAME + String.raw`["'\`]?[ \t]{0,4}[:=][ \t]{0,4}["'\`]?)` + NOT_PLACEHOLDER + LITERAL_SECRET + String.raw`[^\s"'\`<>]{4,200}`, "gi"), "password"],
+  // "my password is VALUE": only when the value has a digit, so "password is required" stays.
+  [new RegExp(String.raw`((?<![A-Za-z0-9])(?:pass(?:word|wd|phrase)?|pwd)[ \t]{1,4}is[ \t]{1,4})` + NOT_PLACEHOLDER + String.raw`(?=[^\s]{0,200}\d)[^\s"'\`<>]{4,200}`, "gi"), "password"],
+];
 
 /** stripPrivate, then redactSecrets: the one call the capture path makes on every recorded field. */
 export function redact(text: string): Redacted {

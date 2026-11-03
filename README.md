@@ -338,7 +338,7 @@ shipped in the npm package** — build it from the repo.
 
 | Tool | Scope | |
 |---|---|---|
-| `state_write` / `state_read` / `state_delete` | write / read / admin | CRUD with compare-and-swap (`if_rev`) and provenance (`source`) |
+| `state_write` / `state_read` / `state_delete` | write / read / admin | Write with compare-and-swap (`if_rev`) and provenance (`source`); read; forget. `state_delete` archives (restorable); a permanent delete is for a person, in the dashboard or with `monomem delete <id>` |
 | `state_search` / `state_relevant` / `state_list` | read | keyword, semantic or hybrid search; vague-message recall; listing |
 | `memory_since` | read | change feed (`wait_seconds` = live wait) |
 | `task_put` / `task_list` / `task_get` | write / read / read | shared task board across devices and models; `client_key` makes a create retry-safe |

@@ -557,7 +557,7 @@ export function createApiServer(
         // same-namespace similar notes with similarity scores (and their
         // staleness fields), mirroring the MCP state_read neighbors:true option.
         const withNeighbors = url.searchParams.get("neighbors") === "true";
-        const note = store.readVisible(id, { trackAccess: true, withNeighbors, includeDistrusted: wantDistrusted });
+        const note = store.readVisible(id, { hideArchived: true, trackAccess: true, withNeighbors, includeDistrusted: wantDistrusted });
         if (!note) {
           sendJson(res, 404, { error: "not found" });
           return;
@@ -617,7 +617,7 @@ export function createApiServer(
             delete parsed.namespace;
           }
           // A note the distrust list hides reads as missing to everyone but an admin (who may rewrite it under a trusted writer).
-          if (!store.readVisible(id, { includeDistrusted: isAdmin })) {
+          if (!store.readVisible(id, { hideArchived: true, includeDistrusted: isAdmin })) { // a forgotten note is restored first, never edited (the reply echoes the body)
             sendJson(res, 404, { error: "not found" });
             return;
           }
@@ -701,6 +701,7 @@ export function createApiServer(
           }
         }
         const restored = store.restore(id, ttl === undefined ? {} : { forget_after: ttl });
+        await maybeEmbed(store, restored!); // archive dropped the vector
         sendJson(res, 200, { restored: id, note: annotateStaleness(restored!) });
         return;
       }
@@ -840,10 +841,14 @@ export function createApiServer(
         }
         // Retention: archived notes are excluded by default. includeArchived
         // shows everything; archived=1 shows ONLY the archive (the restore
-        // view). Both are read-scoped -- seeing that a note was archived is
-        // not privileged, and the namespace filter still applies.
+        // view). Both are admin-only since 1.1.0: an agent's "forget" archives,
+        // so the archive holds exactly what someone asked to have forgotten.
         const includeArchived = url.searchParams.get("includeArchived") === "1";
         const archivedOnly = url.searchParams.get("archived") === "1";
+        if ((includeArchived || archivedOnly) && !isAdmin) {
+          sendJson(res, 403, { error: "listing archived (forgotten) notes needs an admin token" });
+          return;
+        }
         const wf = { ...writerFilter(url), ...supersededFilter(url) };
         if (nsCtx.active) {
           // Untrusted hint intersected with the readable set, like the MCP
