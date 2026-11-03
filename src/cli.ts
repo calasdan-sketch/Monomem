@@ -414,7 +414,7 @@ async function doctor(): Promise<void> {
   try {
     const { Store } = await import("./store.js");
     const { lastCaptureAt, captureBacklog, spoolSize, captureSettings, SPOOL_MAX_BYTES } = await import("./capture.js");
-    const { dirBytes } = await import("./uninstall.js");
+    const { dirBytes, DIR_BYTES_BUDGET_MS } = await import("./uninstall.js");
     const { DATA_DIR } = await import("./config.js");
     const spool = spoolSize(DATA_DIR);
     const set = captureSettings(DATA_DIR);
@@ -435,10 +435,15 @@ async function doctor(): Promise<void> {
     if (backlog > DOCTOR_MAX_BACKLOG) {
       warn(`${backlog} captured events are waiting to be distilled (over ${DOCTOR_MAX_BACKLOG}); that happens when a session starts or ends, so a failing session hook is the likely cause`);
     }
-    const bytes = dirBytes(DATA_DIR);
-    const mb = (bytes / 1e6).toFixed(1);
-    if (bytes > DOCTOR_MAX_DATA_BYTES) warn(`data folder ${DATA_DIR} is ${mb} MB (over ${DOCTOR_MAX_DATA_BYTES / 1e9} GB); docs/footprint.md says what is in it and what is safe to remove`);
-    else ok(`data folder ${DATA_DIR} is ${mb} MB`);
+    const size = dirBytes(DATA_DIR);
+    const mb = (size.bytes / 1e6).toFixed(1);
+    if (size.truncated) {
+      warn(`data folder ${DATA_DIR} is at least ${mb} MB and still growing — the scan stopped after ${DIR_BYTES_BUDGET_MS}ms instead of hanging; something unrelated to monomem may be using this folder, see docs/footprint.md`);
+    } else if (size.bytes > DOCTOR_MAX_DATA_BYTES) {
+      warn(`data folder ${DATA_DIR} is ${mb} MB (over ${DOCTOR_MAX_DATA_BYTES / 1e9} GB); docs/footprint.md says what is in it and what is safe to remove`);
+    } else {
+      ok(`data folder ${DATA_DIR} is ${mb} MB`);
+    }
   } catch (e) {
     warn("capture status unavailable: " + (e as Error).message);
   }
