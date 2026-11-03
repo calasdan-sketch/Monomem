@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-11-03
+
+### Fixed
+
+- **`doctor` and `uninstall` could hang indefinitely sizing the data folder.** `dirBytes()` walked
+  the data directory synchronously with no limit; a data folder that has picked up large files
+  unrelated to monomem (a user's own scripts dumping backups next to it, say) made the walk take
+  minutes or longer, with the whole CLI silently stuck and no way to tell why. Bounded to 2 seconds
+  (`DIR_BYTES_BUDGET_MS`); past that it reports a lower-bound size and says the scan was truncated,
+  instead of hanging.
+
 ## [1.0.3] - 2026-11-02
 
 ### Fixed
