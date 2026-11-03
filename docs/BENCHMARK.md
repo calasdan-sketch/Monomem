@@ -329,7 +329,7 @@ and never used to override the trust rules; 1.5.0 dropped it silently).
 **Replacing a memory (1.6.0).** Replacing an old note is always two steps, on every surface: a preview that changes nothing and shows
 "Are you sure you want to replace this?" with exactly what would stop appearing in search, then a confirm that needs the preview's one-time code.
 Nothing is deleted, undo is one command, and every edit now keeps the text it replaces (admin-only history with restore). See
-[docs/replacing-memories.md](./docs/replacing-memories.md).
+[docs/replacing-memories.md](./replacing-memories.md).
 
 **Known gaps.** Scenarios that fail because Monomem lacks the behaviour are kept, marked, and listed here and in the report. They do not fail the run
 (`--strict-gaps` makes them), and a gap that starts to pass fails the run until its marker is removed. The four recorded at 1.5.0 are fixed, and so is the one the memory-poisoning suite found (`GAP-POISON-MDLINK`, 2.0.0). **None is open.**

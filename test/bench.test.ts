@@ -743,7 +743,10 @@ describe("shipping and docs", () => {
     const section = readme.slice(readme.indexOf("## Benchmark"));
     assert.match(section, /not a retrieval|not a semantic|does not measure/i);
     assert.match(section, /known gaps/i);
-    for (const id of Object.keys(gaps)) assert.ok(section.includes(id), `README lists ${id}`);
+    // The per-gap table lives in docs/BENCHMARK.md (moved out of the README in 1.0.4); the README links to it.
+    assert.ok(section.includes("docs/BENCHMARK.md#known-gaps-history"), "README links the known-gaps history");
+    const doc = read("docs/BENCHMARK.md");
+    for (const id of Object.keys(gaps)) assert.ok(doc.includes(id), `docs/BENCHMARK.md lists ${id}`);
   });
 
   test("the README table states the real scenario counts per suite", () => {
