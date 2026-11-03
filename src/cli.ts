@@ -217,6 +217,20 @@ async function doctor(): Promise<void> {
         ? "git checkout with an existing ./data/state.db — kept as-is; set MONOMEM_HOME to move it"
         : "default";
   ok(`data dir ${DATA_DIR} (${why})`);
+  // On Windows the token file and database get the folder's inherited permissions (chmod does nothing
+  // there). Inside the user profile that means "this user only"; elsewhere (D:\, a shared folder) often not.
+  // Changing ACLs automatically could break backup or indexing tools, so this says how instead of doing it.
+  if (process.platform === "win32") {
+    const { homedir } = await import("node:os");
+    const { resolve } = await import("node:path");
+    const home = resolve(homedir()).toLowerCase();
+    if (!resolve(DATA_DIR).toLowerCase().startsWith(home + "\\")) {
+      warn(
+        `data dir is outside your user folder, so other accounts on this PC may be able to read the token and notes. ` +
+          `To limit it to you: icacls "${DATA_DIR}" /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F" /grant:r "SYSTEM:(OI)(CI)F"`
+      );
+    }
+  }
   const { MAPPED_LEGACY_ENV } = await import("./legacy-env.js");
   if (MAPPED_LEGACY_ENV.length) {
     warn(

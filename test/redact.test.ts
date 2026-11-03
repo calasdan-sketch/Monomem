@@ -78,3 +78,17 @@ describe("redactSecrets: passwords with no key shape (capture is never reviewed)
     }
   });
 });
+
+describe("redactSecrets: ordinary code and prose stay readable", () => {
+  for (const s of [
+    "const token = getToken(ctx)",
+    "apiKey: options.apiKey,",
+    "credentials: 'include'",
+    "max_token=4096 foo",
+    "grep 'token: string' src",
+    "Add basic configuration for the server",
+    "the password is required",
+  ]) {
+    test(`unchanged: ${s}`, () => assert.equal(redactSecrets(s).text, s));
+  }
+});

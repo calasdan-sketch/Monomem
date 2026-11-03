@@ -69,19 +69,22 @@ export function redactSecrets(text: string): Redacted {
 
 // Values that are references, not secrets: $VAR, <...>, your_..., xxx, ***, example, placeholder, changeme, already redacted.
 const NOT_PLACEHOLDER = String.raw`(?!\$|<|\[REDACTED|your[_-]|xxx|\*\*\*|example|placeholder|changeme)`;
+const LITERAL_SECRET = String.raw`(?=[^\s"'\`<>]{0,200}\d)(?=[^\s"'\`<>]{0,200}[A-Za-z])(?![^\s"'\`<>]{0,200}[()])`;
 const CRED_NAME = String.raw`(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)`;
 // Every repetition is bounded, so hostile input cannot make these slow (see the ReDoS test in lint tests).
 const PASSWORD_PATTERNS: [RegExp, string][] = [
   // scheme://user:PASSWORD@host
   [/(\b[a-z][a-z0-9+.-]{0,20}:\/\/[^\s/:@]{1,64}:)[^\s/@]{1,64}(?=@)/gi, "URL password"],
   // Authorization: Bearer/Basic VALUE
-  [/(\b(?:bearer|basic)[ \t]{1,4})[A-Za-z0-9._~+/=-]{12,400}/gi, "auth header"],
+  [/(\b(?:bearer|basic)[ \t]{1,4})(?=[A-Za-z0-9._~+/=-]{0,400}\d)[A-Za-z0-9._~+/=-]{12,400}/gi, "auth header"],
   // curl -u user:PASSWORD / --user user:PASSWORD
   [/((?:^|\s)(?:-u|--user)[ \t]{1,4}[^\s:]{1,64}:)[^\s]{1,128}/g, "password"],
   // --password VALUE / --password=VALUE
   [new RegExp(String.raw`(--?(?:password|passwd|pass|pwd)[ =])` + NOT_PLACEHOLDER + String.raw`[^\s"'\`]{1,200}`, "gi"), "password"],
   // NAME: VALUE / NAME=VALUE (DB_PASS=..., api_key: ...)
-  [new RegExp(String.raw`((?<![A-Za-z0-9])` + CRED_NAME + String.raw`["'\`]?[ \t]{0,4}[:=][ \t]{0,4}["'\`]?)` + NOT_PLACEHOLDER + String.raw`[^\s"'\`<>]{4,200}`, "gi"), "password"],
+  // The value must look like a literal secret: letters AND digits, no call parens. That keeps code
+  // (`token = getToken(ctx)`, `apiKey: options.apiKey`) and settings (`max_token=4096`) intact.
+  [new RegExp(String.raw`((?<![A-Za-z0-9])` + CRED_NAME + String.raw`["'\`]?[ \t]{0,4}[:=][ \t]{0,4}["'\`]?)` + NOT_PLACEHOLDER + LITERAL_SECRET + String.raw`[^\s"'\`<>]{4,200}`, "gi"), "password"],
   // "my password is VALUE": only when the value has a digit, so "password is required" stays.
   [new RegExp(String.raw`((?<![A-Za-z0-9])(?:pass(?:word|wd|phrase)?|pwd)[ \t]{1,4}is[ \t]{1,4})` + NOT_PLACEHOLDER + String.raw`(?=[^\s]{0,200}\d)[^\s"'\`<>]{4,200}`, "gi"), "password"],
 ];

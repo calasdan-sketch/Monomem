@@ -43,6 +43,34 @@ describe("state_delete archives instead of erasing", () => {
     store.close();
   });
 
+  test("a forgotten note's text cannot come back through an edit or its history", async () => {
+    const store = new Store(":memory:");
+    const n = store.create({ title: "secret-ish", body: "vault code 7731" });
+    store.update(n.id, { body: "vault code 7731, updated" });
+    const c = await connect(store);
+    await c.callTool({ name: "state_delete", arguments: { id: n.id } });
+    const w: any = await c.callTool({ name: "state_write", arguments: { id: n.id, tags: ["x"] } });
+    assert.equal(w.isError, true, "editing a forgotten note must fail");
+    assert.doesNotMatch(JSON.stringify(w), /7731/);
+    for (const name of ["memory_history", "memory_restore_version"]) {
+      const r: any = await c.callTool({ name, arguments: name === "memory_history" ? { id: n.id } : { id: n.id, version: 1 } });
+      assert.doesNotMatch(JSON.stringify(r), /7731/, name);
+    }
+    assert.ok(store.read(n.id)?.archived_at, "still archived, untouched");
+    await c.close();
+    store.close();
+  });
+
+  test("forgetting drops the note's embedding (a lossy copy of its text)", () => {
+    const store = new Store(":memory:");
+    const n = store.create({ title: "v", body: "w" });
+    store.setVector(n.id, new Float32Array([0.1, 0.2, 0.3]), "m");
+    assert.equal(store.vectorCount(), 1);
+    store.archive(n.id);
+    assert.equal(store.vectorCount(), 0);
+    store.close();
+  });
+
   test("archiving twice says it is already archived", async () => {
     const store = new Store(":memory:");
     const n = store.create({ title: "x", body: "y" });

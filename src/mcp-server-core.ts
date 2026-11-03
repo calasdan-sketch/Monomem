@@ -489,7 +489,8 @@ export function createMcpServer(
             ? { title, body, tags, source, forget_after, confidence }
             : { namespace, title, body, tags, source, forget_after, confidence };
           // A note the distrust list hides reads as missing here too (only an admin may rewrite it).
-          const target = store.readVisible(id, { includeDistrusted: scopeAllows(scope, "admin") });
+          // hideArchived: updating a forgotten note would echo its text back; it must be restored first.
+          const target = store.readVisible(id, { hideArchived: true, includeDistrusted: scopeAllows(scope, "admin") });
           if (!target) return errorResult(`no note with id ${id}`);
           if (nsActive && target.namespace !== ownNs) {
             return errorResult(`no note with id ${id}`);
@@ -1781,7 +1782,7 @@ export function createMcpServer(
   );
 
   // ---- Replacing a memory (1.6.0): preview, then confirm. Nothing is ever deleted. ----
-  const callerNow = (): Caller => ({ scope, ...(nsActive ? { ownNamespace: ownNs } : {}) });
+  const callerNow = (): Caller => ({ scope, hideArchived: true, ...(nsActive ? { ownNamespace: ownNs } : {}) });
   const supersedeFailure = (e: unknown) => {
     if (e instanceof SupersedeError) return errorResult(e.warning ? `${e.message}\n\n${e.warning}` : e.message);
     return errorFor(e);

@@ -617,7 +617,7 @@ export function createApiServer(
             delete parsed.namespace;
           }
           // A note the distrust list hides reads as missing to everyone but an admin (who may rewrite it under a trusted writer).
-          if (!store.readVisible(id, { includeDistrusted: isAdmin })) {
+          if (!store.readVisible(id, { hideArchived: true, includeDistrusted: isAdmin })) { // a forgotten note is restored first, never edited (the reply echoes the body)
             sendJson(res, 404, { error: "not found" });
             return;
           }
@@ -701,6 +701,7 @@ export function createApiServer(
           }
         }
         const restored = store.restore(id, ttl === undefined ? {} : { forget_after: ttl });
+        await maybeEmbed(store, restored!); // archive dropped the vector
         sendJson(res, 200, { restored: id, note: annotateStaleness(restored!) });
         return;
       }

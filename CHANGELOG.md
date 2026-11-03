@@ -40,9 +40,23 @@ on a copy of a real 332-note store.
   sent to that host, and redirects are refused so the text and key cannot be bounced to another
   host.
 
+- **A forgotten note cannot be edited or have its history read by an agent.** `state_write` on its
+  id and `PUT /notes/:id` answer "not found" (restore it first), and the MCP `memory_history` /
+  `memory_restore_version` treat it as missing. People still see it in the dashboard and CLI.
+- **Forgetting drops the note's embedding** (a lossy, unencrypted copy of its text). A REST restore
+  recomputes it; otherwise `monomem reindex` does.
+- **Expiry dates now work on their own.** Notes past their `forget_after` deadline are archived
+  hourly by the server and at startup (and hourly) by the stdio MCP server. Before, nothing ran
+  the sweep unless something called `POST /sweep-expired`.
+- **`monomem doctor` on Windows** warns when the data folder is outside your user folder (where
+  other accounts may read the token and notes) and prints the `icacls` command that limits it to you.
+- **Docs:** the memory linter guide now says plainly which modes keep a secret on disk.
+
 ### Tests
 
 - Two timing tests now wait for the actual reply instead of a fixed delay (they failed under load).
+- Password redaction keeps ordinary code and prose intact (`token = getToken(ctx)`,
+  `apiKey: options.apiKey`, `max_token=4096`, "basic configuration").
 
 ## [1.0.6] - 2026-11-03
 

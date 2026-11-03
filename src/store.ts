@@ -3878,6 +3878,9 @@ export class Store {
     this.db
       .prepare("UPDATE notes SET archived_at = ? WHERE id = ? AND archived_at IS NULL")
       .run(iso, id);
+    // The embedding is a lossy copy of the text (and never encrypted): a forgotten note keeps none.
+    // A restore recomputes it on the REST path, or `monomem reindex` does; until then keyword search finds it.
+    this.db.prepare("DELETE FROM note_vectors WHERE note_id = ?").run(id);
     this.edgeIndexes.clear();
     this.announceChange();
     return this.read(id);
