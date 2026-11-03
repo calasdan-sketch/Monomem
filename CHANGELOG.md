@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-11-03
+
+### Docs
+
+- **Every public claim now matches what the code does.** Prompted by an independent review
+  ([Agent Memory Atlas](https://neoneye.github.io/agent-memory-atlas/systems/monomem/)):
+  - Undo covers replacements and edits only; deletes are permanent, by design. Dropped the
+    claim that every note is "one undo away".
+  - Dropped the "Auditable" headline, because the change log is pruned after 90 days and
+    `audit.log` rotates, so there is no permanent audit trail.
+  - The default local setup marks every note `stdio`; give each app its own token to tell
+    apps apart.
+  - SKILL.md: agents must never approve or reject quarantined writes themselves. A person
+    decides, in the dashboard or with `monomem quarantine`.
+  - Nothing runs the TTL sweep automatically.
+
+No code changes.
+
 ## [1.0.5] - 2026-11-03
 
 ### Security
