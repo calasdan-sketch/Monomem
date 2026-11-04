@@ -35,3 +35,6 @@ Thumbs.db
 /bench-*.mjs
 /test-mcp-probe.mjs
 /CHANGES_*.md
+
+# Benchmark comparison (Python venv for the Mem0 bridge)
+/.venv-bench/

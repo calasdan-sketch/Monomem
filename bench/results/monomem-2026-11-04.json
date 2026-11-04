@@ -1,0 +1,3959 @@
+{
+  "tool": "monomem-bench",
+  "version": "1.1.1",
+  "adapter": "monomem",
+  "seed": 1,
+  "ok": true,
+  "summary": {
+    "scenarios": 127,
+    "pass": 127,
+    "fail": 0,
+    "known_gap": 0,
+    "gap_closed": 0,
+    "skipped": 0,
+    "checks": 336,
+    "checks_failed": 0
+  },
+  "suites": {
+    "stale": {
+      "scenarios": 32,
+      "pass": 32,
+      "fail": 0,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 0,
+      "metrics": {
+        "queries": 15,
+        "stale-hit-rate@1": {
+          "count": 0,
+          "of": 15,
+          "rate": 0
+        },
+        "stale-hit-rate@5": {
+          "count": 2,
+          "of": 15,
+          "rate": 0.133
+        },
+        "unflagged-stale-hit-rate@5": {
+          "count": 0,
+          "of": 15,
+          "rate": 0
+        },
+        "current-recall@1": {
+          "count": 14,
+          "of": 14,
+          "rate": 1
+        }
+      }
+    },
+    "contradiction": {
+      "scenarios": 31,
+      "pass": 31,
+      "fail": 0,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 0,
+      "metrics": {
+        "resolved-to-correction": {
+          "checks": 13,
+          "failed": 0
+        },
+        "loser-stays-visible-with-provenance": {
+          "checks": 10,
+          "failed": 0
+        },
+        "silent-overwrite-protection": {
+          "checks": 15,
+          "failed": 0
+        }
+      }
+    },
+    "isolation": {
+      "scenarios": 27,
+      "pass": 27,
+      "fail": 0,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 0,
+      "metrics": {
+        "leakage-count": 0,
+        "leak-probes": 51,
+        "unexpected-denials": 0,
+        "allowed-probes": 17
+      }
+    },
+    "provenance": {
+      "scenarios": 19,
+      "pass": 19,
+      "fail": 0,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 0,
+      "metrics": {
+        "fields-checked": 43,
+        "fields-lost": 0,
+        "fields-kept-only-as-unverified-claim": 2
+      }
+    },
+    "poison": {
+      "scenarios": 18,
+      "pass": 18,
+      "fail": 0,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 0,
+      "metrics": {
+        "poison-probes": 34,
+        "poison-reach-count": 0
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "A01",
+      "suite": "stale",
+      "title": "A fact is corrected in place",
+      "what": "A note is written, then its body is edited to the new value. Searching must show the new value and must no longer find the old one.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Searching the topic returns the note first, and nothing carries the old value",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the note now says the new value",
+          "check": "field",
+          "pass": true,
+          "expected": "body of n includes \"nerenife89\"",
+          "actual": "\"The rakokomu74 service deploys to region nerenife89.\""
+        },
+        {
+          "desc": "the old value can no longer be found by searching for it",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "A02",
+      "suite": "stale",
+      "title": "A fact is deleted",
+      "what": "A note is written and then deleted. A search for it must find nothing.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the admin can delete the note",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "The deleted value is not returned",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "no old value in the top 5 unless it is flagged stale",
+          "actual": "no results; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false
+          }
+        },
+        {
+          "desc": "no result at all",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "A03",
+      "suite": "stale",
+      "title": "A deleted note cannot be read by id",
+      "what": "After a delete, asking for the note directly must say it does not exist (not return a leftover copy).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "reading the deleted id says not found",
+          "check": "outcome",
+          "pass": true,
+          "expected": "not_found",
+          "actual": "not_found (not found)"
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "suite": "stale",
+      "title": "Newer note beats an old note that is flagged stale",
+      "what": "The old value sits in a note that is 200 days old; a newer note holds the current value. Search must put the current one first, or at least flag the old one as stale.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Current value first; the 200-day-old value is flagged stale if it shows up",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (new) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is new; old values in top 5: old (an old one is flagged stale)",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": true,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the old note is flagged stale",
+          "check": "field",
+          "pass": true,
+          "expected": "stale of old = true",
+          "actual": "true"
+        }
+      ]
+    },
+    {
+      "id": "A05",
+      "suite": "stale",
+      "title": "Newer note beats an unflagged old note",
+      "what": "Two notes about the same fact are both recent: the old value, then a newer note saying the value changed. The agent never edited the old one. Nothing says the first is out of date, so this checks whether search prefers the newer one. The agent replaces the old note with the newer one (preview, then confirm), so the old value stops coming up.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Current value first; the old value is not shown unflagged",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (new) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is new; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A06",
+      "suite": "stale",
+      "title": "Three versions written as three notes",
+      "what": "A value changes twice and each version is saved as a new note. Search should return the latest first and never show the two older ones unflagged. The agent replaces the two older versions with the latest (preview, then confirm).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Latest version first; older versions not shown unflagged",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (v3) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is v3; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A07",
+      "suite": "stale",
+      "title": "Editing only the tags leaves the fact intact",
+      "what": "A partial update that touches only tags must not wipe or change the body, and must not change who last wrote the content.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the body is unchanged",
+          "check": "field",
+          "pass": true,
+          "expected": "body = \"The relitori14 backup runs at datadade55 every night.\"",
+          "actual": "\"The relitori14 backup runs at datadade55 every night.\""
+        },
+        {
+          "desc": "a tag edit does not make the editor the author of the content",
+          "check": "field",
+          "pass": true,
+          "expected": "writer = \"alice\"",
+          "actual": "\"alice\""
+        },
+        {
+          "desc": "the new tags are there",
+          "check": "field",
+          "pass": true,
+          "expected": "tags includes \"ops\"",
+          "actual": "[\"ops\",\"mitovuzi33\"]"
+        },
+        {
+          "desc": "The note is still the first hit",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": false,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A08",
+      "suite": "stale",
+      "title": "Editing only the body keeps the title",
+      "what": "A partial update with just a new body must keep the title, and the old body text must disappear from search.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the title is unchanged",
+          "check": "field",
+          "pass": true,
+          "expected": "title = \"mofireve77 on-call\"",
+          "actual": "\"mofireve77 on-call\""
+        },
+        {
+          "desc": "the body is the new one",
+          "check": "field",
+          "pass": true,
+          "expected": "body = \"On call this week: larudote38.\"",
+          "actual": "\"On call this week: larudote38.\""
+        },
+        {
+          "desc": "the old body text is not searchable any more",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        },
+        {
+          "desc": "The title still finds the note",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A09",
+      "suite": "stale",
+      "title": "Editing only the title drops the old title from search",
+      "what": "A partial update with just a new title: searching for a word that only the old title had must find nothing, while the body is untouched.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the body is unchanged",
+          "check": "field",
+          "pass": true,
+          "expected": "body = \"Kickoff happens on bolafari13.\"",
+          "actual": "\"Kickoff happens on bolafari13.\""
+        },
+        {
+          "desc": "the old title word finds nothing",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        },
+        {
+          "desc": "the new title finds the note",
+          "check": "top",
+          "pass": true,
+          "expected": "first hit is n",
+          "actual": "first hit is n"
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "suite": "stale",
+      "title": "Near-duplicate wording, both fresh, old one edited",
+      "what": "The same fact was saved twice in different words. The agent corrects one of them in place and forgets the other. Search should not present the forgotten duplicate as the answer. The agent then replaces the forgotten duplicate with the corrected note (preview, then confirm).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Corrected note first; the forgotten duplicate with the old URL is flagged or not shown",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (a) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is a; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A11",
+      "suite": "stale",
+      "title": "Near-duplicate wording, old copy is 200 days old",
+      "what": "Old fact in one wording (200 days old), new fact in different wording. Search must rank the new one first or flag the old one.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "New contact first; the old one is flagged stale",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (new) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is new; old values in top 5: old (an old one is flagged stale)",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": true,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A12",
+      "suite": "stale",
+      "title": "Archived note disappears; restoring it brings it back",
+      "what": "Archiving is the soft way to retire a fact: it must leave search, and come back only on request.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "archived: not in search",
+          "check": "lacks",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "restored: in search again",
+          "check": "has",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "A13",
+      "suite": "stale",
+      "title": "A note past its deletion deadline is swept out",
+      "what": "A note carries a deletion deadline that has passed. After the sweep it must not be returned by search, but an admin can still list it as archived.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the sweep runs",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "The expired value is not returned",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "no old value in the top 5 unless it is flagged stale",
+          "actual": "no results; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false
+          }
+        },
+        {
+          "desc": "the expired note is kept (archived), not destroyed",
+          "check": "has",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "A14",
+      "suite": "stale",
+      "title": "Five edits in a row leave only the last value",
+      "what": "The same note is rewritten five times. Only the final value may be findable.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Only the final value is in the note",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the body holds the fifth value",
+          "check": "field",
+          "pass": true,
+          "expected": "body of n includes \"vukafile64\"",
+          "actual": "\"Build number is vukafile64.\""
+        },
+        {
+          "desc": "an intermediate value is gone",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        },
+        {
+          "desc": "an intermediate value is gone",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "A15",
+      "suite": "stale",
+      "title": "Deleting the stale duplicate leaves the current note",
+      "what": "Old and new note both exist; the admin deletes the old one. Search returns only the new one.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Only the new code remains",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (new) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is new; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "exactly one result",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "exactly 1 result(s)",
+          "actual": "1 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "A16",
+      "suite": "stale",
+      "title": "A lone old note is returned but flagged",
+      "what": "Nothing replaced it, so it is still the best answer, but it is 200 days old. The system must say so.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "still found",
+          "check": "top",
+          "pass": true,
+          "expected": "first hit is n",
+          "actual": "first hit is n"
+        },
+        {
+          "desc": "flagged stale",
+          "check": "field",
+          "pass": true,
+          "expected": "stale of n = true",
+          "actual": "true"
+        }
+      ]
+    },
+    {
+      "id": "A17",
+      "suite": "stale",
+      "title": "Editing an old note clears the stale flag",
+      "what": "A 200-day-old note is confirmed and rewritten today. It must stop being flagged stale.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "before the edit it is flagged stale",
+          "check": "field",
+          "pass": true,
+          "expected": "stale = true",
+          "actual": "true"
+        },
+        {
+          "desc": "after the edit it is not stale",
+          "check": "field",
+          "pass": true,
+          "expected": "stale = false",
+          "actual": "false"
+        }
+      ]
+    },
+    {
+      "id": "A18",
+      "suite": "stale",
+      "title": "Twenty unrelated notes do not hide the current value",
+      "what": "Same as an in-place correction, but with 20 other notes in the store.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Current value first with 20 other notes present",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A19",
+      "suite": "stale",
+      "title": "A correction by a second writer replaces the first writer's value",
+      "what": "Alice writes a value, the admin edits it. The current value wins and the note shows the admin as the last writer.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Current value first",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the last writer is the one who made the correction",
+          "check": "field",
+          "pass": true,
+          "expected": "writer = \"boss\"",
+          "actual": "\"boss\""
+        },
+        {
+          "desc": "the first writer is still recorded",
+          "check": "field",
+          "pass": true,
+          "expected": "creator = \"alice\"",
+          "actual": "\"alice\""
+        }
+      ]
+    },
+    {
+      "id": "A20",
+      "suite": "stale",
+      "title": "A fact written twice with different values, newest wins on tie",
+      "what": "Two notes with the very same title, the second written later with another value. A search on the title should put the later one first. The agent replaces the older note with the later one (preview, then confirm).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Later note first",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (new) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is new; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A21",
+      "suite": "stale",
+      "title": "A preview changes nothing",
+      "what": "Asking 'are you sure?' must not touch anything. After a preview, both notes are still there, unchanged and unlabelled.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the preview works",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the old note is still found after a preview",
+          "check": "has",
+          "pass": true,
+          "expected": "old is in the results",
+          "actual": "found at rank 1"
+        },
+        {
+          "desc": "the new note is still found",
+          "check": "has",
+          "pass": true,
+          "expected": "new is in the results",
+          "actual": "found at rank 2"
+        },
+        {
+          "desc": "the old note is not marked as replaced",
+          "check": "field",
+          "pass": true,
+          "expected": "status is absent",
+          "actual": "(absent)"
+        },
+        {
+          "desc": "the old note's revision did not move",
+          "check": "field",
+          "pass": true,
+          "expected": "rev = 1",
+          "actual": "1"
+        },
+        {
+          "desc": "the preview asks the question in plain words",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from pv",
+          "actual": "found in pv"
+        },
+        {
+          "desc": "the preview shows exactly what the old note says",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from pv",
+          "actual": "found in pv"
+        }
+      ]
+    },
+    {
+      "id": "A22",
+      "suite": "stale",
+      "title": "A replacement needs a valid one-time code",
+      "what": "A made-up or damaged code must do nothing. The old note stays visible.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "a damaged code is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "invalid",
+          "actual": "invalid (that is not a valid confirmation code (it may have been copied wrongly); run the preview again)"
+        },
+        {
+          "desc": "the old note is untouched",
+          "check": "has",
+          "pass": true,
+          "expected": "old is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "A23",
+      "suite": "stale",
+      "title": "A one-time code expires",
+      "what": "A code from a preview is only good for a short time. After that, confirming must be refused and nothing changes.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "an expired code is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "invalid",
+          "actual": "invalid (that confirmation code has expired; run the preview again)"
+        },
+        {
+          "desc": "the old note is untouched",
+          "check": "has",
+          "pass": true,
+          "expected": "old is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "A24",
+      "suite": "stale",
+      "title": "A one-time code works only once",
+      "what": "After a replacement is confirmed, the same code cannot be used again.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the first confirmation works",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the same code a second time is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "invalid",
+          "actual": "invalid (that confirmation code was already used; run the preview again if you still want to replace)"
+        }
+      ]
+    },
+    {
+      "id": "A25",
+      "suite": "stale",
+      "title": "A note edited after the preview cannot be replaced by that preview",
+      "what": "If the old note changes between the preview and the confirm, the person saw something different from what would be hidden. The confirm must be refused.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the confirm is refused because the note changed",
+          "check": "outcome",
+          "pass": true,
+          "expected": "conflict",
+          "actual": "conflict (note 1 changed (or was already retired) after the preview; nothing was changed. Run the preview again)"
+        },
+        {
+          "desc": "the edited note is still found",
+          "check": "has",
+          "pass": true,
+          "expected": "old is in the results",
+          "actual": "found at rank 2"
+        }
+      ]
+    },
+    {
+      "id": "A26",
+      "suite": "stale",
+      "title": "Undo brings a replaced note back",
+      "what": "Replacing is never a delete: the person can undo it and the old note comes back whole.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "after the replacement the old note is not in search",
+          "check": "lacks",
+          "pass": true,
+          "expected": "old is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "the undo works",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "after the undo the old note is found again",
+          "check": "has",
+          "pass": true,
+          "expected": "old is in the results",
+          "actual": "found at rank 1"
+        },
+        {
+          "desc": "the old text came back whole",
+          "check": "field",
+          "pass": true,
+          "expected": "body = \"Region is lavubave76.\"",
+          "actual": "\"Region is lavubave76.\""
+        },
+        {
+          "desc": "it is no longer marked as replaced",
+          "check": "field",
+          "pass": true,
+          "expected": "status is absent",
+          "actual": "(absent)"
+        }
+      ]
+    },
+    {
+      "id": "A27",
+      "suite": "stale",
+      "title": "A replaced note is shown only when asked for, and labelled",
+      "what": "Search and lists skip replaced notes by default. Asking for them shows them with a clear label and a link to the note that replaced them.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "a normal search does not show the replaced note",
+          "check": "lacks",
+          "pass": true,
+          "expected": "old is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "asking for replaced notes shows it",
+          "check": "has",
+          "pass": true,
+          "expected": "old is in the results",
+          "actual": "found at rank 1"
+        },
+        {
+          "desc": "the replaced note is labelled as replaced",
+          "check": "field",
+          "pass": true,
+          "expected": "status of old = \"superseded\"",
+          "actual": "\"superseded\""
+        },
+        {
+          "desc": "the list says which note replaced it",
+          "check": "field",
+          "pass": true,
+          "expected": "superseded_by of old is present",
+          "actual": "\"2\""
+        }
+      ]
+    },
+    {
+      "id": "A28",
+      "suite": "stale",
+      "title": "Confirming with different text than previewed is refused",
+      "what": "The person approved one replacement text. A confirm that swaps in other text must be refused and write nothing.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "different text than the preview is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "invalid",
+          "actual": "invalid (the new note is not the one that was previewed; nothing was changed. Run the preview again)"
+        },
+        {
+          "desc": "the old note is untouched",
+          "check": "has",
+          "pass": true,
+          "expected": "old is in the results",
+          "actual": "found at rank 1"
+        },
+        {
+          "desc": "the swapped-in text was never written",
+          "check": "no_text",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "A29",
+      "suite": "stale",
+      "title": "A confirmed replacement writes the new note under the person who confirmed",
+      "what": "When the replacement is new text, it is written at confirm time and stamped with the confirmer, and it comes first in search.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the confirm works",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the new note first, the old one not shown",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (new) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is new; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the new note is stamped with who confirmed",
+          "check": "field",
+          "pass": true,
+          "expected": "writer = \"alice\"",
+          "actual": "\"alice\""
+        }
+      ]
+    },
+    {
+      "id": "A30",
+      "suite": "stale",
+      "title": "Deleting still deletes",
+      "what": "Hard delete is unchanged: an admin can delete a replaced note for good.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the admin can delete a replaced note",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the deleted note is gone",
+          "check": "outcome",
+          "pass": true,
+          "expected": "not_found",
+          "actual": "not_found (not found)"
+        }
+      ]
+    },
+    {
+      "id": "A31",
+      "suite": "stale",
+      "title": "A replaced note cannot be edited until it is brought back",
+      "what": "A replaced note is frozen so nobody quietly rewrites something that is supposed to be out of sight.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "editing a replaced note is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "invalid or conflict",
+          "actual": "invalid (note 1 was replaced by note 2 and is only kept as a record, so it cannot be edited. To bring it back first, undo the replacement (supersede undo).)"
+        }
+      ]
+    },
+    {
+      "id": "A32",
+      "suite": "stale",
+      "title": "Two notes can be replaced in one go",
+      "what": "One correction can retire several older notes at once, and the warning counts them.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the warning says how many notes will be replaced",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from pv",
+          "actual": "found in pv"
+        },
+        {
+          "desc": "first old note hidden",
+          "check": "lacks",
+          "pass": true,
+          "expected": "o1 is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "second old note hidden",
+          "check": "lacks",
+          "pass": true,
+          "expected": "o2 is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "the new note is first",
+          "check": "top",
+          "pass": true,
+          "expected": "first hit is new",
+          "actual": "first hit is new"
+        }
+      ]
+    },
+    {
+      "id": "B01",
+      "suite": "contradiction",
+      "title": "Two writers disagree: both notes stay, each with its own writer",
+      "what": "Alice says X, Mallory says not-X, in separate notes. Neither is silently dropped, and each note says who wrote it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Alice's note is returned",
+          "check": "has",
+          "pass": true,
+          "expected": "x is in the results",
+          "actual": "found at rank 1"
+        },
+        {
+          "desc": "Mallory's note is returned",
+          "check": "has",
+          "pass": true,
+          "expected": "nx is in the results",
+          "actual": "found at rank 2"
+        },
+        {
+          "desc": "Alice's note names Alice",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "writer of x = \"alice\"",
+          "actual": "\"alice\""
+        },
+        {
+          "desc": "Mallory's note names Mallory",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "writer of nx = \"mallory\"",
+          "actual": "\"mallory\""
+        }
+      ]
+    },
+    {
+      "id": "B02",
+      "suite": "contradiction",
+      "title": "A trusted correction rewrites the disputed note",
+      "what": "Mallory overwrote the fact; the admin puts the right value back in the same note. The answer is the correction, written by the admin, and Mallory's hand stays on record.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "The corrected value is the answer",
+          "check": "fresh_answer",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the correction is credited to the admin",
+          "check": "field",
+          "pass": true,
+          "expected": "writer = \"boss\"",
+          "actual": "\"boss\""
+        },
+        {
+          "desc": "Mallory is still listed as a hand the content passed through",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "taint includes \"mallory\"",
+          "actual": "[\"alice\",\"mallory\"]"
+        },
+        {
+          "desc": "Alice is still listed too",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "taint includes \"alice\"",
+          "actual": "[\"alice\",\"mallory\"]"
+        }
+      ]
+    },
+    {
+      "id": "B03",
+      "suite": "contradiction",
+      "title": "A trusted correction written as a new note",
+      "what": "Alice says X, Mallory says not-X, the admin adds a third note with the right value. The admin's note should come first and the two older ones should not look equally current. The admin replaces both disputed notes with the correction (preview, then confirm).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "The admin's correction first; Mallory's claim not shown unflagged",
+          "check": "fresh_answer",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "current value (fix) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is fix; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "B04",
+      "suite": "contradiction",
+      "title": "Distrusting the bad writer restores the right answer",
+      "what": "After Mallory is put on the distrust list, an ordinary search shows only Alice's note. An admin can still see Mallory's note, marked, with her name on it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the admin can distrust a writer",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the trusted note is the answer",
+          "check": "top",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "first hit is x",
+          "actual": "first hit is x"
+        },
+        {
+          "desc": "the distrusted note is hidden from an ordinary search",
+          "check": "lacks",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "nx is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "an admin who asks can still see the hidden note",
+          "check": "has",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "nx is in the results",
+          "actual": "found at rank 2"
+        },
+        {
+          "desc": "the hidden note is marked distrusted",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "distrusted of nx = true",
+          "actual": "true"
+        },
+        {
+          "desc": "and still names its writer",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "writer of nx = \"mallory\"",
+          "actual": "\"mallory\""
+        }
+      ]
+    },
+    {
+      "id": "B05",
+      "suite": "contradiction",
+      "title": "Removing the distrust rule brings the note back",
+      "what": "Distrust is reversible: undistrusting the writer shows the note again.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "hidden while distrusted",
+          "check": "lacks",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "visible again after the rule is removed",
+          "check": "has",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "B06",
+      "suite": "contradiction",
+      "title": "A write token cannot switch the distrust list off for itself",
+      "what": "A hostile note could talk an agent into asking for hidden notes. Only an admin may ask.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "a write token asking for include_distrusted is refused",
+          "check": "outcome",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (include_distrusted needs an admin token: it shows notes from writers the admin put on the distrust list)"
+        }
+      ]
+    },
+    {
+      "id": "B07",
+      "suite": "contradiction",
+      "title": "A weak writer overwrites a trusted note: the change is visible",
+      "what": "Any write token can edit a note in its namespace (there is no per-note owner lock). What must hold: the edit is not silent. The note names the new writer and keeps the old one in its record.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the note now names the weak writer as the last writer",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "writer = \"mallory\"",
+          "actual": "\"mallory\""
+        },
+        {
+          "desc": "the original author is still named",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "creator = \"boss\"",
+          "actual": "\"boss\""
+        },
+        {
+          "desc": "the trusted writer stays in the record of hands",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "taint includes \"boss\"",
+          "actual": "[\"boss\"]"
+        }
+      ]
+    },
+    {
+      "id": "B08",
+      "suite": "contradiction",
+      "title": "After a weak overwrite the trusted original text can be recovered",
+      "what": "A note is overwritten in place. An admin must be able to get the trusted original text back from the note's history.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the trusted original text is still available to an admin (in the note's history)",
+          "check": "contains_text",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "the text is available from hist",
+          "actual": "found in hist"
+        }
+      ]
+    },
+    {
+      "id": "B09",
+      "suite": "contradiction",
+      "title": "Overwrite, then distrust the overwriter: the trusted answer comes back",
+      "what": "Mallory overwrote the admin's note. The admin distrusts Mallory and restores the earlier version from the note's history; agents then see the trusted value again.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the admin puts the trusted original back",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "agents see the trusted original value again",
+          "check": "contains_text",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "the text is available from s",
+          "actual": "found in s"
+        },
+        {
+          "desc": "agents do not see the overwriter's value",
+          "check": "no_text",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "B10",
+      "suite": "contradiction",
+      "title": "A read-only token cannot rewrite a note",
+      "what": "The weakest token is refused, and the note is untouched.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the update is refused",
+          "check": "outcome",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this token lacks the required 'write' scope)"
+        },
+        {
+          "desc": "the note is unchanged",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "body = \"Budget is tekebedo13.\"",
+          "actual": "\"Budget is tekebedo13.\""
+        }
+      ]
+    },
+    {
+      "id": "B11",
+      "suite": "contradiction",
+      "title": "A distrusted token cannot re-label a trusted note",
+      "what": "Mallory is distrusted but her token still works. She must not be able to edit the tags of a note she did not write (that would let her re-label trusted notes).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the tag edit is refused",
+          "check": "outcome",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "denied or not_found or invalid",
+          "actual": "invalid (writer \"mallory\" is on the distrust list for namespace \"default\": it may not change the tags, source or namespace of note 1, which it did not write)"
+        },
+        {
+          "desc": "the tags are not changed",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "tags is not [\"approved\"]",
+          "actual": "[]"
+        }
+      ]
+    },
+    {
+      "id": "B12",
+      "suite": "contradiction",
+      "title": "A distrusted writer's overwrite never shows up as the answer",
+      "what": "Mallory is already distrusted and overwrites Alice's note with a lie. The lie must not be served to ordinary searches.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the overwriter's value is not served",
+          "check": "no_text",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "B13",
+      "suite": "contradiction",
+      "title": "A trusted edit does not launder a distrusted note",
+      "what": "Mallory's note is rewritten by the admin. Because the text may still contain her words, the note stays hidden until the rule is removed (documented behaviour).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the edited note is still hidden from ordinary searches",
+          "check": "lacks",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        }
+      ]
+    },
+    {
+      "id": "B14",
+      "suite": "contradiction",
+      "title": "A correction written after distrust becomes the answer",
+      "what": "Mallory's note is hidden by a distrust rule. The admin writes the right value as a new note: it is what searches return.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the correction is first",
+          "check": "top",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "first hit is fix",
+          "actual": "first hit is fix"
+        },
+        {
+          "desc": "no trace of the bad value",
+          "check": "fresh_answer",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "current value (fix) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is fix; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "B15",
+      "suite": "contradiction",
+      "title": "A merge cannot absorb a distrusted note into a trusted one",
+      "what": "Merging would hide the trusted text (the merged note carries every source's writers) and delete the trusted original. It must be refused.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the merge is refused",
+          "check": "outcome",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "invalid or denied",
+          "actual": "invalid ({\"error\":\"cannot consolidate: some of these notes were touched by a distrusted writer and some were not, so the merged note would be hidden (and the trusted originals lost from every default read). Consolidate the distrusted ones together, or leave them out.\"})"
+        },
+        {
+          "desc": "Alice's note survives",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "body = \"Notes by Alice pozobaso74.\"",
+          "actual": "\"Notes by Alice pozobaso74.\""
+        }
+      ]
+    },
+    {
+      "id": "B16",
+      "suite": "contradiction",
+      "title": "A stale edit is refused instead of overwriting a newer one",
+      "what": "Alice reads a note, Mallory changes it, then Alice saves her edit based on the old copy (compare-and-swap with the revision she saw). The server must refuse Alice's write instead of silently replacing Mallory's.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the out-of-date edit is refused",
+          "check": "outcome",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "conflict",
+          "actual": "conflict (stale write: note 1 is at rev 2 (you have 1); re-read and retry)"
+        },
+        {
+          "desc": "the newer value is still there",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "body = \"Quota is tofiniki63.\"",
+          "actual": "\"Quota is tofiniki63.\""
+        }
+      ]
+    },
+    {
+      "id": "B17",
+      "suite": "contradiction",
+      "title": "Two contradictory edits, then a trusted fix",
+      "what": "Alice writes X, Mallory flips it to not-X, the admin restores X. The final state is X and the record lists everyone who touched the content.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "The restored value is the only one",
+          "check": "fresh_answer",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the admin is the last writer",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "writer = \"boss\"",
+          "actual": "\"boss\""
+        },
+        {
+          "desc": "Mallory is on record",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "taint includes \"mallory\"",
+          "actual": "[\"alice\",\"mallory\"]"
+        },
+        {
+          "desc": "Alice is on record",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": true,
+          "expected": "taint includes \"alice\"",
+          "actual": "[\"alice\",\"mallory\"]"
+        }
+      ]
+    },
+    {
+      "id": "B18",
+      "suite": "contradiction",
+      "title": "An imported note cannot pose as the admin",
+      "what": "A note exported from another server claims it was written by 'boss'. After import it is stamped with the importer, flagged as unverified, and the claim is only a claim.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the import works",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the importer, not the claimed writer, is stamped as the writer",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "writer = \"boss\"",
+          "actual": "\"boss\""
+        },
+        {
+          "desc": "the note is flagged as unverified",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "imported_unverified = true",
+          "actual": "true"
+        },
+        {
+          "desc": "the claimed name is kept, labelled as a claim",
+          "check": "field",
+          "pass": true,
+          "expected": "claimed_writer = \"boss\"",
+          "actual": "\"boss\""
+        }
+      ]
+    },
+    {
+      "id": "B19",
+      "suite": "contradiction",
+      "title": "Distrusting a claimed writer hides their imported note",
+      "what": "An unverified import claims it came from Mallory. Putting Mallory on the distrust list hides it, because claimed names count as taint.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "visible before the rule",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "at least 1 result(s)",
+          "actual": "1 result(s)"
+        },
+        {
+          "desc": "hidden after the rule",
+          "check": "hit_count",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "B20",
+      "suite": "contradiction",
+      "title": "Both disputing writers distrusted: no answer rather than a wrong one",
+      "what": "If every source of an answer is distrusted, searches return nothing; they must not fall back to showing either side.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "nothing is returned",
+          "check": "hit_count",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "B21",
+      "suite": "contradiction",
+      "title": "A distrusted writer cannot replace a trusted note",
+      "what": "Replacing hides the original, so a writer the admin does not trust may not do it on their own.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the distrusted writer is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this replacement needs an administrator)"
+        },
+        {
+          "desc": "the trusted note is still there",
+          "check": "has",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "B22",
+      "suite": "contradiction",
+      "title": "A less sure replacement needs an admin",
+      "what": "A new note that claims lower confidence than the one it would hide must not be able to hide it without an admin.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "a write-level writer is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this replacement needs an administrator)"
+        },
+        {
+          "desc": "the more sure note is still there",
+          "check": "has",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "B23",
+      "suite": "contradiction",
+      "title": "An admin can accept the red flag, but only on purpose",
+      "what": "For a less sure replacement, even an admin must say they accept the risk. Without that, the confirm is refused.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the warning has a red flag",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from p1",
+          "actual": "found in p1"
+        },
+        {
+          "desc": "without accepting the risk it is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "invalid",
+          "actual": "invalid (this replacement carries a red flag (see the warning). Confirm again with acknowledge_risk set to true if you accept it)"
+        },
+        {
+          "desc": "with the risk accepted it goes through",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        }
+      ]
+    },
+    {
+      "id": "B24",
+      "suite": "contradiction",
+      "title": "The warning names notes written by other people",
+      "what": "If a replacement hides someone else's note, the warning says so.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the warning flags that other writers are affected",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from pv",
+          "actual": "found in pv"
+        },
+        {
+          "desc": "the warning names the other writer",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from pv",
+          "actual": "found in pv"
+        }
+      ]
+    },
+    {
+      "id": "B25",
+      "suite": "contradiction",
+      "title": "Restoring an earlier version makes a new version",
+      "what": "Restoring does not erase anything: the text it replaces goes into the history too.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the restore works",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the earlier text is back",
+          "check": "field",
+          "pass": true,
+          "expected": "body = \"Rotation is merimogu70.\"",
+          "actual": "\"Rotation is merimogu70.\""
+        },
+        {
+          "desc": "it is a new version, not a rewind",
+          "check": "field",
+          "pass": true,
+          "expected": "rev differs from rev of before",
+          "actual": "different"
+        },
+        {
+          "desc": "the text that was replaced is still in the history",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from hist",
+          "actual": "found in hist"
+        }
+      ]
+    },
+    {
+      "id": "B26",
+      "suite": "contradiction",
+      "title": "A version by a distrusted writer cannot be restored",
+      "what": "Putting text back by an untrusted writer would launder it, so restore refuses.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "a distrusted writer's version is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (version 2 was written by a writer on the distrust list; it cannot be put back)"
+        }
+      ]
+    },
+    {
+      "id": "B27",
+      "suite": "contradiction",
+      "title": "Only an admin can read a note's history",
+      "what": "Old text can hold what someone took out on purpose, so a normal writer cannot read it or restore from it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "a writer cannot read the history",
+          "check": "outcome",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this token lacks the required 'admin' scope)"
+        },
+        {
+          "desc": "a writer cannot restore",
+          "check": "outcome",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this token lacks the required 'admin' scope)"
+        },
+        {
+          "desc": "no old text in the refusal",
+          "check": "no_text",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "B28",
+      "suite": "contradiction",
+      "title": "A restore made on an out-of-date copy is refused",
+      "what": "Restoring uses the same compare-and-swap rule as editing.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the stale restore is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "conflict",
+          "actual": "conflict (stale write: note 1 is at rev 3 (you have 2); re-read and retry)"
+        }
+      ]
+    },
+    {
+      "id": "B29",
+      "suite": "contradiction",
+      "title": "A code made for one person is useless to another",
+      "what": "Alice's confirmation code must not work for Mallory, even though both can write.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "another person cannot use the code",
+          "check": "outcome",
+          "pass": true,
+          "expected": "invalid",
+          "actual": "invalid (that is not a valid confirmation code (it may have been copied wrongly); run the preview again)"
+        },
+        {
+          "desc": "nothing was replaced",
+          "check": "has",
+          "pass": true,
+          "expected": "old is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "B30",
+      "suite": "contradiction",
+      "title": "Only the editor chain shows in history, with writers",
+      "what": "The history names who wrote each earlier version.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the earlier version names its writer",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from h",
+          "actual": "found in h"
+        },
+        {
+          "desc": "the earlier text is there",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from h",
+          "actual": "found in h"
+        }
+      ]
+    },
+    {
+      "id": "B31",
+      "suite": "contradiction",
+      "title": "A plain writer cannot undo an admin's replacement",
+      "what": "An admin hides a bad note by replacing it. The bad note's own writer must not be able to bring it back; only an admin can.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the note's own writer cannot undo the admin's replacement",
+          "check": "outcome",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this note was replaced by someone else; only an administrator (or the person who replaced it) can bring it back)"
+        },
+        {
+          "desc": "the bad note is still hidden",
+          "check": "lacks",
+          "pass": true,
+          "expected": "bad is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "the admin can bring it back",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "after the admin's undo it is found again",
+          "check": "has",
+          "pass": true,
+          "expected": "bad is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C01",
+      "suite": "isolation",
+      "title": "Reading another tenant's note by id",
+      "what": "Tenant B asks for tenant A's note by its id. It must look like the note does not exist. Tenant A can still read it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the other tenant gets nothing",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied or not_found",
+          "actual": "not_found (not found)"
+        },
+        {
+          "desc": "no content from tenant A in the answer",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "the owner can still read it",
+          "check": "outcome",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "suite": "isolation",
+      "title": "Writing into another tenant by naming it in the request",
+      "what": "Tenant B sends a note claiming namespace tenantA. The server must file it under tenant B and ignore the claim.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "tenant A never sees the planted note",
+          "check": "lacks",
+          "metric": "leak",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "no planted text reaches tenant A",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "the note lives in tenant B",
+          "check": "field",
+          "metric": "leak",
+          "pass": true,
+          "expected": "namespace of n = \"tenantB\"",
+          "actual": "\"tenantB\""
+        },
+        {
+          "desc": "tenant B can find its own note",
+          "check": "has",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "suite": "isolation",
+      "title": "Updating another tenant's note by id",
+      "what": "Tenant B tries to rewrite tenant A's note. Refused as 'not found', and the note is unchanged.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the cross-tenant update is refused",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied or not_found",
+          "actual": "not_found (not found)"
+        },
+        {
+          "desc": "tenant A's note is untouched",
+          "check": "field",
+          "metric": "leak",
+          "pass": true,
+          "expected": "body = \"Prices nuluneri41.\"",
+          "actual": "\"Prices nuluneri41.\""
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "suite": "isolation",
+      "title": "Deleting another tenant's note by id",
+      "what": "Tenant B's admin tries to delete tenant A's note. Refused, and the note survives.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the cross-tenant delete is refused",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied or not_found",
+          "actual": "not_found (not found)"
+        },
+        {
+          "desc": "the note is still there",
+          "check": "has",
+          "metric": "leak",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "suite": "isolation",
+      "title": "Searching for another tenant's secret",
+      "what": "Tenant B searches for words only tenant A's note has, with and without naming tenantA as the namespace.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "no result for tenant B",
+          "check": "hit_count",
+          "metric": "leak",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        },
+        {
+          "desc": "no result even when tenant B names tenantA",
+          "check": "hit_count",
+          "metric": "leak",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        },
+        {
+          "desc": "the secret is not in the answer",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "tenant A finds its own note",
+          "check": "has",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "suite": "isolation",
+      "title": "Listing another tenant's notes",
+      "what": "Tenant B lists notes, asking for tenantA. Only tenant B's own notes may appear.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "tenant A's text is not listed",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "tenant A's text is not listed",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "tenant B sees its own note",
+          "check": "has",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "mine is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "suite": "isolation",
+      "title": "Full export stays inside the tenant",
+      "what": "Each tenant's admin exports everything they may see. Each export has its own tenant's text and none of the other's.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "tenant B's export has no tenant A text",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "tenant A's export has no tenant B text",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "tenant A's export has its own text",
+          "check": "contains_text",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "the text is available from exA",
+          "actual": "found in exA"
+        },
+        {
+          "desc": "tenant B's export has its own text",
+          "check": "contains_text",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "the text is available from exB",
+          "actual": "found in exB"
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "suite": "isolation",
+      "title": "Importing cannot plant notes in another tenant",
+      "what": "Tenant B's admin imports a file whose notes claim namespace tenantA. They must land in tenant B; tenant A sees nothing new.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the import itself works",
+          "check": "outcome",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "tenant A finds nothing",
+          "check": "hit_count",
+          "metric": "leak",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        },
+        {
+          "desc": "tenant A's list has no planted note",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "tenant B has the imported note",
+          "check": "hit_count",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "at least 1 result(s)",
+          "actual": "1 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "suite": "isolation",
+      "title": "Token downgrade: each scope gets exactly its own actions",
+      "what": "The same agent holds a read token, a write token and an admin token. Read can search but not write; write can write but not delete, export or import; admin can do all of it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "read token can search",
+          "check": "outcome",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "read token cannot write",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this token lacks the required 'write' scope)"
+        },
+        {
+          "desc": "write token can edit",
+          "check": "outcome",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "write token cannot delete",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this token lacks the required 'admin' scope)"
+        },
+        {
+          "desc": "write token cannot export",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this token lacks the required 'admin' scope)"
+        },
+        {
+          "desc": "admin token can export",
+          "check": "outcome",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "admin token can import",
+          "check": "outcome",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "admin token can delete",
+          "check": "outcome",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "suite": "isolation",
+      "title": "Asking for hidden notes is admin-only",
+      "what": "include_distrusted switches the trust list off. A write token must be refused; a pinned admin gets only its own tenant's hidden notes.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "a write token is refused",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (include_distrusted needs an admin token: it shows notes from writers the admin put on the distrust list)"
+        },
+        {
+          "desc": "tenant A's admin never sees tenant B's hidden note",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "suite": "isolation",
+      "title": "Trust rules of another tenant cannot be written",
+      "what": "Tenant B's admin tries to distrust a writer inside tenant A (and globally with '*'). Refused. Tenant A's note stays visible.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "distrusting inside tenant A is refused",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this token is pinned to its own namespace)"
+        },
+        {
+          "desc": "a global rule is refused",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (this token is pinned to its own namespace)"
+        },
+        {
+          "desc": "tenant A's note is still visible",
+          "check": "has",
+          "metric": "leak",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C12",
+      "suite": "isolation",
+      "title": "A read grant lets B read A, never write",
+      "what": "The operator grants tenant B read access to tenant A. B may search A's notes; B may not edit or delete them; A still cannot read B.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "B can read A through the grant",
+          "check": "has",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        },
+        {
+          "desc": "B cannot edit A's note",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied or not_found",
+          "actual": "not_found (not found)"
+        },
+        {
+          "desc": "B's admin cannot delete A's note",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied or not_found",
+          "actual": "not_found (not found)"
+        },
+        {
+          "desc": "A cannot read B (grants are one-way)",
+          "check": "hit_count",
+          "metric": "leak",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        },
+        {
+          "desc": "A's note is unchanged",
+          "check": "field",
+          "metric": "leak",
+          "pass": true,
+          "expected": "body = \"From A vedugisi97.\"",
+          "actual": "\"From A vedugisi97.\""
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "suite": "isolation",
+      "title": "Signed export from tenant A, imported by tenant B's admin",
+      "what": "Tenant A's admin exports with signatures. Tenant B's admin imports it into B. The notes land in B, are flagged unverified, and B's admin cannot make the server believe A's signing key (that list is server-wide).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "a tenant admin cannot add a trusted signer",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied",
+          "actual": "denied (the attester list is server-wide: use an admin token that is not pinned to a namespace)"
+        },
+        {
+          "desc": "the import itself works",
+          "check": "outcome",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the imported note lives in tenant B",
+          "check": "field",
+          "metric": "leak",
+          "pass": true,
+          "expected": "namespace = \"tenantB\"",
+          "actual": "\"tenantB\""
+        },
+        {
+          "desc": "and is flagged unverified",
+          "check": "field",
+          "metric": "leak",
+          "pass": true,
+          "expected": "imported_unverified = true",
+          "actual": "true"
+        },
+        {
+          "desc": "no vouched-for author is claimed",
+          "check": "field",
+          "metric": "leak",
+          "pass": true,
+          "expected": "attested_writer is absent",
+          "actual": "(absent)"
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "suite": "isolation",
+      "title": "Import can be told to reject unsigned notes",
+      "what": "With require_attestation, a file with no valid signatures is refused or yields nothing: no note enters the tenant.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "nothing was imported",
+          "check": "hit_count",
+          "metric": "leak",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "suite": "isolation",
+      "title": "The 'what is relevant to this message' lookup stays in the tenant",
+      "what": "Tenant B sends a message full of tenant A's words. Nothing of A's may come back.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "tenant A's text is not recalled for B",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "suite": "isolation",
+      "title": "The change feed stays in the tenant",
+      "what": "Tenant B's admin reads the feed of recent changes. Tenant A's titles must not be in it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "tenant A's titles are not in B's feed",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "B's own change is in the feed",
+          "check": "contains_text",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "the text is available from feed",
+          "actual": "found in feed"
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "suite": "isolation",
+      "title": "Documented limit: a token with no tenant is not isolated",
+      "what": "A token that is not pinned to a tenant keeps the old, open behaviour and sees every tenant. That is by design (the primary token is the operator's); this scenario pins the documented fact so a change would be noticed. Pin every token you hand out.",
+      "limit": "Documented in docs/token-namespaces.md: tokens with no pin are not tenant-scoped.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "an unpinned token finds the tenant's note (documented, not a bug)",
+          "check": "has",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "suite": "isolation",
+      "title": "One tenant's sweep cannot retire another tenant's notes",
+      "what": "Tenant A's note is past its deletion deadline. Tenant B's admin runs the sweep. A's note is untouched until A's own admin sweeps.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "still there after the other tenant's sweep",
+          "check": "has",
+          "metric": "leak",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        },
+        {
+          "desc": "gone after its own sweep",
+          "check": "lacks",
+          "metric": "unexpected_denial",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "suite": "isolation",
+      "title": "No existence oracle: foreign ids and missing ids look the same",
+      "what": "Reading a note in another tenant, and reading a note that was deleted, must be refused in exactly the same words, so nobody can probe which ids exist.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "a foreign id and a missing id are refused identically",
+          "check": "same_response",
+          "metric": "leak",
+          "pass": true,
+          "expected": "both refused in exactly the same way",
+          "actual": "not_found (not found) vs not_found (not found)"
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "suite": "isolation",
+      "title": "Archiving another tenant's note",
+      "what": "Tenant B's admin tries to archive tenant A's note. Refused, and A still finds it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the cross-tenant archive is refused",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied or not_found",
+          "actual": "not_found (not found)"
+        },
+        {
+          "desc": "A's note is still searchable",
+          "check": "has",
+          "metric": "leak",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "suite": "isolation",
+      "title": "Merging notes across tenants",
+      "what": "Tenant B's admin tries to merge one of A's notes with one of its own. Refused; both notes survive.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the cross-tenant merge is refused",
+          "check": "outcome",
+          "metric": "leak",
+          "pass": true,
+          "expected": "denied or not_found",
+          "actual": "not_found ({\"error\":\"no note with id 1\"})"
+        },
+        {
+          "desc": "A's note survives",
+          "check": "has",
+          "metric": "leak",
+          "pass": true,
+          "expected": "x is in the results",
+          "actual": "found at rank 1"
+        },
+        {
+          "desc": "B's note survives",
+          "check": "has",
+          "metric": "leak",
+          "pass": true,
+          "expected": "y is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "suite": "isolation",
+      "title": "Another tenant cannot read a note's history",
+      "what": "History holds old text. An admin of tenant B must not see it for a note in tenant A, and must be told exactly what they are told for a missing note.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "not found",
+          "check": "outcome",
+          "pass": true,
+          "expected": "not_found",
+          "actual": "not_found (no note with that number)"
+        },
+        {
+          "desc": "no old text leaked",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "a foreign note and a missing note look the same",
+          "check": "same_response",
+          "metric": "leak",
+          "pass": true,
+          "expected": "both refused in exactly the same way",
+          "actual": "not_found (no note with that number) vs not_found (no note with that number)"
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "suite": "isolation",
+      "title": "Another tenant cannot preview replacing a note",
+      "what": "Previewing a replacement shows the old note's text. It must be refused for a note in another tenant.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "not found",
+          "check": "outcome",
+          "pass": true,
+          "expected": "not_found",
+          "actual": "not_found (no note with that number)"
+        },
+        {
+          "desc": "the preview did not show the other tenant's text",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "a foreign note and a missing note look the same",
+          "check": "same_response",
+          "metric": "leak",
+          "pass": true,
+          "expected": "both refused in exactly the same way",
+          "actual": "not_found (no note with that number) vs not_found (no note with that number)"
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "suite": "isolation",
+      "title": "A code from one tenant is useless to another",
+      "what": "A confirmation code made for tenant A must not work for tenant B.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the other tenant cannot use the code",
+          "check": "outcome",
+          "pass": true,
+          "expected": "invalid",
+          "actual": "invalid (that is not a valid confirmation code (it may have been copied wrongly); run the preview again)"
+        },
+        {
+          "desc": "nothing was replaced",
+          "check": "has",
+          "pass": true,
+          "expected": "old is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "suite": "isolation",
+      "title": "Another tenant cannot undo a replacement",
+      "what": "Undo changes what tenant A sees. Tenant B must not be able to trigger it, or learn whether it exists.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "not found",
+          "check": "outcome",
+          "pass": true,
+          "expected": "not_found",
+          "actual": "not_found (no note with that number)"
+        },
+        {
+          "desc": "the replacement still stands",
+          "check": "lacks",
+          "pass": true,
+          "expected": "old is not in the results",
+          "actual": "not found"
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "suite": "isolation",
+      "title": "Replaced notes of another tenant stay hidden even when asked for",
+      "what": "Asking to include replaced notes must not open a door into another tenant.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "search shows nothing from the other tenant",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "the list shows nothing from the other tenant",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "suite": "isolation",
+      "title": "A replacement cannot mix tenants",
+      "what": "A note from tenant A cannot be used to replace tenant B's note.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the replacement is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "not_found or denied or invalid",
+          "actual": "not_found (no note with that number)"
+        },
+        {
+          "desc": "nothing from tenant A in the answer",
+          "check": "no_text",
+          "metric": "leak",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "D01",
+      "suite": "provenance",
+      "title": "Export and import keep title, body, tags and timestamps",
+      "what": "A note is exported from one server and imported into a fresh one. The content and both timestamps must survive unchanged.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "title kept",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "title = \"donodafa10 moved note\"",
+          "actual": "\"donodafa10 moved note\""
+        },
+        {
+          "desc": "body kept",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "body = \"Body zidavuku51.\"",
+          "actual": "\"Body zidavuku51.\""
+        },
+        {
+          "desc": "tags kept",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "tags = [\"a\",\"b\"]",
+          "actual": "[\"a\",\"b\"]"
+        },
+        {
+          "desc": "created_at kept",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "created_at equals created_at of write:n",
+          "actual": "identical"
+        },
+        {
+          "desc": "updated_at kept",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "updated_at equals updated_at of write:n",
+          "actual": "identical"
+        }
+      ]
+    },
+    {
+      "id": "D02",
+      "suite": "provenance",
+      "title": "After a plain export and import the original writer is still named",
+      "what": "A plain export is not signed, so the importing server cannot confirm who wrote a note. By design it stamps the importer as the writer and keeps the file's claim, labelled as a claim. The original name must at least survive as that claim.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the original writer is findable on the imported note",
+          "check": "recoverable",
+          "metric": "field",
+          "pass": true,
+          "expected": "alice kept (verified, or at least as a labelled claim)",
+          "actual": "kept only as an unverified claim (claimed_writer)",
+          "measure": {
+            "lost": false,
+            "claim_only": true
+          }
+        },
+        {
+          "desc": "the importer is the stamped writer (not the claimed one)",
+          "check": "field",
+          "pass": true,
+          "expected": "writer = \"importer\"",
+          "actual": "\"importer\""
+        },
+        {
+          "desc": "and the note is flagged as arriving unverified",
+          "check": "field",
+          "pass": true,
+          "expected": "imported_unverified = true",
+          "actual": "true"
+        }
+      ]
+    },
+    {
+      "id": "D03",
+      "suite": "provenance",
+      "title": "A signed export from a trusted server keeps a verified writer",
+      "what": "The receiving admin has chosen to trust the sending server's signing key. The original writer is then kept as a verified value and the note is not flagged unverified.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "trusting the other server works",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the original writer is kept as a VERIFIED value",
+          "check": "recoverable",
+          "metric": "field",
+          "pass": true,
+          "expected": "alice kept as a verified value",
+          "actual": "kept as a verified value (attested_writer)",
+          "measure": {
+            "lost": false,
+            "claim_only": false
+          }
+        },
+        {
+          "desc": "the note is not flagged unverified",
+          "check": "field",
+          "pass": true,
+          "expected": "imported_unverified is absent",
+          "actual": "(absent)"
+        }
+      ]
+    },
+    {
+      "id": "D04",
+      "suite": "provenance",
+      "title": "A signed export from a server nobody trusts is demoted to a claim",
+      "what": "The signature is there but the receiving admin does not trust the key. The writer survives only as an unverified claim.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the original writer is still findable, but only as a claim",
+          "check": "recoverable",
+          "metric": "field",
+          "pass": true,
+          "expected": "alice kept (verified, or at least as a labelled claim)",
+          "actual": "kept only as an unverified claim (claimed_writer)",
+          "measure": {
+            "lost": false,
+            "claim_only": true
+          }
+        },
+        {
+          "desc": "no verified author",
+          "check": "field",
+          "pass": true,
+          "expected": "attested_writer is absent",
+          "actual": "(absent)"
+        },
+        {
+          "desc": "flagged unverified",
+          "check": "field",
+          "pass": true,
+          "expected": "imported_unverified = true",
+          "actual": "true"
+        }
+      ]
+    },
+    {
+      "id": "D05",
+      "suite": "provenance",
+      "title": "The source field survives a move",
+      "what": "The client-supplied source (where the note came from) is kept on export and import.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "source kept",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "source = \"claude-desktop bubabema80\"",
+          "actual": "\"claude-desktop bubabema80\""
+        }
+      ]
+    },
+    {
+      "id": "D06",
+      "suite": "provenance",
+      "title": "The deletion deadline survives a move",
+      "what": "A note set to be forgotten after 30 days is exported and imported. The deadline must be the same.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the original has a deadline",
+          "check": "field",
+          "pass": true,
+          "expected": "expires_at is present",
+          "actual": "<a timestamp>"
+        },
+        {
+          "desc": "the imported copy has the same deadline",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "expires_at equals expires_at of write:n",
+          "actual": "identical"
+        }
+      ]
+    },
+    {
+      "id": "D07",
+      "suite": "provenance",
+      "title": "An edit keeps creator and creation time, and records the previous writer",
+      "what": "Alice writes, the admin edits. Creator and creation time stay Alice's; the last writer is the admin; Alice stays in the record; the update time moves forward.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "creator unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "creator = \"alice\"",
+          "actual": "\"alice\""
+        },
+        {
+          "desc": "created_at unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "created_at equals created_at of write:n",
+          "actual": "identical"
+        },
+        {
+          "desc": "writer is the editor",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "writer = \"boss\"",
+          "actual": "\"boss\""
+        },
+        {
+          "desc": "previous writer is on record",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "taint includes \"alice\"",
+          "actual": "[\"alice\"]"
+        },
+        {
+          "desc": "updated_at moved forward",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "updated_at differs from updated_at of write:n",
+          "actual": "different"
+        }
+      ]
+    },
+    {
+      "id": "D08",
+      "suite": "provenance",
+      "title": "A merge keeps every source's writer and the oldest creation time",
+      "what": "Two notes by different writers are merged by the admin. The merged note lists both writers, keeps the older creation time, and names the admin as the one who merged.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Alice is on record",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "taint includes \"alice\"",
+          "actual": "[\"alice\",\"bob\"]"
+        },
+        {
+          "desc": "Bob is on record",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "taint includes \"bob\"",
+          "actual": "[\"alice\",\"bob\"]"
+        },
+        {
+          "desc": "oldest creation time kept",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "created_at equals created_at of write:a",
+          "actual": "identical"
+        },
+        {
+          "desc": "the admin who merged is the stamped writer",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "writer = \"boss\"",
+          "actual": "\"boss\""
+        }
+      ]
+    },
+    {
+      "id": "D09",
+      "suite": "provenance",
+      "title": "A signature does not survive tampering",
+      "what": "A signed export is altered in transit (the body is changed). The receiving server trusts the sender's key, yet it must not vouch for the altered note: the writer drops to an unverified claim.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "no verified author on the altered note",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "attested_writer is absent",
+          "actual": "(absent)"
+        },
+        {
+          "desc": "flagged unverified",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "imported_unverified = true",
+          "actual": "true"
+        }
+      ]
+    },
+    {
+      "id": "D10",
+      "suite": "provenance",
+      "title": "A confidence value is kept",
+      "what": "A writer says how sure it is (0.3). A system that has a confidence field returns it on read. Monomem has none: it accepts the request and drops the value without telling the client.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the confidence is returned unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "confidence = 0.3",
+          "actual": "0.3"
+        }
+      ]
+    },
+    {
+      "id": "D11",
+      "suite": "provenance",
+      "title": "Archive and restore keep the provenance",
+      "what": "A note is archived and restored by an admin. Writer, creator and creation time are exactly as before.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "writer unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "writer = \"alice\"",
+          "actual": "\"alice\""
+        },
+        {
+          "desc": "creator unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "creator = \"alice\"",
+          "actual": "\"alice\""
+        },
+        {
+          "desc": "created_at unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "created_at equals created_at of write:n",
+          "actual": "identical"
+        },
+        {
+          "desc": "body unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "body = \"Body vapigemo34.\"",
+          "actual": "\"Body vapigemo34.\""
+        }
+      ]
+    },
+    {
+      "id": "D12",
+      "suite": "provenance",
+      "title": "Staleness survives a move",
+      "what": "A note that is 200 days old is exported and imported. It must still read as old (timestamps kept), not as brand new.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "still flagged stale after the move",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "stale = true",
+          "actual": "true"
+        },
+        {
+          "desc": "created_at kept",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "created_at equals created_at of write:n",
+          "actual": "identical"
+        }
+      ]
+    },
+    {
+      "id": "D13",
+      "suite": "provenance",
+      "title": "A swept note keeps its provenance in the archive",
+      "what": "A note past its deadline is swept. The archived copy still names its writer and creation time.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "writer still named",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "writer = \"boss\"",
+          "actual": "\"boss\""
+        },
+        {
+          "desc": "created_at still there",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "created_at is present",
+          "actual": "<a timestamp>"
+        },
+        {
+          "desc": "deadline still there",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "expires_at is present",
+          "actual": "<a timestamp>"
+        }
+      ]
+    },
+    {
+      "id": "D14",
+      "suite": "provenance",
+      "title": "Every exported note carries writer, creator and timestamps",
+      "what": "A full export is the backup. For every note in it the provenance fields must be present, not just the content.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "writer in the export",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "writer = \"alice\"",
+          "actual": "\"alice\""
+        },
+        {
+          "desc": "creator in the export",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "creator = \"alice\"",
+          "actual": "\"alice\""
+        },
+        {
+          "desc": "created_at in the export",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "created_at is present",
+          "actual": "<a timestamp>"
+        },
+        {
+          "desc": "updated_at in the export",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "updated_at is present",
+          "actual": "<a timestamp>"
+        },
+        {
+          "desc": "source in the export",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "source = \"x\"",
+          "actual": "\"x\""
+        }
+      ]
+    },
+    {
+      "id": "D15",
+      "suite": "provenance",
+      "title": "A confidence value is kept through an edit",
+      "what": "A change to the text must not drop the confidence, and a new value can be set later.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the confidence survives a text edit",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "confidence = 0.4",
+          "actual": "0.4"
+        },
+        {
+          "desc": "the confidence can be changed",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "confidence = 0.8",
+          "actual": "0.8"
+        }
+      ]
+    },
+    {
+      "id": "D16",
+      "suite": "provenance",
+      "title": "A confidence outside 0 to 1 is refused",
+      "what": "A confidence must be a number from 0 to 1; anything else is refused instead of stored.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "1.5 is refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "invalid",
+          "actual": "invalid (confidence must be a number from 0 to 1 (0 = not sure at all, 1 = certain); it is only a claim)"
+        }
+      ]
+    },
+    {
+      "id": "D17",
+      "suite": "provenance",
+      "title": "A confidence value is shown in search",
+      "what": "A reader choosing between notes can see how sure each writer said they were.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the hit carries the confidence",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "confidence of n = 0.7",
+          "actual": "0.7"
+        }
+      ]
+    },
+    {
+      "id": "D18",
+      "suite": "provenance",
+      "title": "A confidence value survives export and import",
+      "what": "Moving notes to another server keeps what the writer claimed about how sure it was.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the confidence arrived unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "confidence = 0.35",
+          "actual": "0.35"
+        }
+      ]
+    },
+    {
+      "id": "D19",
+      "suite": "provenance",
+      "title": "A replaced note keeps its writer and dates",
+      "what": "Replacing hides a note; it must not change who wrote it or when.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the creator is still alice",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "creator = \"alice\"",
+          "actual": "\"alice\""
+        },
+        {
+          "desc": "the first-saved time is unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "created_at equals created_at of before",
+          "actual": "identical"
+        },
+        {
+          "desc": "the text is unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "body = \"Origin kopudufe29.\"",
+          "actual": "\"Origin kopudufe29.\""
+        }
+      ]
+    },
+    {
+      "id": "E01",
+      "suite": "poison",
+      "title": "Injection text in a note body is quarantined",
+      "what": "A note whose body carries a prompt-injection instruction aimed at a later agent must not become ordinary searchable memory. The write-time linter holds it for admin review instead of storing it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the injected note is held in quarantine, not stored as memory",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "quarantined",
+          "actual": "quarantined (held for review)"
+        },
+        {
+          "desc": "and it is invisible to an ordinary search",
+          "check": "lacks",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        }
+      ]
+    },
+    {
+      "id": "E02",
+      "suite": "poison",
+      "title": "Fake system-prompt and role tags in a body are quarantined",
+      "what": "Chat-template control tokens and a forged 'new system prompt' planted in note content are a classic way to hijack a later agent. The linter must hold such a note, not serve it as memory.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the forged system-prompt note is held in quarantine",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "quarantined",
+          "actual": "quarantined (held for review)"
+        },
+        {
+          "desc": "and never reaches an ordinary search",
+          "check": "lacks",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        }
+      ]
+    },
+    {
+      "id": "E03",
+      "suite": "poison",
+      "title": "Injection hidden with invisible Unicode is still quarantined",
+      "what": "An attacker breaks up an injection instruction with zero-width characters so a naive scan misses it. The linter normalizes the text (stripping format/zero-width code points) before scanning, so the instruction is still caught and held.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the zero-width-obfuscated injection is still detected and held",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "quarantined",
+          "actual": "quarantined (held for review)"
+        },
+        {
+          "desc": "and does not reach an ordinary search",
+          "check": "lacks",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        }
+      ]
+    },
+    {
+      "id": "E04",
+      "suite": "poison",
+      "title": "A distrusted writer cannot outrank a trusted fact",
+      "what": "A low-trust writer plants a contradicting 'fact'. Once an admin distrusts that writer, an ordinary search returns the trusted note and never the planted one.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the admin can distrust the planting writer",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the trusted note is the answer",
+          "check": "top",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "first hit is good",
+          "actual": "first hit is good"
+        },
+        {
+          "desc": "the planted note is not served",
+          "check": "lacks",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "bad is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "and its planted value never appears",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "E05",
+      "suite": "poison",
+      "title": "A distrusted writer cannot silently overwrite a trusted note",
+      "what": "A distrusted writer edits a trusted note to plant a lie. The edited note must not be served to ordinary searches, and an admin who looks sees it flagged with the real writer on it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the overwriter's planted value is not served",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "an admin who looks sees the note flagged as distrusted",
+          "check": "field",
+          "pass": true,
+          "expected": "distrusted of n = true",
+          "actual": "true"
+        },
+        {
+          "desc": "and the real overwriting writer is named on it",
+          "check": "field",
+          "pass": true,
+          "expected": "writer of n = \"mallory\"",
+          "actual": "\"mallory\""
+        }
+      ]
+    },
+    {
+      "id": "E06",
+      "suite": "poison",
+      "title": "A secret in captured tool output is redacted before storage",
+      "what": "Automatic capture records tool output nobody reviews first. A credential in that output must be redacted on the way in, so it never lands in the capture store in the clear.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the tool output is captured",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the AWS key never reaches the capture store in the clear",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "nor does the GitHub token",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "what is stored shows the secrets were redacted",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from cap",
+          "actual": "found in cap"
+        }
+      ]
+    },
+    {
+      "id": "E07",
+      "suite": "poison",
+      "title": "A secret written straight to a note is blocked",
+      "what": "A high-confidence credential written into a note is refused outright by the linter (block policy), so it never becomes stored, searchable memory.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the write is refused; the secret is not stored",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "invalid",
+          "actual": "invalid (refusing to store what looks like a GitHub token; remove the secret or store a reference to it instead)"
+        },
+        {
+          "desc": "and the secret is not retrievable",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "E08",
+      "suite": "poison",
+      "title": "A note claiming a false writer is stamped with the real one",
+      "what": "A writer tries to pass a note off as coming from a trusted identity by putting it in the source field. The server stamps the real, authenticated writer and keeps the false name only as the writer's own unverified claim.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the server stamps the real authenticated writer, not the claimed identity",
+          "check": "field",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "writer of n = \"agent-alice\"",
+          "actual": "\"agent-alice\""
+        },
+        {
+          "desc": "the claimed identity survives only as the writer's own source claim",
+          "check": "field",
+          "pass": true,
+          "expected": "source of n = \"ciso@trusted-admin\"",
+          "actual": "\"ciso@trusted-admin\""
+        }
+      ]
+    },
+    {
+      "id": "E09",
+      "suite": "poison",
+      "title": "A note claiming a false namespace is filed in the real tenant",
+      "what": "A tenant plants a note that names another tenant's namespace in the request. The server must ignore the claim and file the note under the caller's own tenant, so the note cannot reach into a tenant it does not belong to.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the targeted tenant never sees the planted note",
+          "check": "lacks",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        },
+        {
+          "desc": "no planted text reaches the targeted tenant",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "the note is filed under the writer's real tenant",
+          "check": "field",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "namespace of n = \"tenantB\"",
+          "actual": "\"tenantB\""
+        },
+        {
+          "desc": "the writer can still find its own note",
+          "check": "has",
+          "pass": true,
+          "expected": "n is in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "E10",
+      "suite": "poison",
+      "title": "An unsigned import cannot pose as verified",
+      "what": "A note arrives in a plain (unsigned) export from another server. The importer must mark it as arriving unverified, with no verified attestation, so a poisoned export cannot launder itself into trusted, attributed memory.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the unsigned import is accepted",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the note is flagged as arriving unverified",
+          "check": "field",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "imported_unverified = true",
+          "actual": "true"
+        },
+        {
+          "desc": "it carries no verified attestation",
+          "check": "field",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "attested_writer is absent",
+          "actual": "(absent)"
+        },
+        {
+          "desc": "the claimed writer survives only as an unverified claim, never as a verified identity",
+          "check": "recoverable",
+          "pass": true,
+          "expected": "boss kept (verified, or at least as a labelled claim)",
+          "actual": "kept only as an unverified claim (claimed_writer)",
+          "measure": {
+            "lost": false,
+            "claim_only": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "E11",
+      "suite": "poison",
+      "title": "A markdown image/link data-exfiltration payload is flagged",
+      "what": "A note body hides a data-exfiltration vector in a markdown image whose URL carries the smuggled data. A renderer that auto-loads the image leaks it. The linter holds such a note in quarantine (GAP-POISON-MDLINK, fixed).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the markdown exfiltration payload should be held or refused",
+          "check": "outcome",
+          "pass": true,
+          "expected": "quarantined or invalid",
+          "actual": "quarantined (held for review)"
+        },
+        {
+          "desc": "and should not be served as ordinary memory",
+          "check": "lacks",
+          "pass": true,
+          "expected": "n is not in the results",
+          "actual": "not found"
+        }
+      ]
+    },
+    {
+      "id": "E12",
+      "suite": "poison",
+      "title": "A captured web fetch is not promoted to trusted memory",
+      "what": "Content pulled from the web and recorded by automatic capture carries an injection. It must stay a captured observation, not become a searchable, trusted note, and its instruction must not surface through relevance recall.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the web fetch is captured as an observation",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "a captured web fetch is not promoted to a searchable, trusted note",
+          "check": "hit_count",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        },
+        {
+          "desc": "and its injected instruction does not surface as relevant memory",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "E13",
+      "suite": "poison",
+      "title": "A poisoned note cannot reach SessionStart without the banner",
+      "what": "The SessionStart recall injection is the highest-leverage place for a hostile note to sit. All injected memory must be wrapped in the untrusted-data banner, and a distrusted writer's note must be left out of the pre-prompt injection entirely.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the SessionStart injection wraps all memory in the untrusted-data banner",
+          "check": "contains_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the text is available from ss",
+          "actual": "found in ss"
+        },
+        {
+          "desc": "the trusted note is injected (so the banner is not vacuously present)",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from ss",
+          "actual": "found in ss"
+        },
+        {
+          "desc": "a distrusted writer's note is left out of the pre-prompt injection",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "E14",
+      "suite": "poison",
+      "title": "Mass near-duplicate flooding cannot bury the real answer",
+      "what": "An attacker floods the store with many near-duplicate notes on the same topic, hoping recency pushes the real answer out of the top results. The trusted answer must still be in the top 5.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the real answer survives the flood in the top 5",
+          "check": "has",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "real is in the results (top 5)",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "E15",
+      "suite": "poison",
+      "title": "A booking-policy override is quarantined and four booking answers stay clean",
+      "what": "Adapted from the Agent Memory hygiene demo (github.com/elizabethfuentes12/stop-ai-agents-losing-memory-sample-for-aws, 05-memory-hygiene-demo, MIT-0): one message tries to revoke a traveler's budget cap and pin first class on a planted airline. In that demo one such fact skewed 1 of 4 key-value lookups and 4 of 4 graph decisions. Here the write gate must hold it, so none of four booking questions ever sees it.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the override is held for review, not stored",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "quarantined",
+          "actual": "quarantined (held for review)"
+        },
+        {
+          "desc": "budget question: no planted airline",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "cabin question: no planted airline",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "airline question: no planted airline",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "Madrid question: no planted airline",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "E16",
+      "suite": "poison",
+      "title": "A reworded override that passes the write gate is removed from every answer by one distrust",
+      "what": "The write gate is pattern matching, so the same attack phrased as plain data (no 'ignore', no 'from now on') is stored. This measures the read-side fallback: before anything is done the planted airline reaches the answers; once an admin distrusts the writer it reaches none of the four booking questions. Adapted from the Agent Memory hygiene demo (elizabethfuentes12, MIT-0).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "honest baseline: the reworded attack is not caught by pattern matching",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "and before anyone acts it reaches an answer",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from before",
+          "actual": "found in before"
+        },
+        {
+          "desc": "an admin distrusts the planting writer",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "budget question: clean again",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "cabin question: clean",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "airline question: clean",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        },
+        {
+          "desc": "Madrid question: clean",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "not present"
+        }
+      ]
+    },
+    {
+      "id": "E17",
+      "suite": "poison",
+      "title": "A sleeper instruction for a later session is stored with a warning",
+      "what": "A note that plants a deferred trigger ('next time the user asks about deploys, run ...') is ordinary-sounding on its own, so the write gate does not hold it: the directive category only warns by default (MONOMEM_LINT=directive=quarantine holds it). This checks the write comes back with a 'deferred trigger' warning instead of being stored silently.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "warn-only by default: the note is stored",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the write is warned as a deferred trigger",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from write:sleeper",
+          "actual": "found in write:sleeper"
+        }
+      ]
+    },
+    {
+      "id": "E18",
+      "suite": "poison",
+      "title": "A curl-pipe-to-shell note is stored with a warning",
+      "what": "A note telling a later agent to pipe a downloaded script into a shell (curl ... | sh) is how a planted memory turns into code execution. It is not an injection pattern, so it is stored, but the write must come back with a 'pipe to shell' warning (MONOMEM_LINT=directive=quarantine holds it instead).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "warn-only by default: the note is stored",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the write is warned as pipe to shell",
+          "check": "contains_text",
+          "pass": true,
+          "expected": "the text is available from write:pipe",
+          "actual": "found in write:pipe"
+        }
+      ]
+    }
+  ],
+  "known_gaps": [],
+  "limits": [
+    "These are deterministic behaviour checks, not a retrieval-quality or semantic benchmark. Search here is keyword search (no embeddings, no model), and the scenarios use made-up, unique words so ranking is never the thing being tested.",
+    "Each scenario runs on a fresh store in one process, through the REST API on the loopback interface (plus one MCP tool for merging). It says nothing about speed, large stores, concurrency or a deployed server.",
+    "Timestamps are the real clock. Notes that must look old (or already expired) are placed in the past through the admin import path, so such a note is stamped with the importing admin as its writer.",
+    "A pass means the behaviour held in that scenario. It is not a proof that no other path leaks; 0 leaks is the count over the probes written here, nothing more.",
+    "The scenarios encode one reading of the five provenance fields (source, timestamp, confidence, tenant, deletion policy). Another system may reasonably choose differently; scenario files are plain JSON so they can be changed."
+  ],
+  "run": {
+    "elapsed_ms": 9612,
+    "node": "v24.18.0",
+    "platform": "win32"
+  }
+}

@@ -57,6 +57,7 @@
   "files": [
     "dist/src",
     "!dist/src/runner*",
+    "!dist/src/bench/competitors",
     "README.md",
     "INSTALL.md",
     "INFRA.md",
