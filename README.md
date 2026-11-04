@@ -328,7 +328,7 @@ encryption of note bodies. See [SECURITY.md](./SECURITY.md) for what it does
 
 ## MCP tools
 
-**Ten of these are registered by default:** `state_write`, `state_read`, `state_search`, `state_relevant`,
+**Nine of these are registered by default:** `state_write`, `state_read`, `state_search`,
 `state_list`, `state_delete`, `catch_up`, `memory_supersede_preview`, `memory_supersede_confirm`,
 `memory_supersede_undo`. Every tool's
 schema is sent to the model on every turn, so the rest are operator tooling you opt into with
@@ -339,7 +339,7 @@ shipped in the npm package** — build it from the repo.
 | Tool | Scope | |
 |---|---|---|
 | `state_write` / `state_read` / `state_delete` | write / read / admin | Write with compare-and-swap (`if_rev`) and provenance (`source`); read; forget. `state_delete` archives (restorable); a permanent delete is for a person, in the dashboard or with `monomem delete <id>` |
-| `state_search` / `state_relevant` / `state_list` | read | keyword, semantic or hybrid search; vague-message recall; listing |
+| `state_search` / `state_relevant` / `state_list` | read | keyword, semantic or hybrid search, or vague-message recall with `mode: "relevant"`; listing. `state_relevant` does the same recall as its own tool and is no longer registered by default |
 | `memory_since` | read | change feed (`wait_seconds` = live wait) |
 | `task_put` / `task_list` / `task_get` | write / read / read | shared task board across devices and models; `client_key` makes a create retry-safe |
 | `task_claim` | write | take / heartbeat / release a task with a lease (compare-and-swap) |
@@ -376,6 +376,7 @@ monomem export --format json [--attest] --out a.json     monomem import --file a
 monomem supersede --old 12 --title "..." --body "..."   # replace a note: shows what you would lose, asks you to type the count
 monomem supersede undo <id>     monomem history <id> | restore <id> <version> | purge <id>
 monomem quarantine [list | approve <id> | reject <id>]
+monomem approve-first [<namespace> on|off]   # hold every agent write to a namespace for your approval
 monomem quality [--json]     monomem decay [--dry-run]     monomem archive <id> | restore <id>
 monomem consolidate | rebuild-edges | reindex | relevant "…" | recall
 monomem bench [--json] [--suite stale|contradiction|isolation|provenance] [--strict-gaps]   # provenance benchmark (docs/BENCHMARK.md)

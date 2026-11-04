@@ -1,0 +1,215 @@
+// Approve-first namespaces: every agent write waits in the quarantine queue until an operator approves it.
+// The operator is the local `monomem` CLI (writer marker `cli`); MCP, REST (any token) and library callers are held.
+// Also: state_search mode "relevant" does what state_relevant does, and state_relevant left the default tool set.
+import { test, describe, afterEach } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { AddressInfo } from "node:net";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Store, QuarantinedError } from "../src/store.js";
+import { createMcpServer, DEFAULT_TOOLS } from "../src/mcp-server-core.js";
+import { createApiServer } from "../src/api.js";
+import { setProcessWriter } from "../src/actor.js";
+
+async function connect(store: Store, conn = {}) {
+  const server = createMcpServer(store, "admin", {}, conn);
+  const [c, s] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "t", version: "1.0.0" });
+  await Promise.all([client.connect(c), server.connect(s)]);
+  return client;
+}
+const parse = (r: any) => JSON.parse(r.content[0].text);
+// Read results carry the untrusted-data banner before the JSON.
+const parseRead = (r: any) => JSON.parse(r.content[0].text.slice(r.content[0].text.indexOf("{")));
+const titles = (store: Store, namespace: string) => store.list({ namespace }).notes.map((n) => n.title);
+
+afterEach(() => setProcessWriter(""));
+
+describe("approve-first namespaces", () => {
+  test("an agent write over MCP is held with the approval reason, not stored", async () => {
+    const store = new Store(":memory:");
+    store.setApproveFirst("team", true);
+    setProcessWriter("stdio");
+    const c = await connect(store, { local: true });
+    const r: any = await c.callTool({ name: "state_write", arguments: { namespace: "team", title: "deploy on fridays", body: "ok" } });
+    assert.ok(!r.isError);
+    const out = parse(r);
+    assert.ok(out.quarantined, "held, not stored");
+    assert.match(out.quarantined.message, /namespace requires approval/);
+    assert.deepEqual(out.quarantined.reasons, [{ category: "approval", label: "namespace requires approval", field: "namespace" }]);
+    assert.deepEqual(titles(store, "team"), []);
+    const q = store.listQuarantine();
+    assert.equal(q.length, 1);
+    assert.equal(q[0].namespace, "team");
+    assert.equal(q[0].reasons[0].label, "namespace requires approval");
+    await c.close();
+    store.close();
+  });
+
+  test("an agent update is held; a confidence-only patch is not", async () => {
+    const store = new Store(":memory:");
+    setProcessWriter("cli");
+    const n = store.create({ namespace: "team", title: "port", body: "8080" });
+    store.setApproveFirst("team", true);
+    setProcessWriter("stdio");
+    assert.throws(() => store.update(n.id, { body: "9090" }), QuarantinedError);
+    assert.equal(store.read(n.id)?.body, "8080");
+    assert.equal(store.update(n.id, { confidence: 0.5 })?.confidence, 0.5);
+    // Moving a note OUT of an approve-first namespace is held too.
+    assert.throws(() => store.update(n.id, { namespace: "elsewhere" }), QuarantinedError);
+    // ...and moving one IN.
+    setProcessWriter("cli");
+    const m = store.create({ namespace: "other", title: "m" });
+    setProcessWriter("stdio");
+    assert.throws(() => store.update(m.id, { namespace: "team" }), QuarantinedError);
+    assert.equal(store.read(m.id)?.namespace, "other");
+    store.close();
+  });
+
+  test("a CLI (operator) write is not held", () => {
+    const store = new Store(":memory:");
+    store.setApproveFirst("team", true);
+    setProcessWriter("cli");
+    const n = store.create({ namespace: "team", title: "by the operator" });
+    assert.equal(n.written_by, "cli");
+    assert.ok(store.update(n.id, { body: "edited" }));
+    assert.equal(store.listQuarantine().length, 0);
+    store.close();
+  });
+
+  test("approve stores it with the real writer; reject drops it", async () => {
+    const store = new Store(":memory:");
+    store.setApproveFirst("team", true);
+    setProcessWriter("stdio");
+    const c = await connect(store, { local: true });
+    const a = parse(await c.callTool({ name: "state_write", arguments: { namespace: "team", title: "keep me" } }));
+    const b = parse(await c.callTool({ name: "state_write", arguments: { namespace: "team", title: "drop me" } }));
+    setProcessWriter("cli");
+    const note = store.approveQuarantine(a.quarantined.id);
+    assert.equal(note.title, "keep me");
+    assert.equal(note.written_by, "stdio", "the agent stays the writer, not the approving operator");
+    assert.ok(store.rejectQuarantine(b.quarantined.id));
+    assert.deepEqual(titles(store, "team"), ["keep me"]);
+    assert.equal(store.listQuarantine().length, 0);
+    await c.close();
+    store.close();
+  });
+
+  test("turning it off stops holding; other namespaces were never held", () => {
+    const store = new Store(":memory:");
+    store.setApproveFirst("team", true);
+    assert.deepEqual(store.approveFirstNamespaces(), ["team"]);
+    setProcessWriter("stdio");
+    assert.ok(store.create({ namespace: "default", title: "free" }));
+    assert.throws(() => store.create({ namespace: "team", title: "held" }), QuarantinedError);
+    store.setApproveFirst("team", false);
+    assert.deepEqual(store.approveFirstNamespaces(), []);
+    assert.ok(store.create({ namespace: "team", title: "after off" }));
+    assert.equal(store.listQuarantine().length, 1, "what was held before stays queued");
+    store.close();
+  });
+
+  test("a secret is still refused, not held", () => {
+    const store = new Store(":memory:");
+    store.setApproveFirst("team", true);
+    assert.throws(
+      () => store.create({ namespace: "team", title: "k", body: "ghp_" + "a".repeat(36) }),
+      (e: Error) => !(e instanceof QuarantinedError) && /refusing to store/.test(e.message)
+    );
+    assert.equal(store.listQuarantine().length, 0);
+    store.close();
+  });
+
+  test("no MCP tool can toggle it, and stdio cannot approve its own held write", async () => {
+    const prior = process.env.MONOMEM_STDIO_ADMIN_TOOLS;
+    delete process.env.MONOMEM_STDIO_ADMIN_TOOLS;
+    const store = new Store(":memory:");
+    store.setApproveFirst("team", true);
+    setProcessWriter("stdio");
+    try {
+      const c = await connect(store, { local: true });
+      const names = (await c.listTools()).tools.map((t) => t.name);
+      assert.ok(!names.some((n) => /approve.?first/i.test(n)), "no approve-first tool");
+      for (const t of (await c.listTools()).tools) {
+        assert.doesNotMatch(JSON.stringify(t.inputSchema), /approve.?first/i, `${t.name} must not take an approve-first argument`);
+      }
+      const held = parse(await c.callTool({ name: "state_write", arguments: { namespace: "team", title: "mine" } }));
+      const r: any = await c.callTool({ name: "memory_quarantine", arguments: { action: "approve", id: held.quarantined.id } });
+      assert.equal(r.isError, true, "memory_quarantine is not registered over stdio by default");
+      assert.match(r.content[0].text, /not found/);
+      assert.deepEqual(titles(store, "team"), []);
+      await c.close();
+    } finally {
+      if (prior !== undefined) process.env.MONOMEM_STDIO_ADMIN_TOOLS = prior;
+      store.close();
+    }
+  });
+
+  test("REST: an admin-token write is held; GET/PUT /approve-first need admin", async () => {
+    const store = new Store(":memory:");
+    const server = createApiServer(store, "tok-admin-1234567890");
+    await new Promise<void>((r) => server.listen(0, r));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const H = { Authorization: "Bearer tok-admin-1234567890", "Content-Type": "application/json" };
+    try {
+      let res = await fetch(`${base}/approve-first`, { method: "PUT", headers: H, body: JSON.stringify({ namespace: "team", on: true }) });
+      assert.equal(res.status, 200);
+      assert.deepEqual(await (await fetch(`${base}/approve-first`, { headers: H })).json(), { namespaces: ["team"] });
+      res = await fetch(`${base}/approve-first`, { method: "PUT", headers: H, body: JSON.stringify({ namespace: "team" }) });
+      assert.equal(res.status, 400);
+      res = await fetch(`${base}/notes`, { method: "POST", headers: H, body: JSON.stringify({ namespace: "team", title: "via rest" }) });
+      assert.equal(res.status, 202);
+      assert.equal(((await res.json()) as any).quarantined.reasons[0].category, "approval");
+      assert.deepEqual(titles(store, "team"), []);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+      store.close();
+    }
+  });
+
+  test("the CLI sets, lists and clears it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "om-af-"));
+    try {
+      const db = join(dir, "state.db");
+      new Store(db).close();
+      const env = { ...process.env, MONOMEM_HOME: dir, MONOMEM_DB_PATH: db };
+      const cli = (...args: string[]) => spawnSync(process.execPath, [join(process.cwd(), "dist/src/cli.js"), "approve-first", ...args], { env, encoding: "utf8" });
+      let r = cli("team", "on");
+      assert.equal(r.status, 0, r.stderr);
+      r = cli();
+      assert.match(r.stdout, /Approve-first namespaces: team/);
+      assert.equal(cli("team", "maybe").status, 1);
+      assert.equal(cli("team", "off").status, 0);
+      assert.match(cli().stdout, /No namespace is approve-first/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('state_search mode "relevant"', () => {
+  test("matches state_relevant's result", async () => {
+    const store = new Store(":memory:");
+    store.create({ title: "acme launch decision", body: "we ship in march" });
+    store.create({ title: "unrelated", body: "lunch menu" });
+    const c = await connect(store);
+    const viaSearch = parseRead(await c.callTool({ name: "state_search", arguments: { query: "what did we decide about acme?", mode: "relevant" } }));
+    const viaTool = parseRead(await c.callTool({ name: "state_relevant", arguments: { message: "what did we decide about acme?" } }));
+    assert.deepEqual(viaSearch.keywords, viaTool.keywords);
+    assert.deepEqual(viaSearch.results.map((n: any) => n.id), viaTool.results.map((n: any) => n.id));
+    assert.ok(viaSearch.results.some((n: any) => n.title === "acme launch decision"));
+    const bad: any = await c.callTool({ name: "state_search", arguments: { query: "acme", mode: "relevant", when: "yesterday" } });
+    assert.equal(bad.isError, true);
+    await c.close();
+    store.close();
+  });
+
+  test("state_relevant is out of the default set (nine tools) but still registered", () => {
+    assert.equal(DEFAULT_TOOLS.length, 9);
+    assert.ok(!DEFAULT_TOOLS.includes("state_relevant"));
+  });
+});

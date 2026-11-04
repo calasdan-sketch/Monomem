@@ -130,7 +130,10 @@ function usage(): void {
       "            reported and the losing version is saved under <dir>/.conflicts/.",
       "            Runs through the memory linter.",
       "  quarantine [list | approve <id> | reject <id>]",
-      "            Review writes the memory linter held (MONOMEM_LINT).",
+      "            Review writes the memory linter held (MONOMEM_LINT) or an approve-first namespace held.",
+      "  approve-first [<namespace> on|off]",
+      "            Hold every agent write to a namespace in the quarantine queue until you approve it.",
+      "            No arguments: list the namespaces with it on. Writes from monomem commands are not held.",
       "  quality [--json] [--namespace ns]",
       "            What is worth a look: near-duplicates, stale notes with a newer twin, quarantined writes, notes",
       "            the linter flags, and captured rows about to decay. Each comes with the command that fixes it.",
@@ -1811,6 +1814,33 @@ async function quarantineCmd(): Promise<void> {
   }
 }
 
+// `monomem approve-first [<namespace> on|off]`: operator-only switch (no MCP tool sets it).
+async function approveFirstCmd(): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { Store } = await import("./store.js");
+  const [ns, state] = process.argv.slice(3);
+  if (ns !== undefined && (!ns.trim() || (state !== "on" && state !== "off"))) {
+    console.error("Usage: monomem approve-first [<namespace> on|off]");
+    process.exit(1);
+  }
+  const store = new Store(DB_PATH);
+  try {
+    if (ns === undefined) {
+      const list = store.approveFirstNamespaces();
+      console.log(list.length ? `Approve-first namespaces: ${list.join(", ")}` : "No namespace is approve-first.");
+      return;
+    }
+    store.setApproveFirst(ns, state === "on");
+    console.log(
+      state === "on"
+        ? `Approve-first is on for "${ns.trim()}": agent writes there now wait in \`monomem quarantine\`.`
+        : `Approve-first is off for "${ns.trim()}". Writes already held stay in \`monomem quarantine\`.`
+    );
+  } finally {
+    store.close();
+  }
+}
+
 // `monomem decay [--dry-run] [--namespace ns]`: archive (never delete) idle captured rows now; --dry-run only lists them.
 async function decayCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
@@ -2278,6 +2308,9 @@ async function main(): Promise<void> {
       break;
     case "quarantine":
       await quarantineCmd();
+      break;
+    case "approve-first":
+      await approveFirstCmd();
       break;
     case "decay":
       await decayCmd();

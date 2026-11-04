@@ -134,6 +134,8 @@ function requiredScope(method: string | undefined, path: string): Scope {
   if (method === "POST" && path === "/sweep-expired") return "admin";
   // The quality view lists titles from every writer, and approving a held write is the linter's human gate.
   if (path === "/quality" || /^\/quarantine\/\d+\/(approve|reject)$/.test(path)) return "admin";
+  // Approve-first is the switch in front of an agent's own writes: reading or flipping it is admin, like the queue itself.
+  if (path === "/approve-first") return "admin";
   // A note's earlier versions can hold text that was taken out on purpose: administrators only, reads included.
   if (/^\/notes\/\d+\/history(\/restore)?$/.test(path)) return "admin";
   if (method === "POST" || method === "PUT") return "write";
@@ -799,6 +801,41 @@ export function createApiServer(
         const namespace = url.searchParams.get("namespace") || undefined;
         const namespaces = nsCtx.active ? [nsCtx.ownNamespace] : namespace ? [namespace] : undefined;
         sendJson(res, 200, await qualityReport(store, namespaces));
+        return;
+      }
+
+      // GET /approve-first -> { namespaces } with approve-first on; PUT /approve-first { namespace, on } flips it.
+      // Admin-only (requiredScope). REST cannot tell an operator from an agent holding an admin token, so this is no
+      // stronger than that token: an admin token can already approve held writes itself. No MCP tool reaches it.
+      // A namespace-pinned admin sees and sets its own namespace only.
+      if (path === "/approve-first" && (req.method === "GET" || req.method === "PUT")) {
+        if (req.method === "GET") {
+          const all = store.approveFirstNamespaces();
+          sendJson(res, 200, { namespaces: nsCtx.active ? all.filter((n) => n === nsCtx.ownNamespace) : all });
+          return;
+        }
+        let body: { namespace?: unknown; on?: unknown };
+        try {
+          body = JSON.parse((await readBody(req)) || "{}") as { namespace?: unknown; on?: unknown };
+        } catch {
+          sendJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        const ns = typeof body?.namespace === "string" ? body.namespace.trim() : "";
+        if (!ns || typeof body.on !== "boolean") {
+          sendJson(res, 400, { error: "expected { namespace: string, on: boolean }" });
+          return;
+        }
+        if (nsCtx.active && ns !== nsCtx.ownNamespace) {
+          sendJson(res, 403, { error: `this token can only set approve-first on its own namespace ("${nsCtx.ownNamespace}")` });
+          return;
+        }
+        try {
+          store.setApproveFirst(ns, body.on);
+          sendJson(res, 200, { namespace: ns, approve_first: body.on });
+        } catch (e) {
+          sendError(res, e);
+        }
         return;
       }
 

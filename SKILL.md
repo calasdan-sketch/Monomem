@@ -5,11 +5,11 @@ description: >-
   user states a fact, decision, or preference worth remembering, or when
   starting a task where past context would help — save with state_write and
   recall with state_search / state_list. Backed by the Monomem MCP server.
-  REGISTERED BY DEFAULT (these ten are always callable): state_write, state_read,
-  state_search, state_relevant, state_list, state_delete, catch_up,
+  REGISTERED BY DEFAULT (these nine are always callable): state_write, state_read,
+  state_search, state_list, state_delete, catch_up,
   memory_supersede_preview, memory_supersede_confirm, memory_supersede_undo.
   REQUIRE MONOMEM_TOOLS=all ON THE SERVER (otherwise not callable, and a call
-  returns "unknown tool"): memory_since, memory_ack, task_put, task_get,
+  returns "unknown tool"): state_relevant (use state_search mode "relevant"), memory_since, memory_ack, task_put, task_get,
   task_list, task_claim, task_approve, runner_status, trust_policy,
   session_handoff, memory_stats, memory_quarantine,
   memory_consolidation_candidates, memory_consolidate, memory_rebuild_edges,
@@ -22,8 +22,8 @@ license: MIT
 
 # Monomem
 
-> **Only ten tools are registered by default.** `state_write`, `state_read`,
-> `state_search`, `state_relevant`, `state_list`, `state_delete`, `catch_up`,
+> **Only nine tools are registered by default.** `state_write`, `state_read`,
+> `state_search`, `state_list`, `state_delete`, `catch_up`,
 > `memory_supersede_preview`, `memory_supersede_confirm` and
 > `memory_supersede_undo`. The change feed, task board, trust, quarantine,
 > consolidation, history and session-index tools used further down need
@@ -60,8 +60,8 @@ existing note, pass its `id`.
 already given, check the store:
 
 - `state_search` with a few keywords for anything relevant.
-- `state_relevant` with a natural-language message when you don't know the
-  exact wording — it extracts keywords itself (hashtags like `#status` kept
+- `state_search` with `mode: "relevant"` and a natural-language message as
+  `query` when you don't know the exact wording — it extracts keywords itself (hashtags like `#status` kept
   as-is) and returns notes matching any of them, plus the keywords it used.
 - `state_list` (optionally by `namespace`) to see recent notes.
 - `state_search` accepts `when` ("yesterday evening", "last week", "in july") to scope results to a time range — day boundaries follow `MONOMEM_TIMEZONE`.

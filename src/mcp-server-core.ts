@@ -163,7 +163,9 @@ function quarantinedResult(e: QuarantinedError) {
       // given -- the user was asked for an action nobody could take. Point at
       // the surfaces that always exist instead.
       message:
-        "This write was held for admin review by the memory linter and is not stored as a note yet. " +
+        (e.findings.some((f) => f.category === "approval")
+          ? "This write was held for admin review because its namespace requires approval (approve-first), and is not stored as a note yet. "
+          : "This write was held for admin review by the memory linter and is not stored as a note yet. ") +
         "An admin can approve or reject it in the Monomem dashboard, or with `monomem quarantine` " +
         "(and through the memory_quarantine tool where MONOMEM_TOOLS makes it available).",
     },
@@ -253,6 +255,10 @@ const stdioAdminToolsAllowed = (env: NodeJS.ProcessEnv = process.env): boolean =
  * forget, the session catch-up, and the two-step replace that lets an agent
  * correct a memory without silently overwriting one.
  *
+ * state_relevant left the default set: state_search mode "relevant" does
+ * the same thing, so the separate tool only cost context. It is still
+ * registered for MONOMEM_TOOLS=all or an explicit list (old prompts keep working).
+ *
  * Everything else -- history and version restore, consolidation, edge rebuild,
  * quarantine, trust policy, stats, timelines, the command-task queue and the
  * runner status -- is operator tooling. It stays available behind
@@ -263,7 +269,6 @@ export const DEFAULT_TOOLS: readonly string[] = [
   "state_write",
   "state_read",
   "state_search",
-  "state_relevant",
   "state_list",
   "state_delete",
   "catch_up",
@@ -590,7 +595,7 @@ export function createMcpServer(
     {
       title: "Search shared state",
       description:
-        "Search notes in the shared state store by title/body/tags. Keyword (full-text) by default; set mode to 'semantic' or 'hybrid' for meaning-based search when embeddings are enabled (falls back to keyword otherwise). Always reflects the latest writes." +
+        "Search notes in the shared state store by title/body/tags. Keyword (full-text) by default; set mode to 'semantic' or 'hybrid' for meaning-based search when embeddings are enabled (falls back to keyword otherwise). Set mode to 'relevant' and pass a natural conversational message as `query` to extract keywords from it and return notes matching ANY of them (default limit 5; returns the extracted keywords too). Always reflects the latest writes." +
         (nsActive
           ? " The `namespace` parameter is an untrusted hint: only namespaces this server may read are searched."
           : ""),
@@ -606,10 +611,10 @@ export function createMcpServer(
           ),
         limit: z.number().int().optional().describe("Max results (default 20, max 200)."),
         mode: z
-          .enum(SEARCH_MODES)
+          .enum([...SEARCH_MODES, "relevant"])
           .optional()
           .describe(
-            "keyword = full-text (default when embeddings off); semantic = meaning only; hybrid = fuse both. Falls back to keyword if embeddings are unavailable."
+            "keyword = full-text (default when embeddings off); semantic = meaning only; hybrid = fuse both. Falls back to keyword if embeddings are unavailable. relevant = treat `query` as a conversational message: extract its keywords and match notes on ANY one of them (what state_relevant does; `when`, `explain` and `include_superseded` do not apply)."
           ),
         when: z
           .string()
@@ -629,6 +634,12 @@ export function createMcpServer(
     },
     async ({ query, namespace, limit, mode, when, explain, written_by, not_written_by, include_distrusted, include_superseded }) => {
       try {
+        if (mode === "relevant") {
+          if (when !== undefined || explain !== undefined || include_superseded !== undefined) {
+            return errorResult("when, explain and include_superseded do not apply to mode 'relevant'");
+          }
+          return await relevantTool({ message: query, limit, namespace, written_by, not_written_by, include_distrusted });
+        }
         const denied = denyIfUnder("read");
         if (denied) return errorResult(denied);
         // A time phrase the parser doesn't recognize is ignored, never an
@@ -749,55 +760,72 @@ export function createMcpServer(
         ...WRITER_FILTER_SHAPE,
       },
     },
-    async ({ message, limit, namespace, written_by, not_written_by, include_distrusted }) => {
-      try {
-        const denied = denyIfUnder("read");
-        if (denied) return errorResult(denied);
-        if (limit !== undefined && limit < 1) return errorResult("limit must be an integer >= 1");
-        if (!message || !message.trim()) {
-          return errorResult("message is required");
-        }
-        // The tool's own default (5) overrides the service-level default
-        // (10): a relevance probe returns a handful of notes, not a page.
-        const effLimit = limit ?? 5;
-        // Attach the staleness fields (stale/ageDays, plus staleWarning when
-        // stale): the vague-message path is the one most likely to act on
-        // outdated facts, so it gets the same staleness contract as search.
-        const withStaleness = (r: { keywords: string[]; results: NoteRecord[] }) => ({
-          keywords: r.keywords,
-          results: r.results.map((n) => annotateStaleness(n)),
-        });
-        if (nsActive) {
-          // Same gating as state_search: the model-supplied namespace is an
-          // UNTRUSTED HINT, intersected with the readable set. A hint naming
-          // an unreadable namespace is ignored (readable namespaces are
-          // searched instead). searchedNamespaces echoes which namespaces
-          // were actually searched.
-          const hint = trustedHint(namespace);
-          if (hint) {
-            const out = await runRelevantSearch(store, message, {
-              namespace: hint,
-              limit: effLimit,
-              ...writerFilterArgs(written_by, not_written_by, include_distrusted),
-            });
-            return untrustedResult({ ...withStaleness(out), searchedNamespaces: [hint] });
-          }
-          const out = await relevantReadable(message, { limit: effLimit, ...writerFilterArgs(written_by, not_written_by, include_distrusted) });
-          return untrustedResult({
-            ...withStaleness(out),
-            searchedNamespaces: out.searchedNamespaces,
+    relevantTool
+  );
+
+  // state_relevant's handler, also state_search's mode "relevant" (a declaration, so state_search above can call it).
+  async function relevantTool({
+    message,
+    limit,
+    namespace,
+    written_by,
+    not_written_by,
+    include_distrusted,
+  }: {
+    message: string;
+    limit?: number;
+    namespace?: string;
+    written_by?: string;
+    not_written_by?: string;
+    include_distrusted?: boolean;
+  }) {
+    try {
+      const denied = denyIfUnder("read");
+      if (denied) return errorResult(denied);
+      if (limit !== undefined && limit < 1) return errorResult("limit must be an integer >= 1");
+      if (!message || !message.trim()) {
+        return errorResult("message is required");
+      }
+      // The tool's own default (5) overrides the service-level default
+      // (10): a relevance probe returns a handful of notes, not a page.
+      const effLimit = limit ?? 5;
+      // Attach the staleness fields (stale/ageDays, plus staleWarning when
+      // stale): the vague-message path is the one most likely to act on
+      // outdated facts, so it gets the same staleness contract as search.
+      const withStaleness = (r: { keywords: string[]; results: NoteRecord[] }) => ({
+        keywords: r.keywords,
+        results: r.results.map((n) => annotateStaleness(n)),
+      });
+      if (nsActive) {
+        // Same gating as state_search: the model-supplied namespace is an
+        // UNTRUSTED HINT, intersected with the readable set. A hint naming
+        // an unreadable namespace is ignored (readable namespaces are
+        // searched instead). searchedNamespaces echoes which namespaces
+        // were actually searched.
+        const hint = trustedHint(namespace);
+        if (hint) {
+          const out = await runRelevantSearch(store, message, {
+            namespace: hint,
+            limit: effLimit,
+            ...writerFilterArgs(written_by, not_written_by, include_distrusted),
           });
+          return untrustedResult({ ...withStaleness(out), searchedNamespaces: [hint] });
         }
-        const out = await runRelevantSearch(store, message, { namespace, limit: effLimit, ...writerFilterArgs(written_by, not_written_by, include_distrusted) });
+        const out = await relevantReadable(message, { limit: effLimit, ...writerFilterArgs(written_by, not_written_by, include_distrusted) });
         return untrustedResult({
           ...withStaleness(out),
-          searchedNamespaces: namespace ? [namespace] : [],
+          searchedNamespaces: out.searchedNamespaces,
         });
-      } catch (e) {
-        return errorFor(e);
       }
+      const out = await runRelevantSearch(store, message, { namespace, limit: effLimit, ...writerFilterArgs(written_by, not_written_by, include_distrusted) });
+      return untrustedResult({
+        ...withStaleness(out),
+        searchedNamespaces: namespace ? [namespace] : [],
+      });
+    } catch (e) {
+      return errorFor(e);
     }
-  );
+  }
 
   server.registerTool(
     "state_list",

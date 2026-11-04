@@ -63,7 +63,7 @@ immediately visible through the others:
   `rev` for compare-and-swap, a provenance `source`, tags, and namespaces.
 - **`src/api.ts`** — a small HTTP/JSON API + a built-in web dashboard, on
   plain `node:http` (no framework).
-- **`src/mcp-server-core.ts`** — the transport-agnostic MCP server with thirty-two tools, ten of them registered by default (see MONOMEM_TOOLS),
+- **`src/mcp-server-core.ts`** — the transport-agnostic MCP server with thirty-two tools, nine of them registered by default (see MONOMEM_TOOLS),
   tools, shared by both MCP transports.
 - **`src/mcp-stdio.ts`** — stdio entry point for local Claude Code / Desktop
   / editors.
@@ -92,8 +92,8 @@ immediately visible through the others:
 |---|---|---|
 | `state_write` | write | Create a note, or update one by `id` (optional `if_rev` compare-and-swap, `source` provenance) |
 | `state_read` | read | Read one note; `neighbors: true` attaches up to 10 similar notes |
-| `state_search` | read | Keyword / semantic / hybrid search, optional `when` time filter |
-| `state_relevant` | read | Extract keywords from a natural message, permissive OR search |
+| `state_search` | read | Keyword / semantic / hybrid search, optional `when` time filter; `mode: "relevant"` does what `state_relevant` does |
+| `state_relevant` | read | Extract keywords from a natural message, permissive OR search (not registered by default) |
 | `state_list` | read | Newest-first page of notes |
 | `state_delete` | admin | Forget a note: archives it (restorable); permanent delete is dashboard/CLI only |
 | `memory_stats` | read | Totals, most-read notes, never-read and stale counts |

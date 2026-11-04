@@ -12,7 +12,7 @@ MCP-capable agent. They all launch it the same way — a local command over
 > `monomem mcp`. Your memory lives in `~/.monomem` (override with
 > `MONOMEM_HOME`), so it survives upgrades.
 >
-> **Ten tools are registered by default** — enough to write, find, read,
+> **Nine tools are registered by default** — enough to write, find, read,
 > forget and safely replace a memory. Every tool's schema is sent to the model
 > on every turn, so the operator tools (change feed, task board, trust,
 > quarantine, consolidation, history, session index) are opt-in. To switch

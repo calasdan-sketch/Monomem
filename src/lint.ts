@@ -37,7 +37,8 @@ export type LintCategory = "secret" | "injection" | "entropy";
 export type LintAction = "block" | "quarantine" | "warn";
 
 export interface LintFinding {
-  category: LintCategory;
+  /** "approval" is not a linter finding: it marks a write held because its namespace is approve-first (store.ts). */
+  category: LintCategory | "approval";
   /** Human label, e.g. "GitHub token" or "instruction override". */
   label: string;
   /** Which field matched: title, body, tags, or source. */

@@ -52,7 +52,8 @@ Day boundaries are computed in your timezone: set `MONOMEM_TIMEZONE`
 
 ## Relevant-memory search
 
-Don't know the exact wording? `state_relevant` takes a natural conversational
+Don't know the exact wording? `state_search` with `mode: "relevant"` (or the
+separate `state_relevant` tool, which is no longer registered by default) takes a natural conversational
 message, extracts keywords from it (lowercase, stop-words removed, hashtags
 like `#status` kept as-is), and returns notes matching **any** of them —
 a deliberately permissive OR search, unlike `state_search`'s AND conjunction.
@@ -60,7 +61,8 @@ Results rank by most keyword hits first, then newest. The extracted keywords
 are returned alongside the results so you can see what was searched.
 
 ```
-state_relevant({ message: "what did we decide about the acme launch?" })
+state_search({ query: "what did we decide about the acme launch?", mode: "relevant" })
+# same as state_relevant({ message: "..." }); `when`, `explain` and `include_superseded` do not apply
 # -> { keywords: ["decide", "acme", "launch"], results: [...] }
 ```
 

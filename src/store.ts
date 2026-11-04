@@ -17,7 +17,7 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { dirname, basename, join } from "node:path";
 import { checkSizes, audit } from "./security.js";
 import { chmodQuiet } from "./config.js";
-import { lintContent, lintPolicy, describeFindings, type LintFinding, type LintAction } from "./lint.js";
+import { lintContent, lintPolicy, describeFindings, type LintFinding, type LintAction, type LintCategory } from "./lint.js";
 // Reuses consolidate.ts's zero-dependency text similarity for the note
 // similarity graph. This is a module cycle (consolidate.ts imports Store
 // from here), but a safe one: both modules only touch the other's bindings
@@ -269,7 +269,7 @@ function applyLintPolicy(findings: LintFinding[], opts: LintOpts): "quarantine" 
   const policy = lintPolicy();
   const mode = opts.lint ?? "full";
   const actionFor = (f: LintFinding): LintAction => {
-    const a = policy[f.category];
+    const a = policy[f.category as LintCategory];
     return mode === "trusted" && a === "quarantine" ? "block" : a;
   };
   const blocked = findings.filter((f) => actionFor(f) === "block");
@@ -298,6 +298,20 @@ function lintFor(
   if (mode === "none") return [];
   const all = lintContent(fields);
   return mode === "trusted" ? all.filter((f) => f.category === "secret") : all;
+}
+
+/** The quarantine reason of a write held only because its namespace is approve-first. */
+const APPROVAL_FINDING: LintFinding = { category: "approval", label: "namespace requires approval", field: "namespace" };
+
+/**
+ * Approve-first namespaces hold every write that is not the operator's. The operator is the local
+ * `monomem` CLI (writer marker `cli`, no token behind the call) plus the internal lint modes: "none"
+ * is an approved quarantine replay, "trusted" is consolidation re-writing stored notes. Everything
+ * else counts as an agent: MCP over stdio or HTTP, every REST call (an admin token included -- REST
+ * has no separate operator login), the server's own jobs, the runner, capture hooks, library callers.
+ */
+function isOperatorWrite(mode: LintMode): boolean {
+  return mode !== "full" || currentWriter() === "cli";
 }
 
 export interface NoteInput {
@@ -2460,7 +2474,9 @@ export class Store {
     validateForgetAfter(input.forget_after);
     validateConfidence(input.confidence);
     const findings = lintFor(input, opts.lint ?? "full");
-    if (applyLintPolicy(findings, opts) === "quarantine") {
+    const linted = applyLintPolicy(findings, opts);
+    if (!isOperatorWrite(opts.lint ?? "full") && this.isApproveFirst(input.namespace?.trim() || DEFAULT_NAMESPACE)) findings.push(APPROVAL_FINDING);
+    if (linted === "quarantine" || findings.includes(APPROVAL_FINDING)) {
       const qid = this.quarantineWrite({
         op: "create",
         namespace: input.namespace?.trim() || DEFAULT_NAMESPACE,
@@ -3093,7 +3109,18 @@ export class Store {
     }
     if (patch.source !== undefined && patch.source !== existing.source) changed.source = patch.source;
     const findings = lintFor(changed, opts.lint ?? "full");
-    if (applyLintPolicy(findings, opts) === "quarantine") {
+    const linted = applyLintPolicy(findings, opts);
+    // Approve-first: an agent's content change (what the linter looks at) or a move, into or out of such a namespace, is held.
+    // Metadata-only patches (confidence, forget_after, re-sent unchanged fields) are not.
+    const movedTo = patch.namespace?.trim();
+    if (
+      !isOperatorWrite(opts.lint ?? "full") &&
+      (Object.keys(changed).length > 0 || (movedTo && movedTo !== existing.namespace)) &&
+      (this.isApproveFirst(existing.namespace) || (movedTo !== undefined && movedTo !== "" && this.isApproveFirst(movedTo)))
+    ) {
+      findings.push(APPROVAL_FINDING);
+    }
+    if (linted === "quarantine" || findings.includes(APPROVAL_FINDING)) {
       const nsTrimQ = patch.namespace?.trim();
       const qid = this.quarantineWrite({
         op: "update",
@@ -6600,6 +6627,34 @@ export class Store {
         "INSERT INTO _meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
       )
       .run(key, value);
+  }
+
+  // --- Approve-first namespaces ---------------------------------------------
+  // A JSON list in _meta (no schema change). Operator-only: the CLI and the admin REST endpoint set it, no MCP tool does.
+
+  /** Namespaces whose agent writes wait in the quarantine queue for an operator (sorted). */
+  approveFirstNamespaces(): string[] {
+    try {
+      const v = JSON.parse(this.getMeta("approve_first") ?? "[]") as unknown;
+      return Array.isArray(v) ? v.filter((n): n is string => typeof n === "string").sort() : [];
+    } catch {
+      return [];
+    }
+  }
+
+  isApproveFirst(namespace: string): boolean {
+    return this.approveFirstNamespaces().includes(namespace);
+  }
+
+  /** Turn approve-first on or off for a namespace. Writes already held stay in the queue either way. */
+  setApproveFirst(namespace: string, on: boolean): void {
+    const ns = typeof namespace === "string" ? namespace.trim() : "";
+    if (!ns) throw new ValidationError("namespace is required");
+    this.transaction(() => {
+      const rest = this.approveFirstNamespaces().filter((n) => n !== ns);
+      this.setMeta("approve_first", JSON.stringify(on ? [...rest, ns].sort() : rest));
+    });
+    audit({ op: on ? "approve-first-on" : "approve-first-off", namespace: ns });
   }
 
   // --- Quarantine (v7) -----------------------------------------------------

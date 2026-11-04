@@ -6,7 +6,7 @@ description: >-
   "what did we do about X", "why did we decide Y", or "when did Z break", and when a file you are about to change has
   history. Tools: memory_index, memory_timeline, memory_get, session_list (Monomem MCP server). Requires
   MONOMEM_TOOLS=all (or MONOMEM_TOOLS=memory_index,memory_timeline,memory_get,session_list); these four are
-  not in the default ten-tool set.
+  not in the default nine-tool set.
 ---
 
 # Searching automatic memory

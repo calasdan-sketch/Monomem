@@ -117,6 +117,36 @@ the content in the dashboard or with `monomem quarantine`.
 - Approve/reject/quarantine decisions are written to the audit log (ids and
   namespaces only, never content).
 
+### Approve-first namespaces
+
+An operator can make a namespace hold **every** agent write, flagged or not:
+
+```
+monomem approve-first team on     # agent writes to "team" now wait here
+monomem approve-first             # list namespaces with it on
+monomem approve-first team off    # writes already held stay queued
+```
+
+Over REST (admin token): `GET /approve-first` returns `{ namespaces }`, and
+`PUT /approve-first` with `{ "namespace": "team", "on": true }` sets it. A
+namespace-pinned admin sees and sets its own namespace only. No MCP tool
+changes it.
+
+A held write goes into the same queue with the reason
+`{ "category": "approval", "label": "namespace requires approval", "field": "namespace" }`
+(next to any linter findings), and is approved or rejected like any other.
+Approval keeps the real writer. What is held: creates, and updates that change
+the title, body or source, add tags, or move a note into or out of the
+namespace. Patches that only set `confidence` or `forget_after` are not.
+
+Who is held: everything except the local `monomem` CLI (writer marker `cli`).
+That includes MCP over stdio and HTTP, every REST call (an admin token
+included: REST cannot tell an operator from an agent holding an admin token,
+and such a token can approve held writes itself), the runner, the capture
+hooks (`monomem hook`) and any library caller. Approving a held write and
+consolidation are not held; `monomem import` and `monomem sync` run as the CLI,
+so they are not held either. Secrets are still blocked before anything is held.
+
 Responses:
 
 ```json

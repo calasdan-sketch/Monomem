@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Approve-first namespaces.** `monomem approve-first <namespace> on|off` (no arguments lists them), or admin-only
+  `GET`/`PUT /approve-first` over REST. In such a namespace every write that is not from the local `monomem` CLI goes
+  into the existing quarantine queue with the reason "namespace requires approval", and is approved or rejected there
+  like a linter-held write; approval keeps the real writer. Held: creates, and updates that change the title, body or
+  source, add tags, or move a note into or out of the namespace. MCP (stdio and HTTP), every REST call (an admin token
+  included: REST cannot tell an operator from an agent holding one), the runner and the capture hooks are held. No MCP
+  tool changes the setting. Secrets are still refused outright. Details: [docs/memory-linter.md](./docs/memory-linter.md).
+- **`state_search` `mode: "relevant"`** does what `state_relevant` does: `query` is read as a conversational message,
+  its keywords are extracted, and notes matching any of them come back with the keywords (default limit 5).
+
+### Changed
+
+- **Nine tools are registered by default (was ten):** `state_relevant` left the default set, since `state_search`
+  `mode: "relevant"` covers it. It is still registered under `MONOMEM_TOOLS=all` or when named in `MONOMEM_TOOLS`.
+
 ## [1.1.1] - 2026-11-03
 
 ### Security
