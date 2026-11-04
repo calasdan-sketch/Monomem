@@ -51,9 +51,9 @@ Checked 2026-11-04 against `main` (3732209). Verdicts are strict. "Covered" mean
 
 **Tally (24 rows): Covered 4, Partial 17, Gap 3, Not applicable 0.**
 
-## Planned (approved, not shipped)
+## Built, unreleased (branch release/next)
 
-None of these is in `main`. Do not claim them.
+Built and tested on `release/next`, not yet in a published release. Do not claim them publicly until a release ships them; the verdict rows above still describe `main` (1.1.1).
 
 | Item | Addresses |
 |---|---|
