@@ -149,6 +149,12 @@ export type Capability =
 export interface MemoryAdapter {
   readonly name: string;
   readonly capabilities: ReadonlySet<Capability>;
+  /**
+   * The note fields this system can ever report (see BenchNote). Omit when it can report all of them. A `field` or
+   * `recoverable` check on a field outside this set is judged UNSUPPORTED (neither passed nor failed), so a system is
+   * never failed for lacking a concept it does not claim (for example a server-stamped writer).
+   */
+  readonly fields?: ReadonlySet<keyof BenchNote>;
 
   /** Start a FRESH store for one scenario and create the actors. Must not touch anything that already exists. */
   open(world: WorldSpec): Promise<void>;
@@ -320,6 +326,8 @@ export interface CheckResult {
   pass: boolean;
   expected: string;
   actual: string;
+  /** The adapter could not be judged on this check (an operation it returned "unsupported" for, or a field it lacks). */
+  unsupported?: boolean;
   /** Raw yes/no measurements a `fresh_answer` or `recoverable` check feeds into the suite numbers. */
   measure?: Record<string, boolean>;
 }
