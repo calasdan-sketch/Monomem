@@ -13,6 +13,8 @@ All environment variables are optional. This table lists **every** `MONOMEM_*` v
 | `MONOMEM_AUDIT_LOG` | `<data dir>/audit.log` | Audit log path (create/update/delete, task / handoff / catch_up / approve entries with the token label and kind; never note text or tokens) |
 | `MONOMEM_AUDIT_MAX_BYTES` | `5000000` | Rotate audit.log when it reaches this size (`0` = never) |
 | `MONOMEM_AUDIT_KEEP` | `5` | Rotated audit files kept (`audit.log.1` ... `.N`) |
+| `MONOMEM_ACCESS_LOG_DAYS` | `30` | Days the read access log is kept (who read memory, with which tool, a redacted 120-character query preview and a result count; never note text). `0` = nothing is logged and the next hourly sweep empties it. See [access-log.md](./access-log.md) |
+| `MONOMEM_FLOOD_WRITES_PER_HOUR` | `500` | Flood guard: a writer label that makes this many counted creates/updates in a rolling hour is paused (its writes are refused) until `monomem resume <label>`. `0` = off. See [access-log.md](./access-log.md) |
 | `MONOMEM_RUNNER_TASK_NAMESPACE` | unset | Runner and server: namespace whose admin-approved command tasks the runner executes. Unset = command tasks off. See [RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md) |
 | `MONOMEM_RUNNER_STALE_SECONDS` | `600` (30 s - 7 d) | API/MCP/CLI side: heartbeat age after which `runner_status` calls the runner stale. Never less than three of the runner's own beat intervals (the heartbeat publishes its interval), so a slow beat cannot read as permanently offline. See [RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md) |
 | `MONOMEM_APPROVAL_TTL_SECONDS` | `86400` (60 s - 30 d) | How long an admin approval of a command task stays valid before it expires and needs approving again |
