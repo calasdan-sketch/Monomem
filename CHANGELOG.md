@@ -24,6 +24,23 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Nine tools are registered by default (was ten):** `state_relevant` left the default set, since `state_search`
   `mode: "relevant"` covers it. It is still registered under `MONOMEM_TOOLS=all` or when named in `MONOMEM_TOOLS`.
+- **Two warn-only linter categories.** `pii`: email addresses, phone numbers, IPv4/IPv6 and
+  private (RFC 1918) addresses, and `.local` / `.internal` / `.corp` / `.lan` host names.
+  `directive`: deferred triggers for a later agent ("next time the user asks …, run …", "from now
+  on always …", "in future sessions …"), `curl … | sh` and `iwr … | iex`, and install-a-package
+  commands (npm/pnpm/yarn/bun, pip, cargo, go). Both store the note and return a warning by
+  default. `MONOMEM_LINT=pii=quarantine` or `directive=quarantine` holds such writes instead; they
+  never block. Reserved and documentation names (`example.com`, `192.0.2.x`, `2001:db8::`),
+  loopback and `v1.2.3.4`-style versions are not flagged. These are regex warnings: they miss
+  names, addresses and reworded directives, and they flag some harmless notes (a bare `1.2.3.4`,
+  "from now on use pnpm"). → [docs/memory-linter.md](./docs/memory-linter.md)
+
+### Benchmark
+
+- **127 deterministic scenarios** (was 125): A 32, B 31, C 27, D 19, E 18.
+  - **E17:** a sleeper instruction for a later session is stored with a "deferred trigger" warning.
+  - **E18:** a `curl … | sh` note is stored with a "pipe to shell" warning.
+- The bench adapter now passes a write's linter warnings through to the checks.
 
 ## [1.1.1] - 2026-11-03
 
