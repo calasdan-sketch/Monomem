@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-11-03
+
+### Security
+
+- **The write-time linter now catches constraint overrides** such as "ignore all budget limits",
+  "bypass any spending restrictions" and "disregard every safety policy". The older patterns only
+  knew "ignore previous *instructions*", so a message that revoked a rule without the word
+  "instructions" was stored as ordinary memory. Found by running the booking attack from the Agent
+  Memory hygiene demo by elizabethfuentes12
+  ([05-memory-hygiene-demo](https://github.com/elizabethfuentes12/stop-ai-agents-losing-memory-sample-for-aws/tree/main/05-memory-hygiene-demo),
+  MIT-0) against Monomem. The new pattern needs "all", "any" or "every", so developer notes such as
+  "ignore lint rules in vendor/" or "bypass the cache in tests" are still stored normally.
+
+### Benchmark
+
+- **125 deterministic scenarios** (was 123): A 32, B 31, C 27, D 19, E 16. Two new poison scenarios,
+  adapted from the same demo:
+  - **E15:** the booking-policy override is quarantined, and none of four booking questions sees it.
+  - **E16:** a reworded override with no trigger words *is* stored, and does reach an answer. It is
+    honest about what pattern matching cannot catch. Once an admin distrusts the writer, it reaches
+    none of the four answers.
+- `poison-reach-count` stays 0, now over 34 defended probes (was 25).
+
 ## [1.1.0] - 2026-11-03
 
 An AI agent can no longer permanently erase your memory or act as the operator. Prompted by an
