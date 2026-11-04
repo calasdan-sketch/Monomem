@@ -35,6 +35,7 @@ import {
   TASK_LIMITS,
 } from "./tasks.js";
 import { ackChanges } from "./changes.js";
+import { rollbackPreview, rollbackConfirm, embedRestored } from "./rollback.js";
 import { supersedePreview, supersedeConfirm, supersedeUndo, noteHistory, restoreVersion, purgeNoteHistory, SupersedeError, type Caller } from "./supersede.js";
 import { runnerStatus } from "./liveness.js";
 import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
@@ -228,6 +229,7 @@ export const OPERATOR_ONLY_TOOLS: readonly string[] = [
   "memory_quarantine",
   "trust_policy",
   "memory_history_purge",
+  "memory_rollback",
   "memory_consolidate",
   "task_approve",
 ];
@@ -2031,6 +2033,38 @@ export function createMcpServer(
         if (denied) return errorResult(denied);
         return textResult(purgeNoteHistory(store, callerNow(), id));
       } catch (e) {
+        return supersedeFailure(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "memory_rollback",
+    {
+      title: "Roll back what one writer did since a time",
+      annotations: { destructiveHint: true },
+      description:
+        "Admin only, operator tool. Without code: a preview of undoing everything one writer did since a time (notes it created are archived, " +
+        "notes whose text it changed get their earlier text back) plus a one-time code; nothing changes. With code: applies exactly that preview, " +
+        "all or nothing. Notes another writer changed later are skipped unless include_conflicts. Pinned notes and approve-first namespaces " +
+        "are skipped here (the monomem CLI does those). Show the preview to the person and ask before confirming.",
+      inputSchema: {
+        writer: z.string().optional().describe('The exact writer name (written_by), e.g. "token:ci" or "stdio:cursor"; "stdio" means every local app.'),
+        since: z.string().optional().describe("An ISO time, or a duration back from now: 30m, 2h, 7d."),
+        include_conflicts: z.boolean().optional().describe("Also roll back notes another writer changed afterwards (their text stays in the history)."),
+        code: z.string().optional().describe("The one-time code from the preview, to apply it."),
+      },
+    },
+    async ({ writer, since, include_conflicts, code }) => {
+      try {
+        const denied = denyIfUnder("admin");
+        if (denied) return errorResult(denied);
+        if (code === undefined) return untrustedResult(rollbackPreview(store, callerNow(), { writer, since, include_conflicts }));
+        const out = rollbackConfirm(store, callerNow(), { token: code });
+        await embedRestored(store, out);
+        return textResult(out);
+      } catch (e) {
+        if (e instanceof QuarantinedError) return quarantinedResult(e);
         return supersedeFailure(e);
       }
     }

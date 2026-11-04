@@ -51,9 +51,15 @@ const OLD_DELETE_TRIGGER = `
 `;
 
 /** Rewrite the database file at `path` (closed by the caller) as it looked at `version`. */
-export function downgradeTo(path: string, version: 11 | 12 | 13 | 14 | 15 | 16): void {
+export function downgradeTo(path: string, version: 11 | 12 | 13 | 14 | 15 | 16 | 17): void {
   const raw = new DatabaseSync(path);
   try {
+    // v18 additions, removed for every older shape.
+    raw.exec("DROP TABLE IF EXISTS note_history_dropped; ALTER TABLE notes DROP COLUMN pinned;");
+    if (version === 17) {
+      raw.exec("PRAGMA user_version = 17");
+      return;
+    }
     // v17 additions, removed for every older shape.
     raw.exec("DROP TABLE IF EXISTS access_log; DROP TABLE IF EXISTS write_rate;");
     if (version === 16) {

@@ -169,6 +169,11 @@ function usage(): void {
       "            Bring a replaced note back exactly as it was (recorded).",
       "  history <id> [--json] [--include-distrusted] | history restore <id> <version> [--if-rev n] | history purge <id> [--yes]",
       "            A note's earlier versions: list them, put one back (as a new version, nothing is overwritten), or forget them.",
+      "  pin [<id>] | unpin <id>",
+      "            Pin a note so agents can read it but only this CLI can change, archive, replace or restore it. No id: list pins.",
+      "  rollback --writer <name> --since <iso|30m|2h|7d> [--include-conflicts] [--yes] [--json]",
+      "            Undo what one writer did since then: archive notes it created, put back the text of notes it changed.",
+      "            Shows the plan first; notes others changed later are skipped unless --include-conflicts. \"stdio\" = every local app.",
       "  bench [--json] [--suite name] [--only id] [--seed n] [--dir folder] [--strict-gaps] [--verbose]",
       "            Run the provenance benchmark on a throwaway store: stale memory, contradiction recovery,",
       "            permission isolation, provenance retention. Offline, deterministic, exits 1 on a failure.",
@@ -2141,10 +2146,10 @@ async function encryptCmd(): Promise<void> {
 }
 
 /** `monomem supersede ...` and `monomem history ...` (see supersede-cli.ts). */
-async function supersedeCmd(kind: "supersede" | "history"): Promise<void> {
+async function supersedeCmd(kind: "supersede" | "history" | "pin" | "unpin" | "rollback"): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
-  const { supersedeCli, historyCli } = await import("./supersede-cli.js");
+  const { supersedeCli, historyCli, pinCli, rollbackCli } = await import("./supersede-cli.js");
   const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const io = {
     out: (t: string): void => console.log(t),
@@ -2162,7 +2167,14 @@ async function supersedeCmd(kind: "supersede" | "history"): Promise<void> {
   const store = new Store(DB_PATH);
   try {
     const args = process.argv.slice(3);
-    process.exitCode = kind === "supersede" ? await supersedeCli(store, args, io) : await historyCli(store, args, io);
+    process.exitCode =
+      kind === "supersede"
+        ? await supersedeCli(store, args, io)
+        : kind === "history"
+          ? await historyCli(store, args, io)
+          : kind === "rollback"
+            ? await rollbackCli(store, args, io)
+            : await pinCli(store, kind, args, io);
   } finally {
     store.close();
   }
@@ -2412,6 +2424,11 @@ async function main(): Promise<void> {
       break;
     case "history":
       await supersedeCmd("history");
+      break;
+    case "pin":
+    case "unpin":
+    case "rollback":
+      await supersedeCmd(cmd);
       break;
     case "bench": {
       const args = process.argv.slice(3);

@@ -3179,9 +3179,11 @@ export class Store {
       replaceTaint?: string[];
       /** internal: why the old text is kept in the note's history ("update" unless a version is being restored). */
       historyReason?: string;
+      /** internal: an operator rollback; not counted by the flood guard (a paused writer is still refused). */
+      noFloodCount?: boolean;
     } & LintOpts = {}
   ): NoteRecord | null {
-    this.floodGate(opts.lint ?? "full");
+    this.floodGate(opts.lint ?? "full", opts.noFloodCount !== true);
     validateForgetAfter(patch.forget_after);
     validateConfidence(patch.confidence);
     const existing = this.read(id);
@@ -3801,7 +3803,7 @@ export class Store {
    * the history like any other edit, and the restoring writer becomes the note's writer. Names the entry's writers as touching
    * the text, so restoring something a distrusted writer wrote does not launder it.
    */
-  restoreVersion(noteId: number, version: number, opts: { ifRev?: number; writtenBy?: string; reason?: string } = {}): NoteRecord | null {
+  restoreVersion(noteId: number, version: number, opts: { ifRev?: number; writtenBy?: string; reason?: string; noFloodCount?: boolean } = {}): NoteRecord | null {
     const entry = this.historyVersion(noteId, version);
     if (!entry) throw new ValidationError(`note ${noteId} has no saved version ${version}`);
     const touched = [entry.written_by, entry.claimed_writer ?? ""].filter((x) => x);
@@ -3812,7 +3814,7 @@ export class Store {
     return this.update(
       noteId,
       { title: entry.title, body: entry.body },
-      { ...(opts.ifRev !== undefined ? { ifRev: opts.ifRev } : {}), ...(opts.writtenBy !== undefined ? { writtenBy: opts.writtenBy } : {}), ...provenance, historyReason: opts.reason ?? "restore" }
+      { ...(opts.ifRev !== undefined ? { ifRev: opts.ifRev } : {}), ...(opts.writtenBy !== undefined ? { writtenBy: opts.writtenBy } : {}), ...provenance, historyReason: opts.reason ?? "restore", ...(opts.noFloodCount ? { noFloodCount: true } : {}) }
     );
   }
 
@@ -6918,12 +6920,12 @@ export class Store {
    * consolidation (isOperatorWrite), the server's own jobs (`server`), callers with no writer identity (library use),
    * and importNotes (a restore).
    */
-  private floodGate(mode: LintMode): void {
+  private floodGate(mode: LintMode, count = true): void {
     const w = this.floodSubject(mode);
     if (w === null) return;
     if (this.pausedWriters().includes(w)) throw this.pausedError(w);
     const limit = floodWritesPerHour();
-    if (limit === 0) return;
+    if (limit === 0 || !count) return;
     const now = Date.now();
     // ponytail: count-then-insert is not atomic across processes; concurrent writers can overshoot by a few.
     const n = Number(
@@ -6986,8 +6988,10 @@ export class Store {
   }
 
   /** Pin or unpin a note. False when there is no such note. Not a content change: rev, written_by and the change feed are untouched. */
-  setPinned(id: number, on: boolean): boolean {
-    const res = this.db.prepare("UPDATE notes SET pinned = ? WHERE id = ?").run(on ? 1 : 0, id);
+  setPinned(id: number, on: boolean, namespaces?: string[]): boolean {
+    if (namespaces && namespaces.length === 0) return false;
+    const where = namespaces ? ` AND namespace IN (${namespaces.map(() => "?").join(",")})` : "";
+    const res = this.db.prepare(`UPDATE notes SET pinned = ? WHERE id = ?${where}`).run(on ? 1 : 0, id, ...(namespaces ?? []));
     const ok = Number(res.changes) > 0;
     if (ok) audit({ op: on ? "pin" : "unpin", id });
     return ok;

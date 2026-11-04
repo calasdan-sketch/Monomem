@@ -353,6 +353,7 @@ shipped in the npm package** — build it from the repo.
 | `trust_policy` | admin | list / change the per-namespace distrust list and the trusted attester keys ([docs/trust.md](./docs/trust.md)) |
 | `memory_supersede_preview` / `memory_supersede_confirm` / `memory_supersede_undo` | write | replace a note in two steps (preview changes nothing; confirm needs its one-time code); undo ([docs/replacing-memories.md](./docs/replacing-memories.md)) |
 | `memory_history` / `memory_restore_version` / `memory_history_purge` | admin | earlier versions of a note; put one back as a new version; forget them |
+| `memory_rollback` | admin | undo what one writer did since a time: preview, then confirm with the one-time code (operator-only: off over stdio unless `MONOMEM_STDIO_ADMIN_TOOLS=1`) |
 | `memory_consolidation_candidates` / `memory_consolidate` / `memory_rebuild_edges` | admin | dedup and similarity-graph maintenance |
 
 REST mirrors them (`/notes`, `/search`, `/relevant`, `/changes`, `/tasks`, `/handoffs`, `/catch-up`, `/stats`,
@@ -378,6 +379,8 @@ monomem supersede --old 12 --title "..." --body "..."   # replace a note: shows 
 monomem supersede undo <id>     monomem history <id> | restore <id> <version> | purge <id>
 monomem quarantine [list | approve <id> | reject <id>]
 monomem approve-first [<namespace> on|off]   # hold every agent write to a namespace for your approval
+monomem pin [<id>]     monomem unpin <id>     # agents can read a pinned note; only this CLI can change it
+monomem rollback --writer stdio:cursor --since 2h [--include-conflicts]   # undo one writer's changes (preview, then confirm)
 monomem access [--since 24h] [--writer label]   # who read memory, with which tool (never note text)
 monomem flood     monomem resume <label>         # writers paused for too many writes in an hour
 monomem quality [--json]     monomem decay [--dry-run]     monomem archive <id> | restore <id>

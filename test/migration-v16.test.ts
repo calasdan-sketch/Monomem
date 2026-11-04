@@ -49,10 +49,10 @@ for (const encrypted of [false, true]) {
         assert.equal(Store.peekSchemaVersion(path), 15);
         assert.ok(!cols(path, "notes").includes("kind"));
         const s = quietly(() => new Store(path));
-        assert.equal(SCHEMA_VERSION, 17);
-        assert.equal(Store.peekSchemaVersion(path), 17);
-        assert.ok(existsSync(path + ".pre-v17-backup"));
-        assert.equal(Store.peekSchemaVersion(path + ".pre-v17-backup"), 15);
+        assert.equal(SCHEMA_VERSION, 18);
+        assert.equal(Store.peekSchemaVersion(path), 18);
+        assert.ok(existsSync(path + ".pre-v18-backup"));
+        assert.equal(Store.peekSchemaVersion(path + ".pre-v18-backup"), 15);
         for (const c of ["kind", "session_id", "obs_type"]) assert.ok(cols(path, "notes").includes(c), c);
         assert.ok(cols(path, "capture_events").includes("output_enc"));
         assert.ok(cols(path, "sessions").includes("distilled_seq"));
