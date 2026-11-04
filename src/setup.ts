@@ -19,7 +19,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { applyOps, getMember, getPath, JsonEditError, opsAreApplied, parseDoc, parseJsonc, type Op } from "./jsonc-edit.js";
-import { applyTomlOps, hasServer, tomlOpsApplied } from "./toml-table.js";
+import { applyTomlOps, findTable, hasServer, tomlOpsApplied } from "./toml-table.js";
 
 // ---- environment (injectable, so tests never touch a real configuration) ---------------------------------------------
 
@@ -405,10 +405,33 @@ function serversKey(id: ClientId, text: string): string {
   return "mcpServers";
 }
 
+/**
+ * The app name setup writes as MONOMEM_CLIENT (written_by "stdio:<app>"): the client id, except a folder's .mcp.json,
+ * which is Claude Code's project-scoped file. Self-declared by the config file, not a verified identity.
+ */
+const appLabel = (id: ClientId): string => (id === "project" ? "claude-code" : id);
+
 /** Codex CLI: one [mcp_servers.monomem] table in ~/.codex/config.toml (command/args/env), everything else untouched. */
 function planToml(e: SetupEnv, opts: SetupOptions, target: ClientTarget, text: string | null, shared: { dbs: Set<string> }): { change: FileChange | null; already: string[]; conflicts: string[]; warnings: string[] } {
-  if (text !== null && hasServer(text, "monomem")) return { change: null, already: [`${target.label}: "monomem" is already set up`], conflicts: [], warnings: [] };
-  const entry = buildServerEntry(e, opts, opts.db ? { MONOMEM_DB_PATH: opts.db } : undefined);
+  if (text !== null && hasServer(text, "monomem")) {
+    const already = { change: null, already: [`${target.label}: "monomem" is already set up`], conflicts: [], warnings: [] };
+    if (/MONOMEM_CLIENT/.test(text)) return already;
+    // An entry from before per-app labels gets an [mcp_servers.monomem.env] table, but only when that cannot clash with
+    // what is there: the entry is a table of its own and has no env yet (an inline `env = {...}` or an inline entry is
+    // closed in TOML, so a second env would make the file invalid). Otherwise it keeps working, stamped plain "stdio".
+    const table = findTable(text, ["mcp_servers", "monomem"]);
+    if (!table || /^\s*"?env"?\s*[.=]/m.test(text.slice(table.start, table.end)) || findTable(text, ["mcp_servers", "monomem", "env"])) {
+      return { ...already, warnings: [`${target.label}: to label its writes "stdio:codex", add MONOMEM_CLIENT = "codex" to the env of [mcp_servers.monomem] by hand`] };
+    }
+    const at = ["mcp_servers", "monomem"];
+    return {
+      change: { client: target.id, label: target.label, file: target.file, before: text, ops: [{ op: "set", path: at, key: "env", value: { MONOMEM_CLIENT: "codex" } }], lines: [`label "monomem" as codex (MONOMEM_CLIENT), so its writes are stamped "stdio:codex"`], inverse: [{ op: "remove", path: at, key: "env" }], allowEmpty: opts.forceEmpty, format: "toml" },
+      already: [],
+      conflicts: [],
+      warnings: [],
+    };
+  }
+  const entry = buildServerEntry(e, opts, { MONOMEM_CLIENT: target.id, ...(opts.db ? { MONOMEM_DB_PATH: opts.db } : {}) });
   if (opts.db) shared.dbs.add(opts.db);
   const ops: Op[] = [{ op: "set", path: ["mcp_servers"], key: "monomem", value: entry }];
   const lines = [`add the "monomem" memory server${opts.db ? ` (database ${opts.db})` : ""}`];
@@ -432,6 +455,7 @@ export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, 
   const top = servers.filter((s) => s.path.length === 1);
   const hasOneTop = top.some((s) => classifyEntry(s.name, safeParseEntry(base, s) ?? {}) === "monomem");
   let migrated = 0;
+  let labelled = 0;
   for (const s of servers) {
     const entry = safeParseEntry(base, s);
     if (!entry) {
@@ -445,7 +469,20 @@ export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, 
     const kind = classifyEntry(s.name, entry);
     const where = s.path.length === 1 ? "" : ` (project ${s.path[1]})`;
     if (kind === "monomem") {
-      already.push(`${target.label}: "${s.name}"${where} is already set up`);
+      const env = entry.env && typeof entry.env === "object" && !Array.isArray(entry.env) ? (entry.env as Record<string, unknown>) : null;
+      // A folder's .mcp.json is only edited when asked (--project), the same as adding one.
+      // Only a stdio entry (a command) is labelled: MONOMEM_CLIENT means nothing to an HTTP entry (url).
+    if ((env && "MONOMEM_CLIENT" in env) || typeof entry.command !== "string" || (target.id === "project" && !opts.project)) {
+        already.push(`${target.label}: "${s.name}"${where} is already set up`);
+        continue;
+      }
+      // An entry from before per-app labels: name the app, so its writes are stamped stdio:<app> instead of plain stdio.
+      const at = env ? [...s.path, s.name, "env"] : [...s.path, s.name];
+      const op: Op = env ? { op: "set", path: at, key: "MONOMEM_CLIENT", value: appLabel(target.id) } : { op: "set", path: at, key: "env", value: { MONOMEM_CLIENT: appLabel(target.id) } };
+      ops.push(op);
+      inverse.unshift({ op: "remove", path: at, key: op.key });
+      lines.push(`label "${s.name}"${where} as ${appLabel(target.id)} (MONOMEM_CLIENT), so its writes are stamped "stdio:${appLabel(target.id)}"`);
+      labelled++;
       continue;
     }
     if (kind !== "legacy") continue;
@@ -456,7 +493,7 @@ export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, 
       continue;
     }
     const m = migrateEntry(e, opts, entry, withType);
-    if (opts.db) m.entry.env = { ...(m.entry.env ?? {}), MONOMEM_DB_PATH: opts.db };
+    m.entry.env = { MONOMEM_CLIENT: appLabel(target.id), ...(m.entry.env ?? {}), ...(opts.db ? { MONOMEM_DB_PATH: opts.db } : {}) };
     ops.push({ op: "rename", path: s.path, key: s.name, newKey: "monomem", value: m.entry });
     inverse.unshift({ op: "rename", path: s.path, key: "monomem", newKey: s.name, value: entry });
     lines.push(`replace the old "${s.name}" entry${where} with "monomem"; ${m.db ? `your data stays where it is (${m.db})` : "standard data location"}. The old install folder is not touched`);
@@ -465,8 +502,9 @@ export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, 
     if (dbToCheck) shared.dbs.add(dbToCheck);
     migrated++;
   }
-  if (migrated === 0 && !hasOneTop && (target.id !== "project" || opts.project) && !already.length) {
-    const env: Record<string, string> = {};
+  if (migrated === 0 && labelled === 0 && !hasOneTop && (target.id !== "project" || opts.project) && !already.length) {
+    // MONOMEM_CLIENT names the app for written_by ("stdio:<app>"): a label the config declares, not a verified identity.
+    const env: Record<string, string> = { MONOMEM_CLIENT: appLabel(target.id) };
     if (opts.db) env.MONOMEM_DB_PATH = opts.db;
     let entry = buildServerEntry(e, opts, env, withType);
     // Muse: "optional" so a server that fails to start is skipped with a warning instead of aborting the whole run.

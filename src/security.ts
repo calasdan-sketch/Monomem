@@ -39,6 +39,7 @@ export function describeWriter(writtenBy: unknown): string {
   const w = oneLine(writtenBy, 100);
   if (!w) return "an unknown writer (stored before writers were recorded)";
   if (w === "stdio") return "stdio (local MCP client, no token)";
+  if (w.startsWith("stdio:")) return `${w} (local MCP client, no token; app name self-declared by its launch config)`;
   if (w === "cli") return "cli (the local monomem command)";
   if (w === "server") return "server (Monomem's own background job)";
   if (w === "runner") return "runner (the command runner process on the owner's PC)";
@@ -48,7 +49,7 @@ export function describeWriter(writtenBy: unknown): string {
 /** created_by for the banner: a fixed marker as-is, a token label JSON-quoted. */
 function describeCreator(createdBy: unknown): string {
   const w = oneLine(createdBy, 100);
-  return ["stdio", "cli", "server", "runner"].includes(w) ? w : `${JSON.stringify(w.slice(0, 60))} (token)`;
+  return ["stdio", "cli", "server", "runner"].includes(w) || w.startsWith("stdio:") ? w : `${JSON.stringify(w.slice(0, 60))} (token)`;
 }
 
 /**

@@ -37,6 +37,7 @@ function openToolName(): string {
   return on === null || on.has("memory_get") ? "memory_get" : "state_read";
 }
 import { meterAdd } from "./meter.js";
+import { nameIs, stdioFamily } from "./trust.js";
 
 export const DEFAULT_RECALL_TOKENS = 1500;
 export const DEFAULT_PROFILE_TOKENS = 300;
@@ -209,8 +210,8 @@ export async function rankContext(
       if (!pool.has(r.note_id)) {
         const n = store.readVisible(r.note_id, { includeDistrusted: opts.includeDistrusted === true }); // gate-ok: namespace, archive and writer filters are re-applied just below
         if (!n || n.archived_at || (ns !== undefined && n.namespace !== ns) || skip(n)) continue;
-        if (opts.writtenBy && n.written_by !== opts.writtenBy) continue;
-        if (opts.notWrittenBy && n.written_by === opts.notWrittenBy) continue;
+        if (opts.writtenBy && !nameIs(n.written_by, opts.writtenBy, stdioFamily(opts.writtenBy))) continue;
+        if (opts.notWrittenBy && nameIs(n.written_by, opts.notWrittenBy, stdioFamily(opts.notWrittenBy))) continue;
         pool.set(n.id, n);
       }
       overlap.push(r.note_id);

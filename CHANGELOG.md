@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Each local app's writes say which app it was.** `monomem setup` now puts `MONOMEM_CLIENT=<app>`
+  in each app's MCP entry (`claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, `muse`,
+  `vscode`, `zed`; a folder's `.mcp.json` gets `claude-code`), and the stdio server stamps
+  `written_by` as `stdio:<app>` instead of plain `stdio`. Re-running setup adds the name to an
+  existing entry once (Codex: only when `[mcp_servers.monomem]` is its own table without an `env`
+  yet; otherwise setup says how to add it by hand). HTTP entries are left alone. An install that
+  never re-runs setup keeps stamping `stdio`.
+  The name is **self-declared** by the config file (anything that can edit it, or launch
+  `monomem mcp` itself, can claim any name). It tells apps apart; it is not authentication and
+  grants nothing: stdio access is unchanged. Scoped tokens over HTTP remain the authenticated option.
+  A name must be 1-40 characters `a-z 0-9 . _ -` (lower-cased); anything else is ignored with a
+  warning on stderr and writes stay `stdio`.
+- The client's own `clientInfo` name and version from the MCP handshake are written to the audit
+  log (`mcp.connect`) as a **claim** only; they are never used for `written_by` or any decision.
+
+### Changed
+
+- `written_by` / `not_written_by` filters (REST, MCP, CLI, the change feed) and distrust rules:
+  `stdio:<app>` names that one app, and plain `stdio` names every local stdio app, labelled or not.
+  So distrusting `stdio:cursor` hides Cursor's writes but not Claude Code's, and an existing rule on
+  `stdio` keeps hiding every local app after setup labels them.
+- A token label starting with `stdio:` is stored as `token:stdio:...`, so a token cannot pass as a
+  local app.
+
 ## [1.1.1] - 2026-11-03
 
 ### Security

@@ -5,9 +5,10 @@
 Gemini something once and the rest already know it — one self-hosted SQLite
 file, over MCP or plain REST. No API keys, no cloud, no hidden model calls.
 **Every note records who wrote it and keeps its earlier versions. Replacing or
-editing a note can be undone; deleting one is permanent, by design.** Give each
-app its own token to tell them apart (the default local setup marks every note
-`stdio`). [Benchmarks](#benchmark) back each of these claims.
+editing a note can be undone; deleting one is permanent, by design.** The default
+local setup marks each app's notes `stdio:<app>` (`stdio:cursor`, `stdio:claude-code`, ...), a
+name the app's config file declares, not a login; give each app its own token when the writer
+must be authenticated. [Benchmarks](#benchmark) back each of these claims.
 
 [![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)
@@ -392,7 +393,20 @@ Every note carries a **server-stamped** `written_by` (who last changed its title
 (the first). It is the label of the authenticated token that made the call, or a fixed
 marker for writers with no token: `stdio` (local MCP), `cli` (an `monomem` command),
 `server` (its own jobs), `runner` (the command runner). A client cannot set it: `written_by` in a request body is
-ignored, and an import stamps the *importing* admin. The old `source` field is still
+ignored, and an import stamps the *importing* admin.
+
+**Which local app?** `monomem setup` puts `MONOMEM_CLIENT=<app>` in each app's MCP entry
+(`claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, `muse`, `vscode`, `zed`; a folder's
+`.mcp.json` gets `claude-code`), and the stdio server then stamps `stdio:<app>` instead of `stdio`.
+Re-running setup adds the name to an entry written by an older version; an install that never
+re-runs setup keeps stamping plain `stdio`. Be clear about what this is: the name is
+**self-declared** by that config file. Anything that can edit the file, or start `monomem mcp` with
+its own environment, can claim any name, so `stdio:cursor` tells your apps apart; it does not prove
+Cursor wrote the note. It grants nothing: every stdio connection has the same access as before. For
+an authenticated writer, use a scoped token over HTTP (`MONOMEM_TOKENS`). In filters and distrust
+rules, `stdio:cursor` names that one app and plain `stdio` still names every local stdio app,
+labelled or not, so a rule written for `stdio` keeps covering all of them. A token label cannot
+start with `stdio:` (it is stored as `token:stdio:...`). The old `source` field is still
 there, but it is only what the writer *claims*, so anyone can put anything in it.
 
 A note written by Claude Code and one written by Cursor are therefore no longer

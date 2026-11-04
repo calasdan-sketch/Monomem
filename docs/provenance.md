@@ -55,7 +55,9 @@ changes `written_by`, and the approval is voided anyway.
 `written_by` is, in order:
 
 1. the **label of the authenticated token** behind the call (REST, MCP over HTTP);
-2. else a fixed marker for the process: `stdio` (the local MCP stdio server), `cli` (an
+2. else a fixed marker for the process: `stdio` (the local MCP stdio server; `stdio:<app>` when
+   its launch config sets `MONOMEM_CLIENT`, which `monomem setup` does per app. That name is
+   self-declared by the config file, not authenticated), `cli` (an
    `monomem ...` command, including `import --dir` and `consolidate`), `server` (the
    long-running server's own background jobs), `runner` (the command runner process, which writes
    the heartbeat that `runner_status` trusts);
@@ -66,7 +68,7 @@ It is read from the connection, never from the request. Sending `written_by`,
 `created_by` or `imported_written_by` in a create, update or import body does nothing
 (the MCP tools do not even declare them). Labels are normalised first (control characters become spaces, runs of whitespace collapse, ends
 are trimmed). A token whose label is `stdio`, `cli`, `server` or `runner` (any letter case), or
-starts with `token:`, is stored as `token:<label>` so it cannot pass as a marker or as another
+starts with `token:` or `stdio:`, is stored as `token:<label>` so it cannot pass as a marker or as another
 token's escaped form; an unlabeled token is stored as `(unlabeled)`. A label over 100 characters is
 stored as its first 87 characters plus `~` and 12 hex digits of its SHA-256, so two long labels with
 the same start stay different; the `written_by` / `not_written_by` filters apply the same rule, so

@@ -224,7 +224,8 @@ function reviewQueue(notes, writer){
   return (notes || []).filter(function(n){
     if(HUMAN_WRITERS[n.written_by || ""]){ return false; }
     if((n.tags || []).indexOf("reviewed") >= 0){ return false; }
-    return !writer || n.written_by === writer;
+    // "stdio" also covers each self-declared stdio:<app> (trust.ts stdioFamily).
+    return !writer || n.written_by === writer || (writer === "stdio" && String(n.written_by || "").indexOf("stdio:") === 0);
   });
 }
 function loadReview(){
