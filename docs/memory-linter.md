@@ -147,6 +147,12 @@ hooks (`monomem hook`) and any library caller. Approving a held write and
 consolidation are not held; `monomem import` and `monomem sync` run as the CLI,
 so they are not held either. Secrets are still blocked before anything is held.
 
+Forgetting (archiving), restoring and replacing (supersede) a note change what agents see but cannot
+wait in the queue, so in an approve-first namespace they are refused for everyone except the local
+`monomem` CLI: `state_delete`, `memory_supersede_preview` and `memory_supersede_confirm` return an
+error naming the namespace, and so do the REST archive and restore routes. The operator does them
+with `monomem archive`, `monomem restore` and so on.
+
 Responses:
 
 ```json

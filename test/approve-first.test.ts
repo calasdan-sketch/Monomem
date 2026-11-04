@@ -81,6 +81,31 @@ describe("approve-first namespaces", () => {
     store.close();
   });
 
+  test("an agent cannot forget, restore or replace notes there; the operator can", async () => {
+    const store = new Store(":memory:");
+    setProcessWriter("cli");
+    const n = store.create({ namespace: "team", title: "deploy rule", body: "fridays only" });
+    store.setApproveFirst("team", true);
+    setProcessWriter("stdio");
+    const c = await connect(store, { local: true });
+    const del: any = await c.callTool({ name: "state_delete", arguments: { id: n.id } });
+    assert.ok(del.isError, "state_delete refused");
+    assert.match(del.content[0].text, /approve-first/);
+    const prev: any = await c.callTool({ name: "memory_supersede_preview", arguments: { old_ids: [n.id], new_title: "deploy rule", new_body: "any day" } });
+    assert.ok(prev.isError, "supersede preview refused");
+    assert.match(prev.content[0].text, /approve-first/);
+    assert.throws(() => store.archive(n.id), /approve-first/);
+    assert.equal(store.read(n.id)?.archived_at ?? null, null, "still live");
+    setProcessWriter("cli");
+    assert.ok(store.archive(n.id)?.archived_at, "operator archive works");
+    setProcessWriter("stdio");
+    assert.throws(() => store.restore(n.id), /approve-first/);
+    setProcessWriter("cli");
+    assert.equal(store.restore(n.id)?.archived_at ?? null, null, "operator restore works");
+    await c.close();
+    store.close();
+  });
+
   test("approve stores it with the real writer; reject drops it", async () => {
     const store = new Store(":memory:");
     store.setApproveFirst("team", true);

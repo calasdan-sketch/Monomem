@@ -163,6 +163,8 @@ export function supersedePreview(
     if (o.archived_at) throw new SupersedeError(`note ${o.id} is archived, not a live note, so there is nothing to replace`, 409);
     if (o.tags.some(isReservedTag)) throw new SupersedeError(`note ${o.id} is a task or handoff, or captured work; those are managed by their own tools, not replaced`);
   }
+  // An approve-first namespace: the confirm would be refused (see Store.supersedeCommit), so say so now.
+  if (store.isApproveFirst(ns)) throw new SupersedeError(`namespace "${ns}" is approve-first: replacing notes there is done by the operator, not by an agent`, 403);
 
   let replacementView: SupersedePreview["replacement"];
   let content: { title: string; body: string; tags: string[]; confidence?: number | null };

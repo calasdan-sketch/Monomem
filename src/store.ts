@@ -314,6 +314,19 @@ function isOperatorWrite(mode: LintMode): boolean {
   return mode !== "full" || currentWriter() === "cli";
 }
 
+/**
+ * Archive, restore and supersede change what agents see but cannot wait in the quarantine queue (it
+ * holds content, not state changes). In an approve-first namespace they are therefore the operator's
+ * alone: an agent gets a clear refusal instead of a silent change the owner never approved.
+ */
+function refuseAgentInApproveFirst(store: { isApproveFirst(ns: string): boolean }, namespace: string, what: string): void {
+  if (currentWriter() !== "cli" && store.isApproveFirst(namespace)) {
+    throw new ValidationError(
+      `namespace "${namespace}" is approve-first: ${what} there is done by the operator (monomem CLI), not by an agent`
+    );
+  }
+}
+
 export interface NoteInput {
   namespace?: string;
   title: string;
@@ -3802,6 +3815,8 @@ export class Store {
       this.db.prepare("DELETE FROM supersede_used WHERE expires_ms < ?").run(Date.now() - 86_400_000);
       const spent = this.db.prepare("INSERT OR IGNORE INTO supersede_used (nonce, used_at, expires_ms) VALUES (?, ?, ?)").run(input.nonce, now, input.expiresMs);
       if (Number(spent.changes) === 0) throw new ValidationError("this confirmation was already used; start again with a new preview");
+      const nsRow = this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(input.newId) as { namespace: string } | undefined;
+      if (nsRow) refuseAgentInApproveFirst(this, nsRow.namespace, "replacing notes");
       const target = this.db.prepare("SELECT id, namespace, rev, archived_at, superseded_by FROM notes WHERE id = ?").get(input.newId) as
         | { id: number; namespace: string; rev: number; archived_at: string | null; superseded_by: number | null }
         | undefined;
@@ -3912,6 +3927,8 @@ export class Store {
 
   /** Soft-archive one note (retention action from an API/client). */
   archive(id: number): NoteRecord | null {
+    const ns = (this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined)?.namespace;
+    if (ns !== undefined) refuseAgentInApproveFirst(this, ns, "forgetting a note");
     const iso = new Date().toISOString();
     this.db
       .prepare("UPDATE notes SET archived_at = ? WHERE id = ? AND archived_at IS NULL")
@@ -3930,6 +3947,8 @@ export class Store {
    * pass `forget_after` (days) to give it a fresh deadline instead.
    */
   restore(id: number, opts: { forget_after?: number } = {}): NoteRecord | null {
+    const restoreNs = (this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined)?.namespace;
+    if (restoreNs !== undefined) refuseAgentInApproveFirst(this, restoreNs, "restoring a note");
     validateForgetAfter(opts.forget_after);
     const cur = this.db.prepare("SELECT superseded_by FROM notes WHERE id = ?").get(id) as { superseded_by: number | null } | undefined;
     if (cur && cur.superseded_by !== null) {

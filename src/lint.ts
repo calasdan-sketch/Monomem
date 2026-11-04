@@ -215,5 +215,5 @@ export function lintContent(input: {
 
 /** "GitHub token in body; instruction override in title" */
 export function describeFindings(findings: LintFinding[]): string {
-  return findings.map((f) => `${f.label} in ${f.field}`).join("; ");
+  return findings.map((f) => (f.category === "approval" ? f.label : `${f.label} in ${f.field}`)).join("; ");
 }

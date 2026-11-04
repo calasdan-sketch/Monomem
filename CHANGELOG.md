@@ -14,7 +14,9 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   like a linter-held write; approval keeps the real writer. Held: creates, and updates that change the title, body or
   source, add tags, or move a note into or out of the namespace. MCP (stdio and HTTP), every REST call (an admin token
   included: REST cannot tell an operator from an agent holding one), the runner and the capture hooks are held. No MCP
-  tool changes the setting. Secrets are still refused outright. Details: [docs/memory-linter.md](./docs/memory-linter.md).
+  tool changes the setting. Secrets are still refused outright. Forgetting, restoring and replacing notes there cannot
+  be queued, so they are refused for everyone but the CLI (state_delete, supersede preview/confirm, REST archive and
+  restore return an error naming the namespace). Details: [docs/memory-linter.md](./docs/memory-linter.md).
 - **`state_search` `mode: "relevant"`** does what `state_relevant` does: `query` is read as a conversational message,
   its keywords are extracted, and notes matching any of them come back with the keywords (default limit 5).
 
