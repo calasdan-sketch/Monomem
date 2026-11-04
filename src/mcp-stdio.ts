@@ -9,11 +9,15 @@ import { Store } from "./store.js";
 import { createMcpServer } from "./mcp-server-core.js";
 import { DB_PATH, prepareDataDir } from "./config.js";
 import { resolveStartupNamespace } from "./namespace.js";
-import { setProcessWriter } from "./actor.js";
+import { setProcessWriter, stdioWriter } from "./actor.js";
+import { audit, printable } from "./security.js";
 
 prepareDataDir();
-// No token on stdio: writes are stamped with the fixed marker "stdio" (written_by).
-setProcessWriter("stdio");
+// No token on stdio: writes are stamped with the marker "stdio", or "stdio:<app>" when the launch config sets
+// MONOMEM_CLIENT (setup does, per app). The app name is self-declared by that config, not authenticated.
+const stdio = stdioWriter();
+if (stdio.warning) process.stderr.write(`[monomem] ${stdio.warning}\n`);
+setProcessWriter(stdio.writer);
 const store = new Store(DB_PATH);
 // Most people never run the HTTP server (which sweeps hourly), so expired notes are archived here too:
 // at startup and then hourly, idempotent, and a failure never stops the MCP server.
@@ -32,6 +36,12 @@ const nsOpts = resolveStartupNamespace(process.cwd());
 // local: admin with no token was never a deliberate grant, so operator-only tools stay off for the agent.
 const server = createMcpServer(store, "admin", nsOpts ?? undefined, { local: true });
 const transport = new StdioServerTransport();
+// The client's own name from the initialize handshake goes to the audit log, labelled as a claim: any program can
+// send any clientInfo. It is never used for written_by or for any access decision.
+server.server.oninitialized = (): void => {
+  const c = server.server.getClientVersion();
+  audit({ op: "mcp.connect", label: stdio.writer, kind: "connection", detail: `claimed clientInfo: ${printable(c?.name, 60)} ${printable(c?.version, 30)}` });
+};
 
 await server.connect(transport);
 

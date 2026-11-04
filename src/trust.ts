@@ -128,6 +128,23 @@ export function capTaint(names: readonly string[], fresh: ReadonlySet<string>, r
   return [...first, ...rest].slice(0, MAX_TAINT_NAMES);
 }
 
+/**
+ * "stdio" names every local stdio app: plain `stdio` and each self-declared `stdio:<app>` (actor.ts stdioWriter), so a
+ * distrust rule or filter written for "stdio" keeps covering every local app after setup labels them. `stdio:<app>`
+ * (or any other name) matches only itself.
+ */
+export const stdioFamily = (label: string): boolean => label === "stdio";
+
+/** Does the stored name `v` equal `name` (a label or `<server_id>/<label>`), or, for a stdio family, extend it with `:<app>`? */
+export function nameIs(v: unknown, name: string, family: boolean): boolean {
+  return v === name || (family && typeof v === "string" && v.startsWith(name + ":"));
+}
+
+/** SQL twin of nameIs. GLOB is exact (case-sensitive) and safe here: a family name is "stdio" or "<uuid>/stdio". */
+export function nameIsSql(col: string, name: string, family: boolean): { sql: string; params: string[] } {
+  return family ? { sql: `(${col} = ? OR ${col} GLOB ?)`, params: [name, `${name}:*`] } : { sql: `${col} = ?`, params: [name] };
+}
+
 function ruleApplies(rule: DistrustRule, namespace: string): boolean {
   return rule.namespace === ALL_NAMESPACES || rule.namespace === namespace;
 }
@@ -138,13 +155,16 @@ export function ruleMatches(rule: DistrustRule, f: WriterFacts, localId: string)
   const ref = parseWriterRef(rule.writer);
   if (!ref.label) return false;
   const merged = f.merged_from_writers ?? [];
+  const family = stdioFamily(ref.label);
+  const is = (v: unknown, name: string): boolean => nameIs(v, name, family);
+  const inMerged = (name: string): boolean => merged.some((m) => is(m, name));
   if (ref.serverId === "") {
-    return f.written_by === ref.label || f.attested_writer === ref.label || merged.includes(ref.label);
+    return is(f.written_by, ref.label) || is(f.attested_writer, ref.label) || inMerged(ref.label);
   }
   if (ref.serverId === localId.toLowerCase()) {
-    return f.written_by === ref.label || merged.includes(ref.label) || (f.attested_by === ref.serverId && f.attested_writer === ref.label);
+    return is(f.written_by, ref.label) || inMerged(ref.label) || (f.attested_by === ref.serverId && is(f.attested_writer, ref.label));
   }
-  return (f.attested_by === ref.serverId && f.attested_writer === ref.label) || merged.includes(`${ref.serverId}/${ref.label}`);
+  return (f.attested_by === ref.serverId && is(f.attested_writer, ref.label)) || inMerged(`${ref.serverId}/${ref.label}`);
 }
 
 export function matchesDistrust(rules: readonly DistrustRule[], f: WriterFacts, localId: string): boolean {
@@ -183,10 +203,11 @@ export function mergedHasSql(col: string): string {
  * the same exactness as `Array.includes` over parseMerged (strings only): ONE
  * json_each pass per tainted row, whatever the number of tokens. Rows with an
  * empty taint set (nearly all) cost one string comparison. `n` bound
- * parameters: the tokens themselves.
+ * parameters: the tokens themselves, then `globs` GLOB patterns (a stdio family's `<name>:*`).
  */
-export function mergedHasAnySql(col: string, n: number): string {
-  return `(${col} <> '' AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(${col}) THEN ${col} ELSE '[]' END) WHERE type = 'text' AND value IN (${Array(n).fill("?").join(",")})))`;
+export function mergedHasAnySql(col: string, n: number, globs = 0): string {
+  const g = " OR value GLOB ?".repeat(globs);
+  return `(${col} <> '' AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(${col}) THEN ${col} ELSE '[]' END) WHERE type = 'text' AND (value IN (${Array(n).fill("?").join(",")})${g})))`;
 }
 
 /**
@@ -212,20 +233,28 @@ export function distrustSql(
     const bare = new Set<string>(); // also match attested_writer
     const foreign: Array<{ sid: string; label: string }> = [];
     const tokens = new Set<string>(); // match inside merged_from_writers
+    // A "stdio" rule also hides every `stdio:<app>` (stdioFamily): these hold the GLOB patterns for that.
+    const labelGlobs = new Set<string>();
+    const bareGlobs = new Set<string>();
+    const tokenGlobs = new Set<string>();
     for (const r of rs) {
       const ref = parseWriterRef(r.writer);
       if (!ref.label) continue;
+      const fam = stdioFamily(ref.label);
       if (ref.serverId === "") {
         labels.add(ref.label);
         bare.add(ref.label);
         tokens.add(ref.label);
+        if (fam) [labelGlobs, bareGlobs, tokenGlobs].forEach((g) => g.add(`${ref.label}:*`));
       } else if (ref.serverId === localId.toLowerCase()) {
         labels.add(ref.label);
         tokens.add(ref.label);
+        if (fam) [labelGlobs, tokenGlobs].forEach((g) => g.add(`${ref.label}:*`));
         foreign.push({ sid: ref.serverId, label: ref.label }); // a restored own export: attested_by is this server
       } else {
         foreign.push({ sid: ref.serverId, label: ref.label });
         tokens.add(`${ref.serverId}/${ref.label}`);
+        if (fam) tokenGlobs.add(`${ref.serverId}/${ref.label}:*`);
       }
     }
     const parts: string[] = [];
@@ -234,20 +263,29 @@ export function distrustSql(
       parts.push(`${cols.writer} IN (${[...labels].map(() => "?").join(",")})`);
       gp.push(...labels);
     }
+    for (const g of labelGlobs) {
+      parts.push(`${cols.writer} GLOB ?`);
+      gp.push(g);
+    }
     if (bare.size) {
       parts.push(`${cols.attWriter} IN (${[...bare].map(() => "?").join(",")})`);
       gp.push(...bare);
     }
+    for (const g of bareGlobs) {
+      parts.push(`${cols.attWriter} GLOB ?`);
+      gp.push(g);
+    }
     for (const f of foreign) {
-      parts.push(`(${cols.attBy} = ? AND ${cols.attWriter} = ?)`);
-      gp.push(f.sid, f.label);
+      const w = nameIsSql(cols.attWriter, f.label, stdioFamily(f.label));
+      parts.push(`(${cols.attBy} = ? AND ${w.sql})`);
+      gp.push(f.sid, ...w.params);
     }
     if (tokens.size) {
       // One cheap emptiness test guards every token probe: nearly every row has no merged writers.
       // One json_each pass over the row's taint set tests every token at once (an IN list), instead of one
       // instr probe per token: cost no longer multiplies rules x taint-set size. json_valid guards a hand-damaged value.
-      parts.push(mergedHasAnySql(cols.merged, tokens.size));
-      for (const t of tokens) gp.push(t);
+      parts.push(mergedHasAnySql(cols.merged, tokens.size, tokenGlobs.size));
+      gp.push(...tokens, ...tokenGlobs);
     }
     if (!parts.length) continue;
     const any = `(${parts.join(" OR ")})`;
@@ -280,7 +318,8 @@ export function truthyParam(v: string | null | undefined): boolean {
  *           writers its text was merged from. (Unknown writers, "", are not
  *           excluded: nobody can say who they were.)
  *
- * `value` may be a bare label or a writer_id; both are normalised.
+ * `value` may be a bare label or a writer_id; both are normalised. "stdio"
+ * also names every `stdio:<app>` (stdioFamily), the same as in a distrust rule.
  */
 export function writerFilterSql(
   cols: WriterColumns,
@@ -291,21 +330,15 @@ export function writerFilterSql(
   const ref = parseWriterRef(value);
   const foreign = ref.serverId !== "" && ref.serverId !== localId.toLowerCase();
   if (mode === "is") {
-    return foreign
-      ? { sql: `(${cols.attBy} = ? AND ${cols.attWriter} = ?)`, params: [ref.serverId, ref.label] }
-      : { sql: `${cols.writer} = ?`, params: [ref.label] };
+    const w = nameIsSql(foreign ? cols.attWriter : cols.writer, ref.label, stdioFamily(ref.label));
+    return foreign ? { sql: `(${cols.attBy} = ? AND ${w.sql})`, params: [ref.serverId, ...w.params] } : w;
   }
   // An empty value names nobody: "not written by nobody" excludes nothing (it used to hide every note).
   if (!ref.label) return { sql: "1 = 1", params: [] };
-  return foreign
-    ? {
-        sql: `(NOT (${cols.attBy} = ? AND ${cols.attWriter} = ?) AND NOT ${mergedHasAnySql(cols.merged, 1)})`,
-        params: [ref.serverId, ref.label, `${ref.serverId}/${ref.label}`],
-      }
-    : {
-        sql: `(${cols.writer} <> ? AND ${cols.attWriter} <> ? AND NOT ${mergedHasAnySql(cols.merged, 1)})`,
-        params: [ref.label, ref.label, ref.label],
-      };
+  const t = writerTaintFilterSql(cols, value, localId);
+  if (foreign) return t;
+  const w = nameIsSql(cols.writer, ref.label, stdioFamily(ref.label));
+  return { sql: `(NOT ${w.sql} AND ${t.sql})`, params: [...w.params, ...t.params] };
 }
 
 /**
@@ -317,10 +350,12 @@ export function writerTaintFilterSql(cols: WriterColumns, value: string, localId
   const ref = parseWriterRef(value);
   if (!ref.label) return { sql: "1 = 1", params: [] };
   const foreign = ref.serverId !== "" && ref.serverId !== localId.toLowerCase();
+  const fam = stdioFamily(ref.label);
+  const a = nameIsSql(cols.attWriter, ref.label, fam);
+  // merged_from_writers names a foreign writer by its writer_id, a local one by its label.
+  const m = nameIsSql("", foreign ? `${ref.serverId}/${ref.label}` : ref.label, fam).params;
+  const merged = mergedHasAnySql(cols.merged, 1, fam ? 1 : 0);
   return foreign
-    ? {
-        sql: `(NOT (${cols.attBy} = ? AND ${cols.attWriter} = ?) AND NOT ${mergedHasAnySql(cols.merged, 1)})`,
-        params: [ref.serverId, ref.label, `${ref.serverId}/${ref.label}`],
-      }
-    : { sql: `(${cols.attWriter} <> ? AND NOT ${mergedHasAnySql(cols.merged, 1)})`, params: [ref.label, ref.label] };
+    ? { sql: `(NOT (${cols.attBy} = ? AND ${a.sql}) AND NOT ${merged})`, params: [ref.serverId, ...a.params, ...m] }
+    : { sql: `(NOT ${a.sql} AND NOT ${merged})`, params: [...a.params, ...m] };
 }

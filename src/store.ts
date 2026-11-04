@@ -54,6 +54,8 @@ import {
   makeWriterId,
   matchesDistrust,
   mergedToStorage,
+  nameIsSql,
+  stdioFamily,
   parseMerged,
   parseWriterRef,
   writerFilterSql,
@@ -5884,15 +5886,17 @@ export class Store {
       const r = parseWriterRef(opts.writtenBy);
       if (r.serverId && r.serverId !== localId.toLowerCase()) wbSql += " AND 0";
       else {
-        wbSql += " AND written_by = ?";
-        wbParams.push(r.label);
+        const w = nameIsSql("written_by", r.label, stdioFamily(r.label));
+        wbSql += ` AND ${w.sql}`;
+        wbParams.push(...w.params);
       }
     }
     if (opts.notWrittenBy !== undefined) {
       const r = parseWriterRef(opts.notWrittenBy);
       if (r.label && (!r.serverId || r.serverId === localId.toLowerCase())) {
-        wbSql += " AND written_by <> ?";
-        wbParams.push(r.label);
+        const w = nameIsSql("written_by", r.label, stdioFamily(r.label));
+        wbSql += ` AND NOT ${w.sql}`;
+        wbParams.push(...w.params);
       }
     }
     const exSql = c.x ? " AND (CASE WHEN actor <> '' THEN actor ELSE source END) <> ?" : "";

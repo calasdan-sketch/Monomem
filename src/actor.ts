@@ -33,7 +33,8 @@ export function currentActor(): string {
  * own background jobs, `runner` = the command runner process (it writes the
  * heartbeat that runner_status trusts), `import:claude` = `monomem import --claude` (set explicitly by that command), `capture` = the
  * capture hooks (`monomem hook <event>`: observations and session summaries). A token labelled like one of these is stored as
- * `token:<label>` so it cannot impersonate a marker.
+ * `token:<label>` so it cannot impersonate a marker. The stdio server stamps `stdio:<app>` instead of `stdio`
+ * when its launch config names the app (stdioWriter); a token labelled `stdio:...` is escaped the same way.
  */
 export const WRITER_MARKERS = ["stdio", "cli", "server", "runner", "import:claude", "capture"] as const;
 export type WriterMarker = (typeof WRITER_MARKERS)[number];
@@ -41,8 +42,27 @@ export type WriterMarker = (typeof WRITER_MARKERS)[number];
 let processWriter = "";
 
 /** Set once by an entry point (mcp-stdio, cli, start) for writes with no token. */
-export function setProcessWriter(marker: WriterMarker | ""): void {
+export function setProcessWriter(marker: WriterMarker | `stdio:${string}` | ""): void {
   processWriter = marker;
+}
+
+/** An app name for the stdio marker: a-z 0-9 . _ -, 1-40 characters, starting with a letter or digit. */
+const CLIENT_LABEL = /^[a-z0-9][a-z0-9._-]{0,39}$/;
+
+/**
+ * The stdio writer marker: `stdio:<app>` when the launch config sets MONOMEM_CLIENT (setup writes the app's id
+ * there), else plain `stdio`. The app name is a CLAIM made by whoever can edit that config file, not an
+ * authenticated identity: it tells apps apart, it does not prove which one wrote. An invalid value is ignored
+ * (plain `stdio`) and reported in `warning`, so a typo never stops the server and never reaches written_by.
+ */
+export function stdioWriter(env: NodeJS.ProcessEnv = process.env): { writer: "stdio" | `stdio:${string}`; warning?: string } {
+  const raw = env.MONOMEM_CLIENT;
+  if (raw === undefined || raw.trim() === "") return { writer: "stdio" };
+  const label = raw.trim().toLowerCase();
+  if (!CLIENT_LABEL.test(label)) {
+    return { writer: "stdio", warning: 'MONOMEM_CLIENT ignored (use 1-40 characters a-z 0-9 . _ -, starting with a letter or digit); writes are stamped plain "stdio"' };
+  }
+  return { writer: `stdio:${label}` };
 }
 
 /** Longest stored writer identity (labels are operator-chosen; this is a backstop). */
@@ -88,8 +108,8 @@ export function cleanWriter(s: unknown): string {
  * else "" (unknown: a library caller or an old row). Never derived from
  * anything the client sent in the request body.
  *
- * A token label that equals a marker (any letter case) or already starts with
- * `token:` is stored as `token:<label>`, so no label can impersonate a marker
+ * A token label that equals a marker (any letter case) or starts with
+ * `token:` or `stdio:` is stored as `token:<label>`, so no label can impersonate a marker
  * or another token's escaped form.
  */
 export function currentWriter(): string {
@@ -97,7 +117,8 @@ export function currentWriter(): string {
   if (a?.authed) {
     const label = cleanWriter(a.label) || "(unlabeled)";
     const lower = label.toLowerCase();
-    return (WRITER_MARKERS as readonly string[]).includes(lower) || lower.startsWith("token:") ? cleanWriter(`token:${label}`) : label;
+    // `stdio:` is reserved for the per-app stdio markers (stdioWriter): a token cannot pose as a local app either.
+    return (WRITER_MARKERS as readonly string[]).includes(lower) || lower.startsWith("token:") || lower.startsWith("stdio:") ? cleanWriter(`token:${label}`) : label;
   }
   return processWriter;
 }

@@ -19,11 +19,6 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   restore return an error naming the namespace). Details: [docs/memory-linter.md](./docs/memory-linter.md).
 - **`state_search` `mode: "relevant"`** does what `state_relevant` does: `query` is read as a conversational message,
   its keywords are extracted, and notes matching any of them come back with the keywords (default limit 5).
-
-### Changed
-
-- **Nine tools are registered by default (was ten):** `state_relevant` left the default set, since `state_search`
-  `mode: "relevant"` covers it. It is still registered under `MONOMEM_TOOLS=all` or when named in `MONOMEM_TOOLS`.
 - **Two warn-only linter categories.** `pii`: email addresses, phone numbers, IPv4/IPv6 and
   private (RFC 1918) addresses, and `.local` / `.internal` / `.corp` / `.lan` host names.
   `directive`: deferred triggers for a later agent ("next time the user asks …, run …", "from now
@@ -34,6 +29,31 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   loopback and `v1.2.3.4`-style versions are not flagged. These are regex warnings: they miss
   names, addresses and reworded directives, and they flag some harmless notes (a bare `1.2.3.4`,
   "from now on use pnpm"). → [docs/memory-linter.md](./docs/memory-linter.md)
+- **Each local app's writes say which app it was.** `monomem setup` now puts `MONOMEM_CLIENT=<app>`
+  in each app's MCP entry (`claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, `muse`,
+  `vscode`, `zed`; a folder's `.mcp.json` gets `claude-code`), and the stdio server stamps
+  `written_by` as `stdio:<app>` instead of plain `stdio`. Re-running setup adds the name to an
+  existing entry once (Codex: only when `[mcp_servers.monomem]` is its own table without an `env`
+  yet; otherwise setup says how to add it by hand). HTTP entries are left alone. An install that
+  never re-runs setup keeps stamping `stdio`.
+  The name is **self-declared** by the config file (anything that can edit it, or launch
+  `monomem mcp` itself, can claim any name). It tells apps apart; it is not authentication and
+  grants nothing: stdio access is unchanged. Scoped tokens over HTTP remain the authenticated option.
+  A name must be 1-40 characters `a-z 0-9 . _ -` (lower-cased); anything else is ignored with a
+  warning on stderr and writes stay `stdio`.
+- The client's own `clientInfo` name and version from the MCP handshake are written to the audit
+  log (`mcp.connect`) as a **claim** only; they are never used for `written_by` or any decision.
+
+### Changed
+
+- **Nine tools are registered by default (was ten):** `state_relevant` left the default set, since `state_search`
+  `mode: "relevant"` covers it. It is still registered under `MONOMEM_TOOLS=all` or when named in `MONOMEM_TOOLS`.
+- `written_by` / `not_written_by` filters (REST, MCP, CLI, the change feed) and distrust rules:
+  `stdio:<app>` names that one app, and plain `stdio` names every local stdio app, labelled or not.
+  So distrusting `stdio:cursor` hides Cursor's writes but not Claude Code's, and an existing rule on
+  `stdio` keeps hiding every local app after setup labels them.
+- A token label starting with `stdio:` is stored as `token:stdio:...`, so a token cannot pass as a
+  local app.
 
 ### Benchmark
 
