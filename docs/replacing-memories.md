@@ -90,6 +90,65 @@ Every edit that changes a note's title or body keeps the text it replaces (and t
 - Carried by `export` (turn off with `?history=0` / `--no-history`) and `import` (every entry is a **claim**: names in the file are kept as
   `claimed_writer`, never as a verified writer; size and content checks apply).
 
+## Pinned notes (human-only)
+
+`monomem pin <id>` pins a note; `monomem unpin <id>` lifts it; `monomem pin` lists them. Over REST: admin-only `GET /pinned` and
+`PUT /pinned { id, pinned }` (a namespace-pinned admin token reaches its own namespace only). No MCP tool pins or unpins.
+
+Agents can still read a pinned note (reads show `pinned: true`, so an agent can tell why a change is refused). Only the local
+`monomem` CLI (writer `cli`) can change it. Everyone else gets an error naming the note: MCP over stdio or HTTP, every REST call
+(an admin token included, the same rule as approve-first: REST cannot tell an operator from an agent holding an admin token), the
+server's own jobs and library callers. Refused for them:
+
+- editing it (`state_write` with its id, `PUT /notes/:id`; a tags-only or source-only edit too);
+- forgetting, restoring or hard-deleting it (`state_delete`, REST archive / restore / `DELETE /notes/:id`);
+- replacing it (`memory_supersede_preview` refuses up front, the confirm refuses too) or bringing it back with supersede undo;
+- putting back an older version (`memory_restore_version`) or forgetting its history (`memory_history_purge`);
+- merging it (`memory_consolidate`; the background janitor skips it).
+
+A pinned note is never archived by the expiry sweep (`forget_after`) or by decay. An admin REST token can unpin a note and then
+change it, so a pin holds against every caller except the CLI and an admin token. A pin is local: export, import and vault sync do
+not carry it. It is not the `pinned` tag, which only keeps captured rows from decay.
+
+## Rolling back one writer
+
+Undo everything one writer did since a moment, for example after an agent went wrong:
+
+```
+monomem rollback --writer stdio:cursor --since 2h          # or --since 2026-11-04T09:00:00Z
+```
+
+The writer name is matched exactly as stored in `written_by` (`token:ci`, `stdio:cursor`, a token label); `stdio` also covers
+every `stdio:<app>`, as in distrust rules. For each note:
+
+- **created** by the writer since then: **archived** (never deleted; `monomem restore <id>` brings it back);
+- its title or body **changed** by the writer since then: the newest version kept from **before the writer's first change** since
+  then becomes the current text again, as a new version (history reason `rollback`). The text it replaces goes into the history,
+  so `monomem history restore <id> <version>` / `memory_restore_version` undoes it. There is no separate undo command;
+- **another writer changed the text later**: a **conflict**, listed and skipped. `--include-conflicts` rolls it back anyway (the
+  other writer's text stays in the history);
+- the version needed is no longer in the bounded history (pruned by the limits above, or purged): **cannot fully undo**, listed
+  and always skipped. Nothing is guessed;
+- a replaced (superseded) or archived note is listed and skipped.
+
+It is two steps, like a replacement: the preview writes nothing and lists exactly what would happen, plus a one-time code (it works
+once, for `MONOMEM_SUPERSEDE_TTL_SECONDS`, default 10 minutes, and only for the caller it was made for). The confirm plans again
+under the write lock and refuses if anything differs from the preview; it applies everything in one transaction, or nothing. The
+CLI shows the preview and asks you to type yes (`--yes` skips the question; without a terminal and without `--yes` it only
+previews). Each rollback writes an audit entry.
+
+Also over REST (admin): `POST /rollback/preview { writer, since, include_conflicts? }` and `POST /rollback/confirm { token }`; and
+the MCP tool `memory_rollback` (admin, operator-only: not registered over stdio unless `MONOMEM_STDIO_ADMIN_TOOLS=1`, and only
+under `MONOMEM_TOOLS=all` or when named). Pinned notes and notes in approve-first namespaces are rolled back from the CLI only
+(marked in its preview); REST and MCP list them as skipped (`operator_only`). Restores made by a rollback are not counted by the
+flood guard; a paused caller is still refused.
+
+Limits: only notes the writer created, and title/body changes it made, are rolled back. Tag, source, namespace or confidence edits,
+notes it forgot (archived), replacements it confirmed (use supersede undo) and hard deletes are not. A change made while history
+was off (`MONOMEM_HISTORY_VERSIONS=0`) left no saved version: it is reported as cannot fully undo only if history is still off and
+the note still names the writer, otherwise it is not seen. The dropped-version check is kept per writer as a time span, so an
+older drop that overlaps can also produce "cannot fully undo" (it errs on the side of skipping).
+
 ## Confidence (a claim, never a check)
 
 A note may carry `confidence`, a number from 0 to 1 that the writer **claims** for how sure it is. It is validated (anything
@@ -105,6 +164,6 @@ behind the newer one in search, even if it matches the words slightly better. It
 ## Upgrading
 
 The first start on 1.6.0 upgrades the database to schema v15 (columns for confidence and the replaced link, and tables for history and
-one-time codes). As for every schema change, a verified copy of the old database is kept first at `<database>.pre-v17-backup`; the upgrade
+one-time codes). As for every schema change, a verified copy of the old database is kept first at `<database>.pre-v18-backup`; the upgrade
 does not run if the copy cannot be made. There is no downgrade path: to go back, stop everything, put that copy back as the database,
 and install the older version. Upgrading from 1.3.x or 1.4.x: [upgrading.md](./upgrading.md).

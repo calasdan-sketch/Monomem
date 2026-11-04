@@ -13,7 +13,7 @@ description: >-
   task_list, task_claim, task_approve, runner_status, trust_policy,
   session_handoff, memory_stats, memory_quarantine,
   memory_consolidation_candidates, memory_consolidate, memory_rebuild_edges,
-  memory_history, memory_restore_version, memory_history_purge,
+  memory_history, memory_restore_version, memory_history_purge, memory_rollback,
   memory_index, memory_timeline, memory_get, session_list.
   Works in any MCP-capable agent (Claude Code, Claude Desktop,
   Cursor, Copilot, Windsurf, Cline, and more).

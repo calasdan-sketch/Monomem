@@ -152,7 +152,7 @@ unsigned backup flattens history: every note becomes the importer's, and the pay
 ## Upgrading and rolling back
 
 The first time a database at schema v1 to v13 is opened by 1.4.0 (schema v14), Monomem copies it to
-`<database>.pre-v17-backup` (a consistent snapshot, still at the old schema), logs the path, and
+`<database>.pre-v18-backup` (a consistent snapshot, still at the old schema), logs the path, and
 never overwrites an existing copy. (1.3.3 made `.pre-v13-backup` the same way for v12; an existing one is left alone.) The `monomem recall` hook never upgrades a database: against an older
 file it prints nothing and logs one line until a normal command or the server has migrated it.
 To roll back: stop every monomem process, put the backup file back as the database (keep the

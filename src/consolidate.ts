@@ -501,6 +501,7 @@ export function resolveConsolidationNotes(store: Store, ids: number[]): NoteReco
   const notes = uniqueIds.map((id) => {
     const n = store.read(id); // gate-ok: admin consolidation by ids: mixed trusted/distrusted sources are refused below
     if (!n) throw new ValidationError(`no note with id ${id}`);
+    store.refuseAgentOnPinned(id, "merging it"); // merging deletes it: refused up front, not half-way through
     if (n.kind && n.kind !== "note") {
       throw new ValidationError(`note ${id} is a captured ${n.kind}; only ordinary notes are consolidated`);
     }

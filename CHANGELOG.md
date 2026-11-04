@@ -17,6 +17,23 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tool changes the setting. Secrets are still refused outright. Forgetting, restoring and replacing notes there cannot
   be queued, so they are refused for everyone but the CLI (state_delete, supersede preview/confirm, REST archive and
   restore return an error naming the namespace). Details: [docs/memory-linter.md](./docs/memory-linter.md).
+- **Pinned notes (human-only).** `monomem pin <id>` / `monomem unpin <id>` (`monomem pin` lists them), or admin-only
+  `GET`/`PUT /pinned` over REST; no MCP tool pins. Agents still read a pinned note (reads show `pinned: true`), but only the
+  local `monomem` CLI can edit, forget, restore, hard-delete, replace (as the replaced note, and by supersede undo), restore an
+  older version of, purge the history of, or merge it. Every other caller gets an error naming the note: MCP, every REST call
+  (an admin token included, as for approve-first; an admin token can unpin and then change it), the server's own jobs. The
+  expiry sweep and decay never archive a pinned note. Not carried by export, import or sync. Details:
+  [docs/replacing-memories.md](./docs/replacing-memories.md#pinned-notes-human-only).
+- **Roll back one writer.** `monomem rollback --writer <name> --since <ISO|30m|2h|7d> [--include-conflicts] [--yes]`, admin
+  `POST /rollback/preview` + `POST /rollback/confirm`, and the operator-only MCP tool `memory_rollback` (off over stdio unless
+  `MONOMEM_STDIO_ADMIN_TOOLS=1`). Notes the writer created since then are archived; notes whose title or body it changed get the
+  newest kept version from before its first change back, as a new version (so the history undoes it). Notes another writer
+  changed afterwards are skipped as conflicts unless `--include-conflicts`; a needed version that was pruned or purged is
+  reported as "cannot fully undo" and skipped. `stdio` covers every `stdio:<app>`. The preview writes nothing and returns a
+  one-time code (bound to the caller, expires); the confirm plans again, refuses if anything changed, and applies everything in
+  one transaction. Pinned notes and approve-first namespaces are rolled back from the CLI only. Tag/metadata edits, archives,
+  replacements and deletes the writer made are not rolled back. Details:
+  [docs/replacing-memories.md](./docs/replacing-memories.md#rolling-back-one-writer).
 - **Read access log.** Every memory read an agent makes (the MCP read tools, the REST read routes, the session-start and
   per-file context the hooks inject) adds one row: time, the writer identity a write would be stamped with (token
   label, or `stdio` / `cli` / `capture` ...), the tool or route, the namespaces, a query preview (secret-redacted, one
@@ -60,8 +77,10 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Schema v17.** The first open adds the `access_log` and `write_rate` tables, after a verified copy of the database at
-  `<database>.pre-v17-backup`. No note is rewritten. Older Monomem versions cannot open the upgraded file.
+- **Schema v18** (v17 and v18 land together in this release). The first open adds the `access_log` and `write_rate` tables
+  (v17), the `notes.pinned` column and the `note_history_dropped` table (v18: per note and writer, when versions left the
+  history; no text), after a verified copy of the database at `<database>.pre-v18-backup`. No note is rewritten. Older Monomem
+  versions cannot open the upgraded file, so none can open it and silently ignore the pins.
 - **Nine tools are registered by default (was ten):** `state_relevant` left the default set, since `state_search`
   `mode: "relevant"` covers it. It is still registered under `MONOMEM_TOOLS=all` or when named in `MONOMEM_TOOLS`.
 - `written_by` / `not_written_by` filters (REST, MCP, CLI, the change feed) and distrust rules:

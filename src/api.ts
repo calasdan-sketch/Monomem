@@ -99,6 +99,7 @@ import {
 } from "./tasks.js";
 import { ackChanges, resolveSince } from "./changes.js";
 import { qualityReport } from "./quality.js";
+import { rollbackPreview, rollbackConfirm, embedRestored } from "./rollback.js";
 import { SupersedeError, supersedePreview, supersedeConfirm, supersedeUndo, noteHistory, restoreVersion, purgeNoteHistory, type Caller } from "./supersede.js";
 import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
 import { waitForChanges, parseWait, WaitBusyError } from "./change-wait.js";
@@ -138,6 +139,8 @@ function requiredScope(method: string | undefined, path: string): Scope {
   if (path === "/quality" || /^\/quarantine\/\d+\/(approve|reject)$/.test(path)) return "admin";
   // Approve-first is the switch in front of an agent's own writes: reading or flipping it is admin, like the queue itself.
   if (path === "/approve-first") return "admin";
+  // Pins and rollback are operator switches, like approve-first.
+  if (path === "/pinned" || path === "/rollback/preview" || path === "/rollback/confirm") return "admin";
   // The read access log shows every agent's queries, and the flood pause is the operator's switch: admin, reads included.
   if (path === "/access" || path === "/flood" || path === "/flood/resume") return "admin";
   // A note's earlier versions can hold text that was taken out on purpose: administrators only, reads included.
@@ -683,7 +686,13 @@ export function createApiServer(
           // grant never confers delete access.
           if (!denyUnwritable(nsCtx, res, store.read(id))) return; // gate-ok: archive/restore: denyUnwritable probe, hidden note is 404
         }
-        const removed = store.delete(id);
+        let removed: boolean;
+        try {
+          removed = store.delete(id); // a pinned note is refused (400): REST counts as an agent
+        } catch (e) {
+          sendError(res, e);
+          return;
+        }
         if (!removed) {
           sendJson(res, 404, { error: "not found" });
           return;
@@ -907,6 +916,60 @@ export function createApiServer(
               return;
             }
             sendJson(res, 200, { writer: body.writer, resumed: store.resumeWriter(body.writer), paused: store.pausedWriters() });
+          }
+        } catch (e) {
+          sendError(res, e);
+        }
+        return;
+      }
+
+      // GET /pinned -> { notes } pinned; PUT /pinned { id, pinned } pins or unpins. Admin-only, like approve-first: REST cannot tell an
+      // operator from an agent holding an admin token, so this is no stronger than that token. Changing a pinned note stays CLI-only
+      // (an admin token that unpins a note can then change it: the pin protects against every other caller). No MCP tool reaches it.
+      if (path === "/pinned" && (req.method === "GET" || req.method === "PUT")) {
+        const own = nsCtx.active ? [nsCtx.ownNamespace] : undefined;
+        if (req.method === "GET") {
+          sendJson(res, 200, { notes: store.pinnedNotes(own) });
+          return;
+        }
+        let body: { id?: unknown; pinned?: unknown };
+        try {
+          body = JSON.parse((await readBody(req)) || "{}") as { id?: unknown; pinned?: unknown };
+        } catch {
+          sendJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        const id = coerceNumeric(body?.id);
+        if (typeof id !== "number" || !Number.isInteger(id) || id < 1 || typeof body.pinned !== "boolean") {
+          sendJson(res, 400, { error: "expected { id: number, pinned: boolean }" });
+          return;
+        }
+        if (!store.setPinned(id, body.pinned, own)) {
+          sendJson(res, 404, { error: "no note with that number" });
+          return;
+        }
+        sendJson(res, 200, { id, pinned: body.pinned });
+        return;
+      }
+
+      // POST /rollback/preview { writer, since, include_conflicts? } -> the plan + a one-time code; POST /rollback/confirm { token }.
+      // Admin-only (rollback.ts). REST counts as an agent: pinned notes and approve-first namespaces are listed as skipped.
+      if (req.method === "POST" && (path === "/rollback/preview" || path === "/rollback/confirm")) {
+        const caller: Caller = { scope, ...(nsCtx.active ? { ownNamespace: nsCtx.ownNamespace } : {}) };
+        let b: { writer?: unknown; since?: unknown; include_conflicts?: unknown; token?: unknown };
+        try {
+          b = JSON.parse((await readBody(req)) || "{}");
+        } catch {
+          sendJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        try {
+          if (path === "/rollback/preview") {
+            sendJson(res, 200, rollbackPreview(store, caller, { writer: b.writer, since: b.since, include_conflicts: b.include_conflicts }));
+          } else {
+            const out = rollbackConfirm(store, caller, { token: b.token });
+            await embedRestored(store, out);
+            sendJson(res, 200, out);
           }
         } catch (e) {
           sendError(res, e);

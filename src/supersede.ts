@@ -56,7 +56,7 @@ export interface Caller {
 const writerOf = (c: Caller): string => c.writer ?? currentWriter();
 
 /** A short fingerprint of WHO is asking; a code made for one caller is useless to another. */
-function callerKey(c: Caller): string {
+export function callerKey(c: Caller): string {
   return createHash("sha256").update(JSON.stringify([writerOf(c), c.scope, c.ownNamespace ?? "*"])).digest("hex").slice(0, 24);
 }
 
@@ -162,6 +162,8 @@ export function supersedePreview(
     if (o.superseded_by !== undefined) throw new SupersedeError(`note ${o.id} was already replaced by note ${o.superseded_by}`, 409);
     if (o.archived_at) throw new SupersedeError(`note ${o.id} is archived, not a live note, so there is nothing to replace`, 409);
     if (o.tags.some(isReservedTag)) throw new SupersedeError(`note ${o.id} is a task or handoff, or captured work; those are managed by their own tools, not replaced`);
+    // A pinned note: the confirm would be refused (Store.refuseAgentOnPinned), so say so now.
+    if (o.pinned && currentWriter() !== "cli") throw new SupersedeError(`note ${o.id} is pinned by the operator: replacing it is done by the operator (monomem CLI), not by an agent`, 403);
   }
   // An approve-first namespace: the confirm would be refused (see Store.supersedeCommit), so say so now.
   if (store.isApproveFirst(ns)) throw new SupersedeError(`namespace "${ns}" is approve-first: replacing notes there is done by the operator, not by an agent`, 403);

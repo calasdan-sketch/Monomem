@@ -11,6 +11,8 @@
 //   monomem history <id> [--json] [--include-distrusted]
 //   monomem history restore <id> <version> [--if-rev n]
 //   monomem history purge <id> [--yes]
+//   monomem pin [<id>]  |  monomem unpin <id>
+//   monomem rollback --writer <name> --since <iso|duration> [--include-conflicts] [--yes] [--json]
 //
 // There is deliberately NO --yes for a replacement: a script has to carry a code that was made by looking at a preview.
 //
@@ -22,6 +24,7 @@ import { SupersedeError, supersedePreview, supersedeConfirm, supersedeUndo, note
 import type { SupersedeReplacementInput } from "./supersede-shared.js";
 import { safe } from "./supersede-text.js";
 import { maybeEmbed } from "./search-service.js";
+import { rollbackPreview, rollbackConfirm, embedRestored } from "./rollback.js";
 
 export interface CliIO {
   out: (s: string) => void;
@@ -32,8 +35,8 @@ export interface CliIO {
   interactive: boolean;
 }
 
-const VALUE_FLAGS = ["old", "new-id", "title", "body", "body-file", "tags", "confidence", "confirm-token", "if-rev"];
-const BOOL_FLAGS = ["acknowledge-risk", "json", "include-distrusted", "yes"];
+const VALUE_FLAGS = ["old", "new-id", "title", "body", "body-file", "tags", "confidence", "confirm-token", "if-rev", "writer", "since"];
+const BOOL_FLAGS = ["acknowledge-risk", "json", "include-distrusted", "yes", "include-conflicts"];
 
 export function parseArgs(args: string[]): { flags: Record<string, string | true>; rest: string[] } {
   const flags: Record<string, string | true> = {};
@@ -209,6 +212,66 @@ export async function historyCli(store: Store, args: string[], io: CliIO, caller
   } catch (e) {
     if (e instanceof QuarantinedError) {
       io.err(`Held for review (quarantine #${e.quarantineId}); the version was not restored.`);
+      return 1;
+    }
+    if (e instanceof ValidationError) {
+      io.err(`Error: ${e.message}`);
+      return 1;
+    }
+    throw e;
+  }
+}
+
+/** `monomem pin [<id>]` (no id: list) and `monomem unpin <id>`. Operator only: no MCP tool pins. */
+export async function pinCli(store: Store, kind: "pin" | "unpin", args: string[], io: CliIO): Promise<number> {
+  if (kind === "pin" && args.length === 0) {
+    const list = store.pinnedNotes();
+    if (list.length === 0) io.out("No note is pinned.");
+    for (const n of list) io.out(`  note ${n.id} [${safe(n.namespace, 40)}] "${safe(n.title, 80)}"`);
+    return 0;
+  }
+  const id = Number(args[0]);
+  if (args.length !== 1 || !Number.isInteger(id) || id < 1) {
+    io.err(`Usage: monomem ${kind === "pin" ? "pin [<id>]" : "unpin <id>"}`);
+    return 1;
+  }
+  if (!store.setPinned(id, kind === "pin")) {
+    io.err(`Error: no note with id ${id}`);
+    return 1;
+  }
+  io.out(
+    kind === "pin"
+      ? `Note ${id} is pinned: agents can read it, but only the monomem CLI can change, archive, replace or restore it.`
+      : `Note ${id} is no longer pinned.`
+  );
+  return 0;
+}
+
+/** `monomem rollback --writer <name> --since <iso|duration> [--include-conflicts] [--yes] [--json]` */
+export async function rollbackCli(store: Store, args: string[], io: CliIO, caller: Caller = OWNER): Promise<number> {
+  try {
+    const { flags } = parseArgs(args);
+    const json = flags.json === true;
+    const how = flags.yes === true || io.interactive ? "" : "Nothing was changed. Run it again at a terminal, or add --yes, to go ahead.";
+    const preview = rollbackPreview(store, caller, { writer: s(flags.writer), since: s(flags.since), include_conflicts: flags["include-conflicts"] === true }, how);
+    io.out(json ? JSON.stringify(preview, null, 2) : preview.warning);
+    if (preview.actions.length === 0) return 0;
+    if (flags.yes !== true) {
+      if (!io.interactive) return 2;
+      const a = await io.ask(`
+Roll back ${preview.actions.length} note(s)? Type yes: `);
+      if (a.trim().toLowerCase() !== "yes") {
+        io.out("Cancelled. Nothing was changed.");
+        return 1;
+      }
+    }
+    const out = rollbackConfirm(store, caller, { token: preview.token });
+    await embedRestored(store, out);
+    io.out(json ? JSON.stringify(out, null, 2) : out.message);
+    return 0;
+  } catch (e) {
+    if (e instanceof QuarantinedError) {
+      io.err(`A restored text was held for review (quarantine #${e.quarantineId}); nothing was rolled back.`);
       return 1;
     }
     if (e instanceof ValidationError) {
