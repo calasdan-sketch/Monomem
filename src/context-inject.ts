@@ -288,6 +288,8 @@ export async function injectContext(store: Store, opts: InjectOptions = {}): Pro
     `Showing ${shown.length} of ${Math.max(total, shown.length)} memories (~${Math.ceil(body.length / CHARS_PER_TOKEN)} tokens) standing in for ` +
     `~${Math.ceil(fullChars / CHARS_PER_TOKEN)} tokens of captured work. Open any with ${openToolName()} ids=[${ids.join(",")}]`;
   const out = `${body}\n\n${footer}`;
+  // Read access log: the recall hook handed these to the agent (no query: it ranks by recency and git signals).
+  store.logAccess({ tool: "hook:recall", namespaces: ns !== undefined ? [ns] : [], results: shown.length });
   if (opts.sessionId) {
     const injected = Math.ceil(out.length / CHARS_PER_TOKEN);
     meterAdd(store, opts.sessionId, ns ?? "", { injected, saved: Math.max(0, Math.ceil(fullChars / CHARS_PER_TOKEN) - injected) });

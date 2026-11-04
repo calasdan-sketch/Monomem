@@ -53,11 +53,11 @@ function cli(home: string, args: string[], env: Record<string, string> = {}) {
 
 describe("the harness is hermetic", () => {
   test("no MONOMEM_* variable from the developer's shell reaches the suite (npm test preloads dist/test/setup-env.js)", () => {
-    // MONOMEM_HOME and MONOMEM_TOOLS are set BY setup-env.js on purpose
+    // MONOMEM_HOME, MONOMEM_TOOLS and MONOMEM_FLOOD_WRITES_PER_HOUR are set BY setup-env.js on purpose
     // (a throwaway data directory, and the full tool surface so the suite can
-    // exercise the operator tools a plain install no longer registers). Any
+    // exercise the operator tools a plain install no longer registers; the flood guard off for bulk tests). Any
     // other MONOMEM_* variable means the developer's shell leaked in.
-    const deliberate = new Set(["MONOMEM_HOME", "MONOMEM_TOOLS"]);
+    const deliberate = new Set(["MONOMEM_HOME", "MONOMEM_TOOLS", "MONOMEM_FLOOD_WRITES_PER_HOUR"]);
     const left = Object.keys(process.env).filter((k) => k.startsWith("MONOMEM_") && !deliberate.has(k));
     assert.deepEqual(left, []);
     assert.equal(process.env.MONOMEM_TOOLS, "all", "the suite runs against the full tool surface");
@@ -715,7 +715,7 @@ describe("8: backups and upgrades", () => {
       s.close();
       downgradeTo(p, 13);
       // an older copy with fewer notes (an earlier upgrade of this database, before it was rolled back and used)
-      const old = p + ".pre-v16-backup";
+      const old = p + ".pre-v17-backup";
       copyFileSync(p, old);
       const db = new DatabaseSync(old);
       db.exec("DELETE FROM notes WHERE id > 1");
@@ -724,7 +724,7 @@ describe("8: backups and upgrades", () => {
       s2.close();
       const copies = Store.preMigrationBackups(p).map((c) => c.path.slice(dir.length + 1)).sort();
       assert.equal(copies.length, 2, copies.join(", "));
-      assert.ok(copies.some((c) => /^state\.db\.pre-v16-backup-\d{8}-\d{6}$/.test(c)), copies.join(", "));
+      assert.ok(copies.some((c) => /^state\.db\.pre-v17-backup-\d{8}-\d{6}$/.test(c)), copies.join(", "));
       assert.equal(Store.verifyBackupFile(old).ok && (Store.verifyBackupFile(old) as any).notes, 3, "the fresh copy holds the live state");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -738,8 +738,8 @@ describe("8: backups and upgrades", () => {
       const s = new Store(p);
       as("alice", () => s.create({ title: "n", body: "b" }));
       s.close();
-      const stale = [p + ".pre-v16-backup.123abc.partial", p + ".pre-v16-backup.123abc.partial-journal"];
-      const fresh = p + ".pre-v16-backup.999fff.partial";
+      const stale = [p + ".pre-v17-backup.123abc.partial", p + ".pre-v17-backup.123abc.partial-journal"];
+      const fresh = p + ".pre-v17-backup.999fff.partial";
       for (const f of [...stale, fresh]) writeFileSync(f, "x");
       const old = new Date(Date.now() - 3600_000);
       for (const f of stale) utimesSync(f, old, old);
@@ -882,7 +882,7 @@ describe("docs and CI stay in step with the code", () => {
 
   test("docs/upgrading.md exists and is linked from the README and the CHANGELOG", () => {
     const up = read("docs", "upgrading.md");
-    for (const must of ["Upgrading from 1.3", "pre-v16-backup", "1.3.4", "roll back", "imported_unverified", "MONOMEM_ATTEST_MIN_VERSION", "EXPERIMENTAL"]) assert.ok(up.includes(must) || up.toLowerCase().includes(must.toLowerCase()), `upgrading.md lacks ${must}`);
+    for (const must of ["Upgrading from 1.3", "pre-v17-backup", "1.3.4", "roll back", "imported_unverified", "MONOMEM_ATTEST_MIN_VERSION", "EXPERIMENTAL"]) assert.ok(up.includes(must) || up.toLowerCase().includes(must.toLowerCase()), `upgrading.md lacks ${must}`);
     assert.match(read("README.md"), /docs\/upgrading\.md/);
     assert.match(read("CHANGELOG.md"), /docs\/upgrading\.md/);
   });

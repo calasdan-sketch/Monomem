@@ -134,6 +134,12 @@ function usage(): void {
       "  approve-first [<namespace> on|off]",
       "            Hold every agent write to a namespace in the quarantine queue until you approve it.",
       "            No arguments: list the namespaces with it on. Writes from monomem commands are not held.",
+      "  access [--since 24h|ISO] [--writer label] [--limit 100] [--json]",
+      "            Who read memory: time, writer label, tool or route, result count, namespaces and a short",
+      "            redacted query preview (never note text). Kept MONOMEM_ACCESS_LOG_DAYS (30; 0 = off).",
+      "  flood | resume <label>",
+      "            Writers the flood guard paused (more than MONOMEM_FLOOD_WRITES_PER_HOUR writes, default 500,",
+      "            in an hour) / let one write again. Local stdio apps all share the label \"stdio\".",
       "  quality [--json] [--namespace ns]",
       "            What is worth a look: near-duplicates, stale notes with a newer twin, quarantined writes, notes",
       "            the linter flags, and captured rows about to decay. Each comes with the command that fixes it.",
@@ -1841,6 +1847,67 @@ async function approveFirstCmd(): Promise<void> {
   }
 }
 
+// `monomem access [--since <iso|duration>] [--writer <label>] [--limit N] [--json]`: the read access log (operator only).
+async function accessCmd(): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { Store, ValidationError } = await import("./store.js");
+  const { resolveSince } = await import("./changes.js");
+  const { printable } = await import("./security.js");
+  const { flags } = parseFlags(process.argv.slice(3), { values: ["since", "writer", "limit"], bools: ["json"] });
+  const store = new Store(DB_PATH);
+  try {
+    const since = typeof flags.since === "string" ? resolveSince(flags.since) ?? undefined : undefined;
+    const entries = store.accessLog({
+      ...(since ? { since } : {}),
+      ...(typeof flags.writer === "string" ? { writer: flags.writer } : {}),
+      ...(typeof flags.limit === "string" ? { limit: Number(flags.limit) } : {}),
+    });
+    const paused = store.pausedWriters();
+    if (flags.json) {
+      console.log(JSON.stringify({ entries, paused }, null, 2));
+      return;
+    }
+    if (!entries.length) console.log("No reads logged" + (since || flags.writer ? " for that filter." : " yet."));
+    for (const e of entries) {
+      const q = e.query ? `  "${printable(e.query, 120)}"` : "";
+      console.log(`${e.at.slice(0, 19).replace("T", " ")}  ${printable(e.writer || "(unknown)", 40).padEnd(16)} ${e.tool.padEnd(18)} ${String(e.results).padStart(4)} result(s)  ${printable(e.namespaces || "-", 60)}${q}`);
+    }
+    if (paused.length) console.log(`\nPaused by the flood guard: ${paused.join(", ")} (monomem resume <label>)`);
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    throw e;
+  } finally {
+    store.close();
+  }
+}
+
+// `monomem flood`: writers the flood guard paused. `monomem resume <label>`: lift a pause (operator only).
+async function floodCmd(resume: boolean): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { Store, floodWritesPerHour } = await import("./store.js");
+  const label = process.argv[3];
+  if (resume && !label?.trim()) {
+    console.error("Usage: monomem resume <writer label>   (see `monomem flood` for the paused ones)");
+    process.exit(1);
+  }
+  const store = new Store(DB_PATH);
+  try {
+    if (resume) {
+      console.log(store.resumeWriter(label) ? `Resumed "${label.trim()}": its writes are accepted again.` : `"${label.trim()}" was not paused.`);
+      return;
+    }
+    const limit = floodWritesPerHour();
+    const paused = store.pausedWriters();
+    console.log(limit ? `Flood guard: a writer is paused after ${limit} writes in an hour.` : "Flood guard: off (MONOMEM_FLOOD_WRITES_PER_HOUR=0).");
+    console.log(paused.length ? `Paused: ${paused.join(", ")}. Resume with: monomem resume <label>` : "No writer is paused.");
+  } finally {
+    store.close();
+  }
+}
+
 // `monomem decay [--dry-run] [--namespace ns]`: archive (never delete) idle captured rows now; --dry-run only lists them.
 async function decayCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
@@ -2311,6 +2378,15 @@ async function main(): Promise<void> {
       break;
     case "approve-first":
       await approveFirstCmd();
+      break;
+    case "access":
+      await accessCmd();
+      break;
+    case "flood":
+      await floodCmd(false);
+      break;
+    case "resume":
+      await floodCmd(true);
       break;
     case "decay":
       await decayCmd();

@@ -377,6 +377,8 @@ monomem supersede --old 12 --title "..." --body "..."   # replace a note: shows 
 monomem supersede undo <id>     monomem history <id> | restore <id> <version> | purge <id>
 monomem quarantine [list | approve <id> | reject <id>]
 monomem approve-first [<namespace> on|off]   # hold every agent write to a namespace for your approval
+monomem access [--since 24h] [--writer label]   # who read memory, with which tool (never note text)
+monomem flood     monomem resume <label>         # writers paused for too many writes in an hour
 monomem quality [--json]     monomem decay [--dry-run]     monomem archive <id> | restore <id>
 monomem consolidate | rebuild-edges | reindex | relevant "…" | recall
 monomem bench [--json] [--suite stale|contradiction|isolation|provenance] [--strict-gaps]   # provenance benchmark (docs/BENCHMARK.md)
@@ -456,7 +458,8 @@ each one and how it was fixed is in [docs/BENCHMARK.md](./docs/BENCHMARK.md#know
 Loopback by default and fail-closed: it refuses to bind a public interface
 without an explicit `MONOMEM_TOKEN`. Constant-time bearer auth on every
 data route, scoped tokens, DNS-rebinding Origin checks, per-client rate
-limits, size caps, an append-only audit log without note content, the
+limits, size caps, an append-only audit log without note content, a read access log (who read
+what, with a redacted query preview and never note text) and a per-writer flood guard, the
 write-time linter above, and an untrusted-data banner on every MCP read (REST responses do not
 carry it) so agents treat note content as data, not instructions. Optional AES-256-GCM
 encryption at rest for note bodies only (`monomem encrypt enable`; titles,
@@ -494,6 +497,7 @@ remove it: [docs/footprint.md](./docs/footprint.md).
 | [docs/change-feed.md](./docs/change-feed.md) | `memory_since` / `GET /changes` |
 | [docs/tasks.md](./docs/tasks.md) | task board, claims, command tasks, handoffs, one-call catch-up |
 | [docs/memory-linter.md](./docs/memory-linter.md) | `MONOMEM_LINT`, detection rules, quarantine |
+| [docs/access-log.md](./docs/access-log.md) | read access log (`monomem access`), flood guard (`monomem flood` / `resume`) |
 | [docs/live-claude-code.md](./docs/live-claude-code.md) | `monomem setup` step by step, checking it in live Claude Code, troubleshooting |
 | [docs/file-sync.md](./docs/file-sync.md) | Markdown export/import, `sync --git` (optionally sealed), GitHub and Syncthing workflows |
 | [docs/sessionstart-hook.md](./docs/sessionstart-hook.md) | automatic recall at Claude Code session start |
