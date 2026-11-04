@@ -88,9 +88,10 @@ counts as the create it makes.
 
 Hard deletes are not counted or refused (they are admin-only).
 
-**`stdio` is one label for every local app.** Every app connected over the local stdio MCP server is stamped `stdio`
-today, so pausing `stdio` pauses all of them at once, and their writes add up toward one limit. Per-app labels are
-being built separately. Over HTTP each token has its own label and its own count.
+**Local apps are counted by their label.** An app that `monomem setup` labelled is stamped `stdio:<app>` (for example
+`stdio:cursor`) and has its own count and its own pause. An app still on an unlabelled entry is stamped plain `stdio`,
+and every such app shares that one count. The label is self-declared by the app's config, so it separates well-behaved
+apps rather than containing a hostile one. Over HTTP each token has its own label and its own count.
 
 `0` turns the guard off. Writers already paused stay paused until resumed.
 
