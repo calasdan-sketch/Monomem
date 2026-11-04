@@ -103,6 +103,14 @@ const INJECTION_PATTERNS: Array<[string, RegExp]> = [
     /\b(?:ignore|disregard|forget)\s+(?:all\s+|everything\s+)?(?:you(?:'ve| have)?\s+been\s+told|your\s+(?:instructions|rules|guidelines|programming|training))\b/i,
   ],
   [
+    // Constraint override: "ignore all budget limits", "bypass any spending restrictions". Needs a
+    // quantifier (all / any / every) and a constraint noun, so a developer note such as "ignore lint
+    // rules in vendor/" or "bypass the cache in tests" is not flagged. Found by the Agent Memory
+    // hygiene demo's booking attack (github.com/elizabethfuentes12, MIT-0), which the older patterns missed.
+    "instruction override",
+    /\b(?:ignore|disregard|bypass|override|skip)\s+(?:all|any|every)\s+(?:of\s+(?:the|your|my)\s+)?(?:[\w-]+\s+){0,2}(?:limits?|limitations|restrictions?|polic(?:y|ies)|guardrails?|constraints?|caps?|approvals?|requirements?|safeguards?|checks?)\b/i,
+  ],
+  [
     "role reassignment",
     /\byou\s+are\s+now\s+(?:(?:a|an|the)\s+)?(?:\w+\s+){0,2}(?:assistant|ai|model|agent|bot|persona|jailbroken|unrestricted|unfiltered|dan)\b/i,
   ],
