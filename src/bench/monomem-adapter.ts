@@ -241,7 +241,8 @@ export class MonomemAdapter implements MemoryAdapter {
     if (input.namespace !== undefined) body.namespace = input.namespace;
     const r = await this.http(actor, "POST", "/notes", body);
     if (r.status !== 201) return this.fail(r.status, r.json);
-    return { outcome: "ok", note: normalizeNote(r.json.note as Raw) };
+    // Stored, but the linter may have warned (category + label only, never the matched text).
+    return { outcome: "ok", note: normalizeNote(r.json.note as Raw), ...(r.json.warnings ? { data: { warnings: r.json.warnings } } : {}) };
   }
 
   /**
