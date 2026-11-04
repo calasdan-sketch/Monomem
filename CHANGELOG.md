@@ -17,6 +17,20 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tool changes the setting. Secrets are still refused outright. Forgetting, restoring and replacing notes there cannot
   be queued, so they are refused for everyone but the CLI (state_delete, supersede preview/confirm, REST archive and
   restore return an error naming the namespace). Details: [docs/memory-linter.md](./docs/memory-linter.md).
+- **Read access log.** Every memory read an agent makes (the MCP read tools, the REST read routes, the session-start and
+  per-file context the hooks inject) adds one row: time, the writer identity a write would be stamped with (token
+  label, or `stdio` / `cli` / `capture` ...), the tool or route, the namespaces, a query preview (secret-redacted, one
+  line, at most 120 characters, encrypted when at-rest encryption is on) and the result count. Never note text or
+  titles. View it with `monomem access [--since 24h|ISO] [--writer label] [--limit N] [--json]` or admin-only
+  `GET /access` (refused for a namespace-pinned token). No MCP tool reads it. Kept `MONOMEM_ACCESS_LOG_DAYS` (default
+  30; `0` = off). Details: [docs/access-log.md](./docs/access-log.md).
+- **Flood guard.** A writer label that makes `MONOMEM_FLOOD_WRITES_PER_HOUR` (default 500; `0` = off) creates/updates in
+  a rolling hour is paused: its next write and every later create, update, forget or restore is refused (HTTP 429 over
+  REST) until `monomem resume <label>` or admin `POST /flood/resume`. A pause writes an audit entry and a stderr
+  warning, survives a restart, and shows in `monomem flood`, `monomem access` and `GET /flood`. Counted: every
+  create/update call that reaches the guard (stored, held or refused). Never counted or paused: the `monomem` CLI, the
+  server's own jobs, quarantine approval, consolidation, backup restores. Every local stdio app shares the label
+  `stdio`, so pausing it pauses all of them.
 - **`state_search` `mode: "relevant"`** does what `state_relevant` does: `query` is read as a conversational message,
   its keywords are extracted, and notes matching any of them come back with the keywords (default limit 5).
 - **Two warn-only linter categories.** `pii`: email addresses, phone numbers, IPv4/IPv6 and
@@ -46,6 +60,8 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Schema v17.** The first open adds the `access_log` and `write_rate` tables, after a verified copy of the database at
+  `<database>.pre-v17-backup`. No note is rewritten. Older Monomem versions cannot open the upgraded file.
 - **Nine tools are registered by default (was ten):** `state_relevant` left the default set, since `state_search`
   `mode: "relevant"` covers it. It is still registered under `MONOMEM_TOOLS=all` or when named in `MONOMEM_TOOLS`.
 - `written_by` / `not_written_by` filters (REST, MCP, CLI, the change feed) and distrust rules:

@@ -38,8 +38,9 @@ import {
 import { isStale, stalenessConfig, annotateStaleness } from "./staleness.js";
 // At-rest encryption for note bodies. No module cycle: crypto.ts imports
 // only node: builtins, never store.ts.
-import { encrypt, decryptIfEncrypted, loadKey, keyPath, noteAad, captureAad } from "./crypto.js";
+import { encrypt, decryptIfEncrypted, isEncrypted, loadKey, keyPath, noteAad, captureAad } from "./crypto.js";
 import { currentActor, currentWriter, cleanWriter } from "./actor.js";
+import { redact } from "./redact.js";
 import {
   ALL_NAMESPACES,
   MAX_DISTRUST_RULES,
@@ -237,6 +238,33 @@ export class QuarantinedError extends ValidationError {
       `held in quarantine #${quarantineId} pending admin review (${describeFindings(findings)})`
     );
   }
+}
+
+/** A write from a writer the flood guard paused (Store.floodGate). Cleared by an operator: `monomem resume <label>`. */
+export class WriterPausedError extends ValidationError {}
+
+/** Env knob: a non-negative number, or `dflt` when unset, empty or unusable. */
+function envCount(name: string, dflt: number): number {
+  const raw = process.env[name]?.trim();
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : dflt;
+}
+/** Days of read-access log kept (MONOMEM_ACCESS_LOG_DAYS, default 30; 0 = the log is off). */
+export const accessLogDays = (): number => envCount("MONOMEM_ACCESS_LOG_DAYS", 30);
+/** Writes one writer may make in a rolling hour before it is paused (MONOMEM_FLOOD_WRITES_PER_HOUR, default 500; 0 = off). */
+export const floodWritesPerHour = (): number => Math.floor(envCount("MONOMEM_FLOOD_WRITES_PER_HOUR", 500));
+/** Longest query preview kept in the access log. */
+export const ACCESS_PREVIEW_MAX = 120;
+const ACCESS_AAD = "access_log";
+
+export interface AccessLogEntry {
+  seq: number;
+  at: string;
+  writer: string;
+  tool: string;
+  namespaces: string;
+  query: string;
+  results: number;
 }
 
 /** How much of the write-time linter a write path runs. */
@@ -529,7 +557,7 @@ export interface QuarantineEntry {
 export const CHANGE_LOG_RETENTION_DAYS = 90;
 
 /** Current schema version (PRAGMA user_version). See Store.migrate. */
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 /**
  * Notes fetched per page by exportBatch(), which both streaming export
@@ -694,7 +722,7 @@ export interface NoteRecord {
   /** v16: observation type (bugfix, feature, refactor, change, discovery, decision, security_alert, security_note). */
   obs_type?: string;
   /**
-   * v17: present (true) only when the operator pinned the note. Agents can read it but not change, archive, replace, restore an
+   * v18: present (true) only when the operator pinned the note. Agents can read it but not change, archive, replace, restore an
    * older version of, or purge the history of it; only the local `monomem` CLI can (and only it or an admin REST call can unpin).
    * Not the `pinned` tag (which only keeps captured rows from decay).
    */
@@ -1614,7 +1642,7 @@ export class Store {
 
   /**
    * Before the first upgrade of a non-empty file (any older version -> the current one), keep one
-   * copy of the pre-upgrade database next to it: `<db>.pre-v16-backup`. It is a
+   * copy of the pre-upgrade database next to it: `<db>.pre-v17-backup`. It is a
    * consistent snapshot (VACUUM INTO) still at the OLD schema version, so an
    * older monomem can open it (rollback = stop everything, put this file
    * back as the database, delete the -wal and -shm files beside it, install the older version). Never overwrites an
@@ -2343,7 +2371,31 @@ export class Store {
       `);
     }
     if (v < 17) {
-      // v17: human-only notes and rollback by writer.
+      // v17: who read what, and the flood guard's write counter.
+      //  - access_log: one row per memory read (when, writer identity, tool or route, namespaces, a short redacted query
+      //    preview, how many results). Never note text or titles. The preview is sealed when at-rest encryption is on.
+      //    Kept MONOMEM_ACCESS_LOG_DAYS (sweepExpired).
+      //  - write_rate: one row per counted create/update, per writer, for the rolling-hour flood check. Kept one hour.
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS access_log (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          at TEXT NOT NULL,
+          writer TEXT NOT NULL DEFAULT '',
+          tool TEXT NOT NULL,
+          namespaces TEXT NOT NULL DEFAULT '',
+          query TEXT NOT NULL DEFAULT '',
+          results INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_access_log_at ON access_log(at);
+        CREATE TABLE IF NOT EXISTS write_rate (
+          writer TEXT NOT NULL,
+          at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_write_rate ON write_rate(writer, at);
+      `);
+    }
+    if (v < 18) {
+      // v18: human-only notes and rollback by writer.
       //  - notes.pinned: 1 = the operator pinned the note; only the local CLI may change it (see refuseAgentOnPinned). A column, not
       //    a _meta list, so every read path shows it for free and an older build refuses this file (user_version) instead of
       //    opening it and silently ignoring the pins.
@@ -2507,8 +2559,11 @@ export class Store {
       sessionId?: string;
       /** ... and its observation type. */
       obsType?: string;
+      /** importNotes: a restore is one operator action, not N agent writes; the flood guard does not count it. */
+      bulkImport?: boolean;
     } & LintOpts = {}
   ): NoteRecord {
+    if (!opts.bulkImport) this.floodGate(opts.lint ?? "full");
     if (!input.title || !input.title.trim()) {
       throw new ValidationError("title is required");
     }
@@ -3126,6 +3181,7 @@ export class Store {
       historyReason?: string;
     } & LintOpts = {}
   ): NoteRecord | null {
+    this.floodGate(opts.lint ?? "full");
     validateForgetAfter(patch.forget_after);
     validateConfidence(patch.confidence);
     const existing = this.read(id);
@@ -3425,6 +3481,7 @@ export class Store {
       this.announceChange();
     }
     this.sweepCaptureEvents(now, namespaces);
+    if (!namespaces) this.sweepAccessLog(now); // retention is store-wide: only the unscoped (hourly) sweep runs it
     this.sweepDecay(now, namespaces);
     this.dropArchivedVectors();
     return n;
@@ -3706,7 +3763,7 @@ export class Store {
     return r ? this.historyRowToEntry(r) : null;
   }
 
-  /** v17: remember that a version `savedBy` replaced at `savedAt` is no longer kept (no text). Caller holds the write lock. */
+  /** v18: remember that a version `savedBy` replaced at `savedAt` is no longer kept (no text). Caller holds the write lock. */
   private recordDropped(noteId: number, savedBy: string, savedAt: string): void {
     this.db
       .prepare(
@@ -3716,7 +3773,7 @@ export class Store {
       .run(noteId, savedBy, savedAt, savedAt);
   }
 
-  /** v17: per writer, the time span of this note's versions that were dropped from the history (pruned or purged). */
+  /** v18: per writer, the time span of this note's versions that were dropped from the history (pruned or purged). */
   historyDropped(noteId: number): Array<{ saved_by: string; first_at: string; last_at: string; count: number }> {
     return this.db.prepare("SELECT saved_by, first_at, last_at, count FROM note_history_dropped WHERE note_id = ?").all(noteId) as unknown as Array<{
       saved_by: string;
@@ -3986,6 +4043,7 @@ export class Store {
   /** Soft-archive one note (retention action from an API/client). */
   archive(id: number): NoteRecord | null {
     const ns = (this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined)?.namespace;
+    this.refusePaused();
     if (ns !== undefined) refuseAgentInApproveFirst(this, ns, "forgetting a note");
     this.refuseAgentOnPinned(id, "forgetting it");
     const iso = new Date().toISOString();
@@ -4007,6 +4065,7 @@ export class Store {
    */
   restore(id: number, opts: { forget_after?: number } = {}): NoteRecord | null {
     const restoreNs = (this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined)?.namespace;
+    this.refusePaused();
     if (restoreNs !== undefined) refuseAgentInApproveFirst(this, restoreNs, "restoring a note");
     this.refuseAgentOnPinned(id, "restoring it");
     validateForgetAfter(opts.forget_after);
@@ -4077,6 +4136,7 @@ export class Store {
       this.sealQuarantine(key);
       this.sealHistory(key);
       this.sealCaptureEvents(key);
+      this.sealAccessLog(key, true);
       this.db.exec("COMMIT");
     } catch (e) {
       try {
@@ -4208,6 +4268,7 @@ export class Store {
       this.unsealQuarantine(key);
       this.unsealHistory(key);
       this.unsealCaptureEvents(key);
+      this.sealAccessLog(key, false);
       hooks.beforeCommit?.();
       this.db.exec("COMMIT");
     } catch (e) {
@@ -4726,6 +4787,7 @@ export class Store {
                     ? { attestedWriter: carried.writer, attestedBy: carried.by, mergedFromWriters: carried.merged }
                     : { mergedFromWriters: this.claimedTaint(note) }),
                   skipEdges: true,
+                  bulkImport: true,
                   updatedAt: note.updated_at,
                   startRev: note.rev,
                   // Retention state survives a backup/restore: an archived
@@ -6711,6 +6773,173 @@ export class Store {
       .run(key, value);
   }
 
+  // --- Read access log (v17) -------------------------------------------------
+  // Operator-only: the CLI (`monomem access`) and the admin REST route read it; no MCP tool does.
+
+  /**
+   * Record one memory read: the server-stamped writer identity (currentWriter: a token label, or stdio / cli / server /
+   * capture ...), the tool or route, the namespaces, a preview of the query (redacted, one line, at most
+   * ACCESS_PREVIEW_MAX characters; sealed when at-rest encryption is on) and the result count. Never note text or titles.
+   * Given the response `payload` instead of `results`, the count is the number of items with a numeric `id` in it (notes,
+   * index rows, changes...) and their `namespace`s join the list. Like audit(), a failure here never breaks the read.
+   */
+  logAccess(e: { tool: string; namespaces?: Iterable<string>; query?: unknown; results?: number; payload?: unknown }): void {
+    try {
+      if (accessLogDays() === 0) return;
+      const namespaces = new Set(e.namespaces ?? []);
+      let results = e.results ?? 0;
+      const seen = new Set<unknown>();
+      const walk = (v: unknown, depth: number): void => {
+        if (!v || typeof v !== "object" || depth > 6 || seen.has(v)) return;
+        seen.add(v);
+        if (Array.isArray(v)) return v.forEach((x) => walk(x, depth + 1));
+        const o = v as Record<string, unknown>;
+        if (typeof o.id === "number") {
+          results++;
+          if (typeof o.namespace === "string") namespaces.add(o.namespace);
+          return;
+        }
+        for (const x of Object.values(o)) walk(x, depth + 1);
+      };
+      walk(e.payload, 0);
+      const q = typeof e.query === "string" ? e.query : e.query === undefined || e.query === null ? "" : JSON.stringify(e.query);
+      // Redact before cutting, so a secret is never half-kept; the 2000-character cap only bounds the redaction work.
+      const preview = redact(q.slice(0, 2000)).text.replace(/\s+/g, " ").trim().slice(0, ACCESS_PREVIEW_MAX);
+      const key = preview ? this.writeKey() : null;
+      this.db
+        .prepare("INSERT INTO access_log (at, writer, tool, namespaces, query, results) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(
+          new Date().toISOString(),
+          currentWriter(),
+          e.tool.slice(0, 100),
+          [...namespaces].filter(Boolean).sort().join(",").slice(0, 500),
+          key ? encrypt(preview, key, ACCESS_AAD) : preview,
+          Math.max(0, Math.floor(results) || 0)
+        );
+    } catch {
+      // The access log must never break a read.
+    }
+  }
+
+  /** The access log, newest first. `since` is an ISO time; `writer` an exact identity. */
+  accessLog(opts: { since?: string; writer?: string; limit?: number } = {}): AccessLogEntry[] {
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+    if (opts.since) {
+      where.push("at >= ?");
+      params.push(opts.since);
+    }
+    if (opts.writer !== undefined) {
+      where.push("writer = ?");
+      params.push(cleanWriter(opts.writer));
+    }
+    const limit = Math.max(1, Math.min(10_000, Math.floor(opts.limit ?? 100) || 100));
+    const rows = this.db
+      .prepare(`SELECT seq, at, writer, tool, namespaces, query, results FROM access_log${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY seq DESC LIMIT ?`)
+      .all(...params, limit) as unknown as AccessLogEntry[];
+    return rows.map((r) => {
+      let query: string;
+      try {
+        query = decryptIfEncrypted(r.query, this.readKey(), ACCESS_AAD);
+      } catch {
+        query = "[sealed: key unavailable]";
+      }
+      return { ...r, seq: Number(r.seq), results: Number(r.results), query };
+    });
+  }
+
+  /** Drop access-log rows past MONOMEM_ACCESS_LOG_DAYS (all of them when it is 0) and flood counts older than an hour. */
+  private sweepAccessLog(now: number): void {
+    const days = accessLogDays();
+    this.db.prepare("DELETE FROM access_log WHERE at < ?").run(days === 0 ? "9999" : new Date(now - days * 86_400_000).toISOString());
+    this.db.prepare("DELETE FROM write_rate WHERE at < ?").run(new Date(now - 3_600_000).toISOString());
+  }
+
+  /** Seal (on) or unseal (off) the stored query previews (caller holds the write lock; `encrypt enable` / `disable`). */
+  private sealAccessLog(key: Buffer, on: boolean): void {
+    const rows = this.db.prepare("SELECT seq, query FROM access_log WHERE query <> ''").all() as Array<{ seq: number; query: string }>;
+    const upd = this.db.prepare("UPDATE access_log SET query = ? WHERE seq = ?");
+    for (const r of rows) {
+      if (isEncrypted(r.query) === on) continue;
+      upd.run(on ? encrypt(r.query, key, ACCESS_AAD) : decryptIfEncrypted(r.query, key, ACCESS_AAD), r.seq);
+    }
+  }
+
+  // --- Flood guard (v17) -----------------------------------------------------
+  // The paused set is a JSON list in _meta (like approve_first), so a restart does not clear it.
+
+  /** Writer identities the flood guard paused (sorted). */
+  pausedWriters(): string[] {
+    try {
+      const v = JSON.parse(this.getMeta("flood_paused") ?? "[]") as unknown;
+      return Array.isArray(v) ? v.filter((n): n is string => typeof n === "string").sort() : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Lift a pause and clear that writer's count. Returns false when the writer was not paused. */
+  resumeWriter(label: string): boolean {
+    const w = cleanWriter(label);
+    if (!w) throw new ValidationError("writer label is required");
+    const all = this.pausedWriters();
+    if (!all.includes(w)) return false;
+    this.setMeta("flood_paused", JSON.stringify(all.filter((x) => x !== w)));
+    // A fresh hour: otherwise its very next write would trip the guard again on the old count.
+    this.db.prepare("DELETE FROM write_rate WHERE writer = ?").run(w);
+    audit({ op: "flood-resume", label: w });
+    return true;
+  }
+
+  /** The identity the flood guard counts, or null for writes it leaves alone: see floodGate. */
+  private floodSubject(mode: LintMode): string | null {
+    const w = currentWriter();
+    return isOperatorWrite(mode) || w === "" || w === "server" ? null : w;
+  }
+
+  /** archive / restore: refused for a paused writer (they are not counted). */
+  private refusePaused(): void {
+    const w = this.floodSubject("full");
+    if (w !== null && this.pausedWriters().includes(w)) throw this.pausedError(w);
+  }
+
+  private pausedError(w: string): WriterPausedError {
+    return new WriterPausedError(
+      `writer "${w}" is paused by the flood guard (more than ${floodWritesPerHour()} writes in an hour). ` +
+        `Its writes are refused until an operator runs: monomem resume ${w}`
+    );
+  }
+
+  /**
+   * Flood guard, run first by create() and update(). Every call that gets past it counts, whether it is then stored,
+   * held for review, or refused by validation: a runaway loop sending bad writes is still a flood. Once a writer has
+   * floodWritesPerHour() counted writes in the last hour, its next write pauses it and is refused, as is every later one
+   * (and its archive / restore) until `monomem resume`. Not counted or paused: the local CLI, quarantine approvals and
+   * consolidation (isOperatorWrite), the server's own jobs (`server`), callers with no writer identity (library use),
+   * and importNotes (a restore).
+   */
+  private floodGate(mode: LintMode): void {
+    const w = this.floodSubject(mode);
+    if (w === null) return;
+    if (this.pausedWriters().includes(w)) throw this.pausedError(w);
+    const limit = floodWritesPerHour();
+    if (limit === 0) return;
+    const now = Date.now();
+    // ponytail: count-then-insert is not atomic across processes; concurrent writers can overshoot by a few.
+    const n = Number(
+      (this.db.prepare("SELECT COUNT(*) AS n FROM write_rate WHERE writer = ? AND at >= ?").get(w, new Date(now - 3_600_000).toISOString()) as { n: number }).n
+    );
+    if (n >= limit) {
+      // One statement, no transaction: a write can run inside a caller's transaction (which this throw rolls back, pause
+      // included; the count stays, so the next write pauses it again).
+      this.setMeta("flood_paused", JSON.stringify([...new Set([...this.pausedWriters(), w])].sort()));
+      audit({ op: "flood-pause", label: w, detail: `${n} writes in the last hour (limit ${limit})` });
+      console.error(`[monomem] flood guard: paused writer "${w}" after ${n} writes in an hour. Resume with: monomem resume ${w}`);
+      throw this.pausedError(w);
+    }
+    this.db.prepare("INSERT INTO write_rate (writer, at) VALUES (?, ?)").run(w, new Date(now).toISOString());
+  }
+
   // --- Approve-first namespaces ---------------------------------------------
   // A JSON list in _meta (no schema change). Operator-only: the CLI and the admin REST endpoint set it, no MCP tool does.
 
@@ -6739,7 +6968,7 @@ export class Store {
     audit({ op: on ? "approve-first-on" : "approve-first-off", namespace: ns });
   }
 
-  // --- Pinned notes (v17) ----------------------------------------------------
+  // --- Pinned notes (v18) ----------------------------------------------------
   // Operator-only, like approve-first: the CLI and the admin REST endpoint pin and unpin, no MCP tool does.
 
   /**
@@ -6775,7 +7004,7 @@ export class Store {
     }>;
   }
 
-  // --- Rollback by writer (v17) ------------------------------------------------
+  // --- Rollback by writer (v18) ------------------------------------------------
 
   /**
    * Ids of notes `writer` may have touched since `sinceIso` (rollback.ts decides what to do with each): created by it then,

@@ -60,6 +60,7 @@ async function fileContext(payload: Record<string, unknown>, opts: HookOptions):
     if (!notes.length) return "";
     const claimed = store.captureDb().prepare("INSERT OR IGNORE INTO file_context_seen (session_id, path) VALUES (?, ?)").run(sessionId, rel).changes;
     if (Number(claimed) !== 1) return "";
+    store.logAccess({ tool: "hook:file-context", namespaces: notes.map((n) => n.namespace), query: rel, results: notes.length });
     const { indexLine } = await import("./context-inject.js");
     const { UNTRUSTED_BANNER } = await import("./security.js");
     const text =

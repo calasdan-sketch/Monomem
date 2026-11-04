@@ -18,6 +18,8 @@ import {
   QuarantinedError,
   RebuildBusyError,
   StaleWriteError,
+  WriterPausedError,
+  floodWritesPerHour,
   NoteUnreadableError,
   type ImportReport,
   attestationsToShow,
@@ -95,7 +97,7 @@ import {
   TaskNotFoundError,
   ClaimConflictError,
 } from "./tasks.js";
-import { ackChanges } from "./changes.js";
+import { ackChanges, resolveSince } from "./changes.js";
 import { qualityReport } from "./quality.js";
 import { SupersedeError, supersedePreview, supersedeConfirm, supersedeUndo, noteHistory, restoreVersion, purgeNoteHistory, type Caller } from "./supersede.js";
 import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
@@ -136,6 +138,8 @@ function requiredScope(method: string | undefined, path: string): Scope {
   if (path === "/quality" || /^\/quarantine\/\d+\/(approve|reject)$/.test(path)) return "admin";
   // Approve-first is the switch in front of an agent's own writes: reading or flipping it is admin, like the queue itself.
   if (path === "/approve-first") return "admin";
+  // The read access log shows every agent's queries, and the flood pause is the operator's switch: admin, reads included.
+  if (path === "/access" || path === "/flood" || path === "/flood/resume") return "admin";
   // A note's earlier versions can hold text that was taken out on purpose: administrators only, reads included.
   if (/^\/notes\/\d+\/history(\/restore)?$/.test(path)) return "admin";
   if (method === "POST" || method === "PUT") return "write";
@@ -155,6 +159,8 @@ function sendError(res: ServerResponse, e: unknown): void {
     sendJson(res, e.status, { error: e.message, ...(e.warning ? { warning: e.warning } : {}) });
   } else if (e instanceof StaleWriteError) {
     sendJson(res, 409, { error: e.message });
+  } else if (e instanceof WriterPausedError) {
+    sendJson(res, 429, { error: e.message });
   } else if (e instanceof ValidationError) {
     sendJson(res, 400, { error: e.message });
   } else if (e instanceof NoteUnreadableError) {
@@ -166,6 +172,21 @@ function sendError(res: ServerResponse, e: unknown): void {
   }
 }
 
+/**
+ * REST routes that hand memory to the caller. Each 200 answer is one row in the read access log (Store.logAccess),
+ * written by sendJson from the request's actor context. GET /export logs itself (it streams).
+ */
+const READ_ROUTES: Array<[string, RegExp]> = [
+  ["GET", /^\/(notes|search|index|timeline|sessions|changes|stats|tasks|handoffs|catch-up|quality|files\/timeline)$/],
+  ["GET", /^\/(notes|tasks)\/\d+$/],
+  ["GET", /^\/notes\/\d+\/history$/],
+  ["GET", /^\/sessions\/[^/]+$/],
+  ["POST", /^\/(relevant|get)$/],
+];
+const isReadRoute = (method: string | undefined, path: string): boolean => READ_ROUTES.some(([m, re]) => m === method && re.test(path));
+/** Per-response read logger, set by handle() for a read route and run once by sendJson. */
+const pendingReads = new WeakMap<ServerResponse, (payload: unknown) => void>();
+
 function sendJson(
   res: ServerResponse,
   status: number,
@@ -175,6 +196,11 @@ function sendJson(
   // Never write twice / to an already-finished response (e.g. after a client
   // aborted an oversized upload). Guard before touching headers.
   if (res.writableEnded || res.headersSent) return;
+  const logRead = pendingReads.get(res);
+  if (logRead) {
+    pendingReads.delete(res);
+    if (status === 200) logRead(payload);
+  }
   let body = JSON.stringify(payload);
   // Cap response size so a huge store or broad query can't blow up an agent's
   // context window or the process memory. `/export` opts out (cap:false): it is
@@ -470,6 +496,13 @@ export function createApiServer(
       if (!scopeAllows(scope, need)) {
         sendJson(res, 403, { error: `this token lacks the required '${need}' scope` });
         return;
+      }
+      // Read access log: the preview is the search text when there is one, else the query string (POST bodies set it below).
+      let readQuery: unknown = url.searchParams.get("q") ?? url.searchParams.get("query") ?? (url.search.slice(1) || undefined);
+      if (isReadRoute(req.method, path)) {
+        const nsHint = url.searchParams.get("namespace");
+        const tool = `${req.method} ${path.replace(/\/\d+(?=\/|$)/g, "/:id").replace(/^\/sessions\/[^/]+$/, "/sessions/:id")}`;
+        pendingReads.set(res, (payload) => store.logAccess({ tool, namespaces: nsHint ? [nsHint] : [], query: readQuery, payload }));
       }
 
       // include_distrusted switches the trust policy OFF for the call, so it is an
@@ -839,6 +872,48 @@ export function createApiServer(
         return;
       }
 
+      // GET /access?since=&writer=&limit= -> the read access log; GET /flood -> paused writers; POST /flood/resume
+      // { writer } lifts a pause. Admin-only (requiredScope), and refused for a namespace-pinned token: the log and the
+      // flood guard are store-wide (one writer's queries cross namespaces). No MCP tool reaches any of them.
+      if ((req.method === "GET" && (path === "/access" || path === "/flood")) || (req.method === "POST" && path === "/flood/resume")) {
+        if (principal.namespace?.trim()) {
+          sendJson(res, 403, { error: "the access log and flood guard are store-wide: use a token that is not pinned to a namespace" });
+          return;
+        }
+        try {
+          if (path === "/access") {
+            const since = url.searchParams.get("since");
+            const writer = url.searchParams.get("writer");
+            sendJson(res, 200, {
+              entries: store.accessLog({
+                ...(since ? { since: resolveSince(since) ?? undefined } : {}),
+                ...(writer !== null ? { writer } : {}),
+                limit: intParam(url, "limit", 1),
+              }),
+              paused: store.pausedWriters(),
+            });
+          } else if (path === "/flood") {
+            sendJson(res, 200, { paused: store.pausedWriters(), writes_per_hour: floodWritesPerHour() });
+          } else {
+            let body: { writer?: unknown };
+            try {
+              body = JSON.parse((await readBody(req)) || "{}") as { writer?: unknown };
+            } catch {
+              sendJson(res, 400, { error: "invalid JSON body" });
+              return;
+            }
+            if (typeof body?.writer !== "string" || !body.writer.trim()) {
+              sendJson(res, 400, { error: "expected { writer: string }" });
+              return;
+            }
+            sendJson(res, 200, { writer: body.writer, resumed: store.resumeWriter(body.writer), paused: store.pausedWriters() });
+          }
+        } catch (e) {
+          sendError(res, e);
+        }
+        return;
+      }
+
       // POST /quarantine/:id/approve | reject -> the memory_quarantine tool's approve / reject, for the dashboard.
       const qMatch = /^\/quarantine\/(\d+)\/(approve|reject)$/.exec(path);
       if (req.method === "POST" && qMatch) {
@@ -1078,6 +1153,7 @@ export function createApiServer(
           sendJson(res, 400, { error: "message is required" });
           return;
         }
+        readQuery = parsed.message;
         // The MCP schema requires an integer limit; the REST layer used to
         // accept floats (floored) and strings (defaulted). Reject
         // non-integers with a 400 so both surfaces validate identically.
@@ -1218,6 +1294,7 @@ export function createApiServer(
               sendJson(res, 400, { error: "invalid JSON body" });
               return;
             }
+            readQuery = { ids: body.ids };
             sendJson(res, 200, memoryGet(store, capRead(), body.ids));
           } else if (path === "/sessions") {
             sendJson(res, 200, sessionList(store, capRead(), intParam(url, "limit", 1)));
@@ -1672,12 +1749,14 @@ export function createApiServer(
         }
         res.write(`{${header}"notes":[`);
         let afterId = 0;
+        let exported = 0;
         let first = true;
         try {
           for (;;) {
             const page = store.exportBatch(afterId, EXPORT_PAGE_SIZE, { namespaces: exportNs, skipUnreadable, attest, history: url.searchParams.get("history") !== "0" }); // gate-ok: GET /export is admin-only (a full backup)
             if (page.length === 0) break;
             afterId = page[page.length - 1].id;
+            exported += page.length;
             for (const note of page) {
               const chunk = (first ? "" : ",") + JSON.stringify(note);
               first = false;
@@ -1701,6 +1780,7 @@ export function createApiServer(
           return;
         }
         res.end("]}");
+        store.logAccess({ tool: "GET /export", namespaces: exportNs, results: exported });
         return;
       }
 

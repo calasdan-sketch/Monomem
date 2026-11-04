@@ -232,6 +232,25 @@ export const OPERATOR_ONLY_TOOLS: readonly string[] = [
   "task_approve",
 ];
 
+/** Tools that hand memory to the caller: each successful call is one row in the read access log (Store.logAccess). */
+const READ_TOOLS = new Set([
+  "state_read",
+  "state_search",
+  "state_relevant",
+  "state_list",
+  "catch_up",
+  "memory_since",
+  "memory_get",
+  "memory_index",
+  "memory_timeline",
+  "memory_history",
+  "memory_stats",
+  "memory_consolidation_candidates",
+  "session_list",
+  "task_get",
+  "task_list",
+]);
+
 const STDIO_ADMIN_HINT =
   "This is an operator action and is off over the local stdio connection. Do it yourself in the dashboard " +
   "or the monomem CLI, or set MONOMEM_STDIO_ADMIN_TOOLS=1 to let the agent do it.";
@@ -346,8 +365,32 @@ export function createMcpServer(
           `include_distrusted is honoured only for this connection's own namespace ("${ownNs}"): pass namespace "${ownNs}". The namespaces it can only read are governed by their own admins.`
         );
       }
-      return actorStore.run({ label: conn.label ?? "", authed: conn.authed === true }, () => (handler as (...x: unknown[]) => unknown)(...args));
+      return actorStore.run({ label: conn.label ?? "", authed: conn.authed === true }, () => {
+        const out = (handler as (...x: unknown[]) => unknown)(...args);
+        return READ_TOOLS.has(name as string) ? logRead(name as string, args[0] as Record<string, unknown> | undefined, out) : out;
+      });
     });
+  };
+
+  // Read access log (Store.logAccess): one row per successful read tool call, written inside the caller's actor context
+  // so it carries the same identity a write would be stamped with. No tool reads the log back.
+  const logRead = (tool: string, a: Record<string, unknown> | undefined, out: unknown): unknown => {
+    const record = (r: unknown): unknown => {
+      const res = r as { isError?: boolean; content?: Array<{ text?: unknown }> } | undefined;
+      const text = res?.content?.[0]?.text;
+      if (res?.isError || typeof text !== "string") return r;
+      let payload: unknown;
+      try {
+        payload = JSON.parse(text.startsWith(UNTRUSTED_BANNER) ? text.slice(UNTRUSTED_BANNER.length) : text);
+      } catch {
+        payload = undefined;
+      }
+      if (payload && typeof payload === "object" && "error" in payload) return r;
+      const query = typeof a?.query === "string" ? a.query : typeof a?.message === "string" ? a.message : a;
+      store.logAccess({ tool, namespaces: typeof a?.namespace === "string" ? [a.namespace] : [], query, payload });
+      return r;
+    };
+    return out instanceof Promise ? out.then(record) : record(out);
   };
 
   const denyIfUnder = (need: Scope): string | null =>
