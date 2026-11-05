@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "monomem": {
+      "command": "npx",
+      "args": ["-y", "monomem@1.1.1", "mcp"],
+      "env": { "MONOMEM_CLIENT": "claude-code" }
+    }
+  }
+}
