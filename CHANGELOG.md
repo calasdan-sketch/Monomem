@@ -8,6 +8,21 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`monomem health [--json] [--card [file.svg]]`.** One line per check (setup, security settings, the poisoning drill,
+  the audit chain, writes waiting for review, distrusted writers, redacted notes, memory size) and a grade from A to F.
+  The rule is printed with it: each warning lowers the grade one step, any failure caps it at D, and an attack the drill
+  did not expect caps it at F. It also says what the grade does not cover (the linter matches patterns, so reworded
+  attacks and self-poisoning still get through). Exit code 1 for D to F.
+- **`monomem why <id>`** and the opt-in MCP tool `memory_why`: one note's history in time order (who wrote it, each
+  version, replacements, held edits, pin, the session starts it was shown at and why, current status). Titles only. It
+  ends with what is not recorded, such as who read the note (only a total and the last read time are kept).
+- **`monomem conflicts`** and a "Possible conflicts" list in `monomem quality` and the dashboard: live notes from
+  different writers that give different values for the same key (deploy target, package manager, a version, a URL).
+  It only flags; you choose to replace, pin or distrust. It matches the same key, so reworded disagreements are missed.
+- **Claude Code plugin.** `/plugin marketplace add calasdan-sketch/monomem`, then `/plugin install monomem@monomem`,
+  adds the MCP server, the start-of-session recall hook and the skill (see [docs/plugin.md](./docs/plugin.md)).
+  `server.json` and `mcpName` are ready for the MCP registry.
+
 - **`monomem drill`.** Replays 20 known memory-poisoning attacks on a temporary copy of your store, with your own
   settings, and shows for each one whether it was held, stored with a warning, or reached the agent. Your store is not
   changed. Two attacks are known misses and are listed as such: a reworded override the pattern linter cannot see
@@ -196,6 +211,8 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local app.
 
 ### Fixed
+
+- `import --claude` wrote without a terminal and without `--yes`; it now refuses, as `import --from` does.
 
 - Note titles, session names and imported text are made safe before they are printed to a terminal (control codes,
   links and right-to-left overrides are neutralised), so a planted note cannot rewrite the terminal title or clear it.
