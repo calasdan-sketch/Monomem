@@ -4,15 +4,16 @@ import assert from "node:assert/strict";
 import { Store } from "../src/store.js";
 import { runSearch, capPerSession, describeWhen } from "../src/search-service.js";
 
-test("an aggregating question returns twice the results, and one session cannot fill the top", async () => {
+test("an aggregating question returns twice the results; everyday 'every'/'each' does not", async () => {
   const s = new Store(":memory:");
   for (let i = 0; i < 6; i++) s.create({ title: `Gym visit ${i}`, body: `gym workout log entry ${i} gym gym gym`, source: "A" }, {});
   for (let i = 0; i < 3; i++) s.create({ title: `Gym note ${i}`, body: `gym ${i}`, source: `B${i}` }, {});
   const hits = await runSearch(s, "how many times did I go to the gym", { mode: "keyword", limit: 3 });
   assert.equal(hits.length, 6, "limit 3 widened to 6");
-  const top = hits.slice(0, 5).filter((n) => n.source === "A").length;
-  assert.ok(top <= 2, `session A holds ${top} of the top 5`);
+  // `source` names a writer or origin, not a session: notes sharing it are not pushed back.
+  assert.ok(hits.slice(0, 3).every((n) => n.source === "A"), "source is not a session");
   assert.equal((await runSearch(s, "gym workout log", { mode: "keyword", limit: 3 })).length, 3, "other questions keep their limit");
+  assert.equal((await runSearch(s, "every time I log a gym workout", { mode: "keyword", limit: 3 })).length, 3, "'every' alone is not aggregating");
   s.close();
 });
 

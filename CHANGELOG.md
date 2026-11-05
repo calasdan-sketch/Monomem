@@ -9,14 +9,15 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Tamper-evident audit log.** Each audit line carries `prev`, the sha256 of the line before it (carried across
-  rotation), and `monomem audit verify` reports the first broken line. It detects lines edited or removed inside the
-  chain; it cannot detect the newest lines being cut off or the whole file being rewritten by someone with access to
-  it. Lines written by older versions have no `prev` and are skipped.
-- **Dashboard: a Held tab.** Writes waiting for review are listed with their reasons ("instruction override",
+  rotation), and `monomem audit verify` counts every break and prints the head hash. Two apps writing at the same
+  moment are counted as a fork, not a break. It detects lines edited or removed inside the chain; it cannot detect the
+  newest lines being cut off, rotated files being deleted, or the whole file being rewritten by anyone who can write
+  it (an agent with a shell included). Lines written by older versions have no `prev` and are counted as unchained.
+- **Dashboard: a Held tab.** Reject is the main button, Approve the secondary one. Writes waiting for review are listed with their reasons ("instruction override",
   "namespace requires approval" ...), writer and namespace, with Approve and Reject. Admin `GET /quarantine` lists them.
 - **Dashboard: who wrote it, on every card.** Each note shows its writer with a colour chip, and pinned notes are marked.
-- **MCP results say when.** `state_search`, `state_relevant` and `state_get` results carry a compact `when`
-  (for example "2023-05-08, 5 months ago").
+- **MCP results say when.** `state_search`, `state_relevant` and `state_get` results carry a compact `when`: the date
+  the note was first written and how long ago (for example "2023-05-08, 5 months ago"; dates are UTC).
 
 - **Import from the official MCP memory server.** `monomem import --from mcp-memory [--path memory.jsonl] [--dry-run]` turns
   each entity of `@modelcontextprotocol/server-memory`'s knowledge graph into a note (observations as a list, relations
@@ -99,8 +100,9 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a status line instead of pop-up dialogs; empty states that say what to do next; it fits a phone-width screen.
 - **Session-start recall ranks with one any-keyword search** (rare words count more than common ones) instead of one
   search per keyword.
-- **Questions that add things up** ("how many", "in total", "every" ...) return twice the results, and no more than two
-  per session or source stay at the front, so one conversation cannot fill the list. Nothing is dropped.
+- **Questions that add things up** ("how many", "in total", "list all" ...) get twice the results from `state_search`
+  and REST search, and no more than two notes from one capture session stay at the front; the rest move behind the
+  others. Searches across several namespaces are still cut to the limit asked for. More results cost more tokens.
 - **Shorter help.** `monomem help` shows the common commands in four groups; `monomem help --all` shows everything. An
   unknown command suggests the closest one and exits with an error instead of printing all of help.
 - `monomem doctor` colours `[ok]` and `[warn]` on a terminal (not when `NO_COLOR` is set or output is piped).
@@ -145,8 +147,9 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Instructions hidden in invisible Unicode tag characters (U+E0000-E007F) were never scanned.** The memory linter
   removed them before scanning, but they were stored and shown to the model as written. They are now decoded and
-  scanned, and any tag character is flagged as "hidden Unicode tag text" (well-formed emoji subdivision flags such as
-  England's are exempt). Bench scenario E19.
+  scanned, and any tag character, or a run of four or more variation selectors, is flagged as "hidden Unicode tag
+  text" (only the England, Scotland and Wales flag emoji are exempt). Tag characters are removed from `source` when
+  it is stored. Bench scenario E19.
 - **Every forget, restore and expiry is now in the audit log.** Archive and restore over REST and the CLI, and the
   expiry and decay sweeps, wrote no audit line. They now do, from the store itself, whatever the caller.
 

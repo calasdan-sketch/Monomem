@@ -582,36 +582,65 @@ function lastAuditLineHash(path: string): string {
 }
 
 /**
- * Walk the audit chain (oldest rotated file first). A line whose `prev` is not the hash of the line before it is
- * "broken". Detects edits and deletions INSIDE the chain; it cannot see truncation of the newest lines or a full
- * rewrite of the file by someone who can write it. Lines written before the chain existed (no `prev`) are skipped.
- * Two processes writing at the same instant can also break a link (the hash is read, then the line appended).
+ * Walk the audit chain (oldest rotated file first). Several processes append to one log (each app runs its own
+ * server), and one can read the last line's hash just before another appends, so its `prev` names an earlier line:
+ * a concurrent fork. A `prev` that matches one of the last FORK_WINDOW lines is counted as a fork, not a break. A
+ * `prev` that matches none of them is a break: a line was edited or removed. Every break is counted, not just the
+ * first. Limits: it cannot see truncation of the newest lines, deleted rotated files, or a full rewrite by someone
+ * who can write the file (the hashes are not keyed); an edited line that only a fork pointed past can go unseen.
+ * Lines written before the chain existed (no `prev`) are counted as unchained.
  */
-export function verifyAuditChain(path: string = auditPath()): { ok: boolean; lines: number; brokenLine?: number; file?: string } {
+const FORK_WINDOW = 16;
+export function verifyAuditChain(path: string = auditPath()): {
+  ok: boolean;
+  lines: number;
+  brokenLine?: number;
+  file?: string;
+  breaks: number;
+  forks: number;
+  unchained: number;
+  head?: string;
+} {
   const files: string[] = [];
   for (let i = 1; existsSync(`${path}.${i}`); i++) files.unshift(`${path}.${i}`);
   if (existsSync(path)) files.push(path);
-  let prevLine: string | undefined;
-  let chained = false;
+  const recent: string[] = []; // hashes of the last FORK_WINDOW lines, newest last
   let n = 0;
+  let breaks = 0;
+  let forks = 0;
+  let unchained = 0;
+  let brokenLine: number | undefined;
+  let file: string | undefined;
   for (const f of files) {
     for (const line of readFileSync(f, "utf8").split("\n")) {
       if (!line) continue;
       n++;
-      let rec: { prev?: unknown };
+      let rec: { prev?: unknown } | undefined;
       try {
         rec = JSON.parse(line);
       } catch {
-        return { ok: false, lines: n, brokenLine: n, file: f };
+        rec = undefined;
       }
-      if (typeof rec.prev === "string") chained = true;
-      if (prevLine !== undefined && chained && rec.prev !== sha(prevLine)) {
-        return { ok: false, lines: n, brokenLine: n, file: f };
+      if (!rec || typeof rec.prev !== "string") {
+        if (rec) unchained++;
+        else {
+          breaks++;
+          if (brokenLine === undefined) [brokenLine, file] = [n, f];
+        }
+      } else if (recent.length > 0) {
+        if (rec.prev === recent[recent.length - 1]) {
+          /* follows the line before it */
+        } else if (recent.includes(rec.prev)) forks++;
+        else {
+          breaks++;
+          if (brokenLine === undefined) [brokenLine, file] = [n, f];
+        }
       }
-      prevLine = line;
+      recent.push(sha(line));
+      if (recent.length > FORK_WINDOW) recent.shift();
     }
   }
-  return { ok: true, lines: n };
+  return { ok: breaks === 0, lines: n, breaks, forks, unchained, ...(brokenLine !== undefined ? { brokenLine, file } : {}), ...(recent.length ? { head: recent[recent.length - 1] } : {}) };
 }
 
 export function audit(entry: {

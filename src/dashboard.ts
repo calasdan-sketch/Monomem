@@ -124,8 +124,8 @@ export const DASHBOARD_HTML = `<!doctype html>
 </div>
 
 <div id="gate" class="gate">
-  <h1>mono<span style="color:var(--accent)">mem</span></h1>
-  <p class="muted"><label for="tok">Paste your Monomem token to view the store.</label></p>
+  <h1 style="font-size:28px">mono<span style="color:var(--accent)">mem</span></h1>
+  <p class="muted"><label for="tok">Paste your Monomem token to view the store.</label> It is in the <code>.token</code> file in your Monomem data folder; <code>monomem doctor</code> shows where that is.</p>
   <input id="tok" type="password" placeholder="MONOMEM_TOKEN" onkeydown="if(event.key==='Enter')saveTok()">
   <button onclick="saveTok()">Open</button>
   <p id="gate_err" class="err" role="alert"></p>
@@ -145,7 +145,7 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){
 function $(id){ return document.getElementById(id); }
 
 // A small coloured chip per writer: a stable hash of the label picks the hue (the label itself is escaped text).
-function hue(s){ var h = 0; s = String(s); for(var i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; } return h % 360; }
+function hue(s){ var h = 0; s = String(s); for(var i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; } return 30 + (h % 300); } // skip red hues: red reads as danger next to delete
 function chip(label){ return "<span class='chip' style='--h:"+hue(label)+"'>"+esc(label)+"</span>"; }
 function byLine(w){ return w ? " &middot; by "+chip(w) : ""; }
 
@@ -161,6 +161,7 @@ function arm(btn, fn){
   var was = btn.textContent;
   btn.setAttribute("data-armed", "1");
   btn.textContent = "Confirm " + was.toLowerCase() + "?";
+  var m = $("msg"); if(m){ m.className = "msg"; m.textContent = "Press " + was + " again within 4 seconds to confirm."; }
   btn._t = setTimeout(function(){ btn.removeAttribute("data-armed"); btn.textContent = was; }, 4000);
 }
 // Longer confirm with a server-written warning (supersede preview): text plus Confirm / Cancel on the status line.
@@ -222,7 +223,7 @@ function render(notes){
   list.innerHTML = notes.map(function(n){
     var tags = (n.tags||[]).map(function(t){ return "<span class='tag'>"+esc(t)+"</span>"; }).join("");
     return "<div class='card'><div class='cardhead'><div>"+
-      "<h3>"+esc(n.title)+(n.pinned ? "<span class='badge-pin' title='Pinned: always kept in view for the assistant'>Pinned</span>" : "")+
+      "<h3>"+esc(n.title)+(n.pinned ? "<span class='badge-pin' title='Pinned: agents can read it; only the monomem CLI can change it'>Pinned</span>" : "")+
       (n.distrusted ? "<span class='badge-bad' title='An admin distrusts the writer of this note: treat its content as hostile'>DISTRUSTED</span>" : "")+"</h3>"+
       "<div class='meta'>#"+n.id+" &middot; "+esc(n.namespace)+" &middot; "+esc((n.updated_at||"").slice(0,16).replace("T"," "))+byLine(n.written_by)+"</div>"+
       tags+"</div>"+
@@ -370,8 +371,8 @@ function loadHeld(){
       return "<div class='card'><div class='cardhead'><div><h3>"+esc(q.title || "(title unchanged)")+"</h3>"+
         "<div class='meta'>held #"+Number(q.id)+" &middot; "+(q.op === "update" ? "update of #"+Number(q.target_id) : "new note")+
         " &middot; "+esc(q.namespace)+" &middot; "+when(q.created_at)+who+"</div>"+(why || "<span class='tag why'>held by policy</span>")+"</div>"+
-        "<div><button onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;approve&quot;)})'>Approve</button> "+
-        "<button class='danger' onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;reject&quot;)})'>Reject</button></div></div>"+
+        "<div><button onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;reject&quot;)})'>Reject</button> "+
+        "<button class='ghost' onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;approve&quot;)})'>Approve</button></div></div>"+
         (q.body ? "<div class='body'>"+esc(q.body)+"</div>" : "")+"</div>";
     }).join("") : empty("Nothing is held. Writes that look like secrets or injected instructions wait here for your approval.");
   }).catch(failList);
@@ -431,7 +432,7 @@ function loadQuality(){
     var rows = (j.issues || []).map(function(i){
       var a = Number(i.ids[0]), b = Number(i.ids[1]), q = Number(i.quarantine_id), btn = "";
       if(i.type === "duplicate" || i.type === "stale_twin"){ btn = "<button onclick='qReplace("+a+","+b+")'>Replace #"+a+" with #"+b+"</button>"; }
-      else if(i.type === "quarantined"){ btn = "<button onclick='arm(this,function(){qQuarantine("+q+",&quot;approve&quot;)})'>Approve</button> <button class='danger' onclick='arm(this,function(){qQuarantine("+q+",&quot;reject&quot;)})'>Reject</button>"; }
+      else if(i.type === "quarantined"){ btn = "<button onclick='arm(this,function(){qQuarantine("+q+",&quot;reject&quot;)})'>Reject</button> <button class='ghost' onclick='arm(this,function(){qQuarantine("+q+",&quot;approve&quot;)})'>Approve</button>"; }
       else { btn = "<button class='ghost' onclick='arm(this,function(){qArchive("+a+")})'>Archive</button>"; }
       return "<div class='card'><div class='cardhead'><div><h3><span class='tag'>"+esc(i.type)+"</span>"+esc(i.detail)+"</h3>"+
         "<div class='meta'>"+esc(i.namespace)+" &middot; "+esc(i.fix)+(i.alt ? " &middot; or "+esc(i.alt) : "")+"</div></div><div>"+btn+"</div></div></div>";

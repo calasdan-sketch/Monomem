@@ -55,6 +55,39 @@ describe("audit completeness and chain", () => {
     rmSync(`${log}.tmp`);
   });
 
+  test("two writers racing (prev names an earlier line) is a fork, not a break", () => {
+    audit({ op: "r1" });
+    audit({ op: "r2" });
+    const all = readFileSync(log, "utf8").trim().split("\n");
+    // the last line claims the line BEFORE its predecessor, as when two processes read the same last hash
+    const forked = JSON.parse(all[all.length - 1]);
+    forked.prev = createHash("sha256").update(all[all.length - 3]).digest("hex");
+    all[all.length - 1] = JSON.stringify(forked);
+    writeFileSync(log, all.join("\n") + "\n");
+    const r = verifyAuditChain();
+    assert.equal(r.ok, true);
+    assert.equal(r.forks, 1);
+    audit({ op: "r3" });
+    assert.equal(verifyAuditChain().ok, true, "the chain keeps going after a fork");
+  });
+
+  test("deleting a middle line is a break", () => {
+    audit({ op: "d1" });
+    audit({ op: "d2" });
+    audit({ op: "d3" });
+    const all = readFileSync(log, "utf8").trim().split("\n");
+    all.splice(all.length - 2, 1);
+    writeFileSync(log, all.join("\n") + "\n");
+    const r = verifyAuditChain();
+    assert.equal(r.ok, false);
+    assert.equal(r.breaks, 1);
+    // repair for the next test: rebuild a clean file
+    writeFileSync(log, "");
+    audit({ op: "e1" });
+    audit({ op: "e2" });
+    audit({ op: "e3" });
+  });
+
   test("editing a middle line is reported at the line after it", () => {
     const all = readFileSync(log, "utf8").trim().split("\n");
     const i = all.length - 2;

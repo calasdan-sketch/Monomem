@@ -2503,10 +2503,13 @@ async function main(): Promise<void> {
       }
       const { verifyAuditChain } = await import("./security.js");
       const r = verifyAuditChain();
+      const extra = `${r.forks} concurrent fork(s) (two processes writing at once; expected), ${r.unchained} line(s) from before the chain`;
       if (r.ok) {
-        console.log(`Audit chain intact: ${r.lines} line(s). (Detects edits and deletions inside the chain; not truncation of the newest lines, nor a full rewrite.)`);
+        console.log(`Audit chain intact: ${r.lines} line(s), ${extra}.`);
+        console.log(`Head ${r.head ?? "(empty)"}: note it somewhere else to detect a later rewrite or cut-off.`);
+        console.log("Detects lines edited or removed inside the chain. Not: the newest lines cut off, rotated files deleted, or a full rewrite by anyone who can write the file.");
       } else {
-        console.error(`Audit chain BROKEN at line ${r.brokenLine} of ${r.file}: it does not follow from the line before it.`);
+        console.error(`Audit chain BROKEN: ${r.breaks} break(s), first at line ${r.brokenLine} of ${r.file} (it follows from none of the lines before it). ${extra}.`);
         process.exit(1);
       }
       break;

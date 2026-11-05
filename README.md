@@ -1,11 +1,13 @@
 <!-- Image URLs are absolute on purpose: GitHub resolves relative paths, npm does not. -->
 ![Monomem — one memory, every assistant](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/brand/monomem-banner.png)
 
-**One memory for every AI coding assistant, and it shows who wrote each note.**
+**Shared memory for your AI coding agents that records who wrote each note and holds suspicious writes for your review.**
 
 ```bash
 npx monomem setup
 ```
+
+Needs Node 22.16 or newer (check with `node -v`). On an older Node, use [Docker](#docker).
 
 Tell Claude Code something once, and your other assistants can read it too. It's one SQLite file on your own machine. No cloud, no API keys, no hidden model calls.
 

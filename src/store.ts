@@ -2609,7 +2609,7 @@ export class Store {
     const namespace = input.namespace?.trim() || DEFAULT_NAMESPACE;
     const body = input.body ?? "";
     const tags = tagsToStorage(input.tags);
-    const source = (input.source ?? "").slice(0, 200);
+    const source = (input.source ?? "").replace(/[\u{E0000}-\u{E007F}]/gu, "").slice(0, 200);
     // Server-stamped, never from the request: who is writing right now.
     const writer = opts.writtenBy !== undefined ? cleanWriter(opts.writtenBy) : currentWriter();
     const claim = cleanWriter(opts.importedWrittenBy);
@@ -3260,7 +3260,7 @@ export class Store {
     const title = patch.title ?? existing.title;
     const body = patch.body ?? existing.body;
     const tags = patch.tags !== undefined ? tagsToStorage(patch.tags) : tagsToStorage(existing.tags);
-    const source = patch.source !== undefined ? patch.source.slice(0, 200) : existing.source;
+    const source = patch.source !== undefined ? patch.source.replace(/[\u{E0000}-\u{E007F}]/gu, "").slice(0, 200) : existing.source;
     const confidenceSet = patch.confidence !== undefined;
     const rev = existing.rev + 1;
     // written_by = who last changed the CONTENT (title or body), server-stamped.
@@ -3871,7 +3871,7 @@ export class Store {
       const when = isoOrNull(h.saved_at) ?? now;
       const conf = typeof h.confidence === "number" && h.confidence >= 0 && h.confidence <= 1 ? h.confidence : null;
       const bytes = Buffer.byteLength(h.title) + Buffer.byteLength(h.body);
-      const res = ins.run(noteId, version, h.title, tagsToStorage(tagsArr), typeof h.source === "string" ? h.source.slice(0, 200) : "", claimed, conf, when, savedBy, bytes);
+      const res = ins.run(noteId, version, h.title, tagsToStorage(tagsArr), typeof h.source === "string" ? h.source.replace(/[\u{E0000}-\u{E007F}]/gu, "").slice(0, 200) : "", claimed, conf, when, savedBy, bytes);
       if (Number(res.changes) === 0) continue;
       const hid = Number(res.lastInsertRowid);
       const sealed = this.sealBody(h.body, historyAad(hid));

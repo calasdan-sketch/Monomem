@@ -355,18 +355,20 @@ function finalizeResults(
 }
 
 /** Questions that add up or list across the history ("how many", "in total", "every"...): the answer is spread over several sessions. */
-const AGGREGATE_QUERY = /\b(how many|total|in total|all the|each|every|list all)\b/i;
+// Bare "each" / "every" / "total" are everyday words in coding talk ("every time I run tests"), so they are not enough.
+const AGGREGATE_QUERY = /\b(how many|in total|total (?:number|amount|cost|of)|list all|all the \w+ (?:i|we))\b/i;
 /** Most notes of one capture session kept in place on an aggregating question; the rest move behind the others. */
 export const AGGREGATE_PER_SESSION = 2;
 
-/** Soft cap: a session's (or origin's) items past the cap go to the back, in their order (nothing is dropped). */
+/** Soft cap: a session's items past the cap move behind the others, in their order (the caller's limit still applies). */
 export function capPerSessionBy<T>(items: T[], noteOf: (x: T) => NoteRecord, cap = AGGREGATE_PER_SESSION): T[] {
   const seen = new Map<string, number>();
   const front: T[] = [];
   const back: T[] = [];
   for (const x of items) {
     const nt = noteOf(x);
-    const sid = nt.session_id || nt.source; // captured rows carry a session; imported notes name their origin
+    // Capture sessions only: `source` often names a writer ("claude-code") or is unique per note, so it is a poor stand-in.
+    const sid = nt.session_id;
     const c = sid ? (seen.get(sid) ?? 0) : 0;
     if (sid) seen.set(sid, c + 1);
     (c < cap ? front : back).push(x);
