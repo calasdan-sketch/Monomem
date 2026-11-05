@@ -10,8 +10,10 @@ import { BIND_HOST, DATA_DIR, DB_PATH } from "./config.js";
 import { runDrill, type DrillReport } from "./drill.js";
 import { meterStats } from "./meter.js";
 import { esc } from "./receipts.js";
-import { auditPath as defaultAuditPath, verifyAuditChain } from "./security.js";
+import { auditPath as defaultAuditPath, printable, verifyAuditChain } from "./security.js";
 import { Store } from "./store.js";
+import { embeddingsConfig } from "./embeddings.js";
+import { acceptLegacyHeartbeats } from "./liveness.js";
 
 /** info: a fact worth showing that never lowers the grade. */
 export type Status = "ok" | "warn" | "fail" | "info";
@@ -49,7 +51,8 @@ export interface SecurityFinding {
   id: string;
   /** Short name for the card and the reason line. */
   label: string;
-  status: "warn" | "fail";
+  /** info: shown, never lowers the grade (a proxy setting on a loopback bind). */
+  status: "warn" | "fail" | "info";
   /** One line for `monomem health`. */
   short: string;
   /** The longer wording `monomem doctor` prints. */
@@ -61,7 +64,7 @@ const CLOUD_SYNC = /(?:^|[\\/])(?:OneDrive[^\\/]*|Dropbox[^\\/]*|iCloud Drive[^\
 
 /** The settings that weaken protection: the one list `monomem doctor` and `monomem health` both use. Each finding counts separately. */
 export async function securityFindings(dataDir: string, bindHost: string): Promise<SecurityFinding[]> {
-  const { lintPolicy } = await import("./lint.js");
+  const { lintPolicy, lintPolicyUnrecognised } = await import("./lint.js");
   const out: SecurityFinding[] = [];
   const p = lintPolicy();
   const policy = `secrets: ${p.secret}, injection: ${p.injection}`;
@@ -79,6 +82,43 @@ export async function securityFindings(dataDir: string, bindHost: string): Promi
   }
   if (CLOUD_SYNC.test(dataDir)) {
     out.push({ id: "sync", label: "cloud-sync folder", status: "warn", short: "data folder is inside a cloud-sync folder", detail: `data dir ${dataDir} is inside a cloud-sync folder (OneDrive, Dropbox, iCloud or Google Drive): the sync client uploads the database and token, and can corrupt a live SQLite file. See SECURITY.md; set MONOMEM_HOME to a local folder.` });
+  }
+  // Settings that move or loosen trust without being a hole on their own; each is one line, none changes data.
+  const embed = embeddingsConfig();
+  if (embed.enabled) {
+    let host = "";
+    try {
+      host = new URL(embed.url).hostname.replace(/^\[|\]$/g, "");
+    } catch {
+      /* unreadable URL: embedding calls fail, nothing is sent */
+    }
+    if (host && !LOOPBACK.includes(host) && !/^127(\.\d{1,3}){3}$/.test(host)) {
+      out.push({ id: "embed-remote", label: "remote embeddings", status: "warn", short: `MONOMEM_EMBED_URL sends note text to ${host}, not this machine`, detail: `MONOMEM_EMBED_URL points at ${host}: with embeddings on, the text of every note and search leaves this machine for that host. Use a local endpoint (the default is Ollama on localhost) unless you chose this.` });
+    }
+  }
+  const origins = (process.env.MONOMEM_ALLOWED_ORIGINS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (origins.length) {
+    out.push({ id: "origins", label: "browser origins allowed", status: "warn", short: `MONOMEM_ALLOWED_ORIGINS lets ${origins.length} browser origin${origins.length === 1 ? "" : "s"} call the API`, detail: `MONOMEM_ALLOWED_ORIGINS lets web pages from ${origins.join(", ")} call this server from a browser. Each one can use anything a token of yours can. Remove origins you do not run.` });
+  }
+  if (process.platform !== "win32" && process.env.MONOMEM_NO_CHMOD === "1") {
+    out.push({ id: "no-chmod", label: "file permissions not tightened", status: "warn", short: "MONOMEM_NO_CHMOD=1 leaves the data folder and database readable by other users", detail: "MONOMEM_NO_CHMOD=1 stops Monomem from making the data folder, database, token and audit files private (owner only). Other accounts on this computer may read your notes. Remove it unless the folder is shared on purpose." });
+  }
+  const proxies = [process.env.MONOMEM_TRUST_PROXY === "1" ? "MONOMEM_TRUST_PROXY" : "", process.env.MONOMEM_TRUST_CLOUDFLARE === "1" ? "MONOMEM_TRUST_CLOUDFLARE" : ""].filter(Boolean);
+  if (proxies.length) {
+    const loop = LOOPBACK.includes(bindHost);
+    out.push({
+      id: "trust-proxy",
+      label: "forwarded IP trusted",
+      status: loop ? "info" : "warn",
+      short: loop ? `${proxies.join(" and ")} set: the client address comes from a forwarded header (fine behind your own proxy on a loopback bind)` : `${proxies.join(" and ")} set on a non-loopback bind: anyone who can reach the port directly can forge the client address and dodge rate limits`,
+      detail: `${proxies.join(" and ")} makes Monomem believe the forwarded client address header. ${loop ? "The bind is loopback, so only a proxy on this computer can reach it: fine if that proxy sets the header." : "The bind is not loopback: a client that skips the proxy can set the header itself and get a fresh rate-limit bucket each time. Bind to loopback behind the proxy, or remove it."}`,
+    });
+  }
+  if (acceptLegacyHeartbeats()) {
+    out.push({ id: "runner-legacy", label: "legacy runner heartbeats", status: "warn", short: "MONOMEM_RUNNER_ACCEPT_LEGACY accepts runner heartbeats with no writer marker", detail: "MONOMEM_RUNNER_ACCEPT_LEGACY lets a runner heartbeat with no server-stamped writer count as alive, so any writer that can post a note can fake a healthy runner. Upgrade the runner (1.3.4 or later) and remove it." });
+  }
+  if (lintPolicyUnrecognised()) {
+    out.push({ id: "lint-typo", label: "MONOMEM_LINT not understood", status: "warn", short: `MONOMEM_LINT="${printable(process.env.MONOMEM_LINT ?? "", 40)}" is not recognised, using the safe default`, detail: `MONOMEM_LINT="${printable(process.env.MONOMEM_LINT ?? "", 80)}" is not recognised (or only partly), so the safe default applies to the parts that were not understood. Check the spelling: values are block, quarantine, warn, or secrets=/injection=/entropy=/pii=/directive= each set to one of those.` });
   }
   return out;
 }
@@ -208,7 +248,7 @@ export async function runHealth(o: HealthOpts = {}): Promise<HealthReport> {
 
   const sec = await securityFindings(o.dataDir ?? DATA_DIR, o.bindHost ?? BIND_HOST);
   if (sec.length) for (const f of sec) add(`security:${f.id}`, f.label, f.status, `${f.short} (monomem doctor has the detail)`);
-  else add("security", "Security settings", "ok", "no weakening settings found (lint, stdio admin tools, bind address, cloud-sync folder)");
+  else add("security", "Security settings", "ok", "no weakening settings found (lint, stdio admin tools, bind address, cloud-sync folder, remote embeddings, browser origins, file permissions, proxy trust, legacy runners)");
 
   if (dbOk) {
     try {

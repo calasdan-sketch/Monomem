@@ -33,7 +33,7 @@ import {
   DEFAULT_NAMESPACE,
 } from "./store.js";
 import { truthyParam } from "./trust.js";
-import { originAllowed, RateLimiter, AuthTarpit, clientKey, tokenKey, authenticateEntry, scopeAllows, LIMITS, audit } from "./security.js";
+import { originAllowed, RateLimiter, AuthTarpit, clientKey, tokenKey, authenticateEntry, scopeAllows, LIMITS, audit, printable } from "./security.js";
 import { type Scope, type TokenEntry, TIME_ZONE, PROJECT_ROOT } from "./config.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -153,6 +153,17 @@ function requiredScope(method: string | undefined, path: string): Scope {
 // Map a thrown error to an HTTP response: caller-input problems (ValidationError)
 // return 400 with the message; anything unexpected logs server-side and returns
 // a generic 500 so SQL/internal details never leak to the client.
+// REST note bodies: a field Monomem does not know (a client sent `content` for `body`) used to be dropped, leaving an empty note.
+// written_by / created_by are accepted and ignored: the server stamps the writer from the token.
+const POST_NOTE_FIELDS = ["namespace", "title", "body", "tags", "source", "created_at", "forget_after", "confidence", "facts", "written_by", "created_by"];
+const PUT_NOTE_FIELDS = ["namespace", "title", "body", "tags", "source", "forget_after", "confidence", "if_rev", "written_by", "created_by"];
+/** A 400 message naming the unknown top-level fields of a note body, or null when there are none. */
+export function unknownNoteFields(body: unknown, allowed: readonly string[]): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const bad = Object.keys(body).filter((k) => !allowed.includes(k));
+  return bad.length ? `unknown field${bad.length === 1 ? "" : "s"}: ${bad.map((k) => printable(k, 40)).join(", ")} (allowed: ${allowed.join(", ")})` : null;
+}
+
 function sendError(res: ServerResponse, e: unknown): void {
   // A linter-held write was accepted for admin review, not rejected: 202.
   if (e instanceof QuarantinedError) {
@@ -559,6 +570,11 @@ export function createApiServer(
           sendJson(res, 400, { error: "invalid JSON body" });
           return;
         }
+        const badPost = unknownNoteFields(parsed, POST_NOTE_FIELDS);
+        if (badPost) {
+          sendJson(res, 400, { error: badPost });
+          return;
+        }
         if (!parsed.title || typeof parsed.title !== "string") {
           sendJson(res, 400, { error: "title is required" });
           return;
@@ -642,6 +658,11 @@ export function createApiServer(
           parsed = JSON.parse(raw || "{}");
         } catch {
           sendJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        const badPut = unknownNoteFields(parsed, PUT_NOTE_FIELDS);
+        if (badPut) {
+          sendJson(res, 400, { error: badPut });
           return;
         }
         if (parsed && parsed.forget_after !== undefined) parsed.forget_after = coerceNumeric(parsed.forget_after) as number;

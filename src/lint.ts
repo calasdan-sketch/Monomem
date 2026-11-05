@@ -81,11 +81,28 @@ let warnedBadPolicy = false;
  * stderr warning) -- a typo must never silently disable the linter.
  */
 export function lintPolicy(raw: string | undefined = process.env.MONOMEM_LINT): LintPolicy {
+  const { policy, ok } = parseLintPolicy(raw);
+  if (!ok && !warnedBadPolicy) {
+    warnedBadPolicy = true;
+    console.error(
+      `[monomem] MONOMEM_LINT="${raw}" has unrecognized parts; using ` +
+        `secrets=${policy.secret}, injection=${policy.injection}`
+    );
+  }
+  return policy;
+}
+
+/** True when MONOMEM_LINT is set but not (fully) understood: the safe default applies to the parts that were not. `monomem health` says so. */
+export function lintPolicyUnrecognised(raw: string | undefined = process.env.MONOMEM_LINT): boolean {
+  return !parseLintPolicy(raw).ok;
+}
+
+function parseLintPolicy(raw: string | undefined): { policy: LintPolicy; ok: boolean } {
   const policy: LintPolicy = { ...DEFAULT_LINT_POLICY };
-  if (!raw || !raw.trim()) return policy;
+  if (!raw || !raw.trim()) return { policy, ok: true };
   const v = raw.trim().toLowerCase();
   if ((ACTIONS as readonly string[]).includes(v)) {
-    return { ...policy, secret: v as LintAction, injection: v as LintAction };
+    return { policy: { ...policy, secret: v as LintAction, injection: v as LintAction }, ok: true };
   }
   let ok = true;
   for (const part of v.split(",")) {
@@ -102,14 +119,7 @@ export function lintPolicy(raw: string | undefined = process.env.MONOMEM_LINT): 
     }
     policy[key] = a as LintAction;
   }
-  if (!ok && !warnedBadPolicy) {
-    warnedBadPolicy = true;
-    console.error(
-      `[monomem] MONOMEM_LINT="${raw}" has unrecognized parts; using ` +
-        `secrets=${policy.secret}, injection=${policy.injection}`
-    );
-  }
-  return policy;
+  return { policy, ok };
 }
 
 // Each pattern requires an instruction-shaped context. "ignore" alone, "you

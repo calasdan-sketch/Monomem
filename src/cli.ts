@@ -59,7 +59,7 @@ function shortUsage(): void {
       "",
       "Daily",
       "  relevant \"message\"      Show the notes that relate to a sentence (search \"words\" does the same)",
-      "  relevant \"message\" --as-of 7d   The same, as memory stood then (ISO time or 7d/2h; no message lists notes)",
+      "  search|relevant \"message\" --as-of 7d [--json]   The same, as memory stood then (ISO time or 7d/2h; no message lists notes)",
       "  changes                 What changed while you were away",
       "  history <id>            A note's earlier versions (history restore <id> <version> puts one back)",
       "  pin <id> | unpin <id>   Pin a note so agents can read it but not change it",
@@ -70,6 +70,9 @@ function shortUsage(): void {
       "  trust                   Distrust a writer; decide which other servers' exports to believe",
       "  token                   Make, list or remove access tokens for your apps (add needs a terminal)",
       "  rollback --writer w --since 2h   Undo what one writer did (shows a plan first)",
+      "  why <id> [--json]       The story of one note: who wrote it, versions, replacements, holds, sessions shown it",
+      "  receipts [session] [--json]   Which notes a session start showed, and why (ids and tags, never note text)",
+      "  conflicts               Notes from different writers that disagree (flag only)",
       "  access                  Who read memory, and when",
       "  drill [--json]          Replay known memory-poisoning attacks on a copy of your store and your settings",
       "  health [--json] [--card [file.svg]]   One grade A-F with the reason: setup, settings, drill, audit chain, held writes (rule: health --help)",
@@ -78,7 +81,6 @@ function shortUsage(): void {
       "  backup [--out <dir>]    Copy the database safely, even while the server runs",
       "  export | import         Move notes in and out (JSON or Markdown)",
       "  quality                 Duplicates, stale notes and flagged notes worth a look",
-      "  conflicts               Notes from different writers that disagree (flag only)",
       "  delete <id>             Delete a note permanently, with its earlier versions",
       "  uninstall               Take Monomem out of every app setup connected",
       "",
@@ -148,9 +150,11 @@ function usage(all = false): void {
       "            progress to stderr. Reports {created, removed} edge",
       "            counts. O(n^2) — maintenance, not interactive.",
       "            When: after a bulk import, or after changing the threshold.",
-      "  relevant|search \"some natural language message\" [--limit 5] [--namespace ns] [--written-by w] [--not-written-by w] [--include-distrusted] [--as-of <ISO|7d|2h>]",
+      "  relevant|search \"some natural language message\" [--limit 5] [--namespace ns] [--written-by w] [--not-written-by w] [--include-distrusted] [--as-of <ISO|7d|2h>] [--json]",
       "            Extract keywords from a message and show the relevant notes.",
-      "            --as-of: show memory as it stood then (rebuilt from note history; text no longer kept is marked). No message = list the notes.",
+      "            --as-of (same for search and relevant): memory as it stood then, rebuilt from note history. Shows a snippet,",
+      "            an [edited since] marker and the writer then (\"not recorded\" when history lacks it). Times are local with the UTC",
+      "            offset. --json prints it as JSON. No message = list the notes.",
       "            Prints the keywords used alongside the results.",
       "            When: you have a vague message and want the memory it touches.",
       "  changes [--since 24h|ISO|last] [--consumer name] [--namespace ns] [--source s] [--limit 100]",
@@ -287,7 +291,7 @@ const DOCTOR_MAX_BACKLOG = 10_000;
 /** doctor: settings that weaken protection, plus a data folder a cloud-sync client may copy. Warnings only; the list is shared with `monomem health`. */
 async function doctorSecurityChecks(dataDir: string, bindHost: string, warn: (m: string) => void): Promise<void> {
   const { securityFindings } = await import("./health.js");
-  for (const f of await securityFindings(dataDir, bindHost)) warn(f.detail);
+  for (const f of await securityFindings(dataDir, bindHost)) if (f.status !== "info") warn(f.detail);
 }
 
 async function doctor(): Promise<void> {
@@ -876,10 +880,12 @@ async function relevant(): Promise<void> {
   let notWrittenBy: string | undefined;
   let includeDistrusted = false;
   let asOfRaw: string | undefined;
+  let asJson = false;
   const parts: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === "--as-of" && i + 1 < args.length) asOfRaw = args[++i];
+    if (a === "--json") asJson = true;
+    else if (a === "--as-of" && i + 1 < args.length) asOfRaw = args[++i];
     else if (a.startsWith("--as-of=")) asOfRaw = a.slice("--as-of=".length);
     else if (a === "--limit" && i + 1 < args.length) limit = Number(args[++i]);
     else if (a.startsWith("--limit=")) limit = Number(a.slice("--limit=".length));
@@ -897,7 +903,7 @@ async function relevant(): Promise<void> {
   }
   const message = parts.join(" ");
   if (!message.trim() && !asOfRaw) {
-    console.error('Usage: monomem relevant "some natural language message" [--limit 5] [--namespace ns] [--as-of <ISO|7d|2h>]');
+    console.error('Usage: monomem relevant "some natural language message" [--limit 5] [--namespace ns] [--as-of <ISO|7d|2h>] [--json]');
     process.exit(1);
   }
   if (asOfRaw) {
@@ -905,7 +911,7 @@ async function relevant(): Promise<void> {
       console.error("--as-of cannot be combined with --written-by / --not-written-by (who wrote a note at that time is not reconstructed).");
       process.exit(1);
     }
-    const { parseAsOf, asOfView, asOfSearch, asOfHeader } = await import("./asof.js");
+    const { parseAsOf, asOfView, asOfSearch, asOfHeader, asOfFields, localTimeOffset } = await import("./asof.js");
     let when: Date;
     try {
       when = parseAsOf(asOfRaw);
@@ -916,10 +922,25 @@ async function relevant(): Promise<void> {
     const store = new Store(DB_PATH);
     try {
       const view = asOfView(store, when, { ...(namespace ? { namespace } : {}), ...(includeDistrusted ? { includeDistrusted: true } : {}) });
-      console.log(asOfHeader(view));
       const hits = asOfSearch(view, message, limit ?? (message.trim() ? 5 : 20));
+      if (asJson) {
+        console.log(
+          JSON.stringify(
+            { as_of: when.toISOString(), as_of_local: localTimeOffset(when), not_kept: view.notKept, archive_log_since: view.archiveSince, results: hits.map((h) => asOfFields(h)) },
+            null,
+            2
+          )
+        );
+        return;
+      }
+      console.log(asOfHeader(view));
       if (hits.length === 0) console.log(message.trim() ? "No matching notes at that time." : "No notes at that time.");
-      for (const h of hits) console.log(`  #${h.note.id} [${h.note.namespace}] ${printable(h.note.title)}${h.kept ? "" : " [edited since; old text gone]"}`);
+      for (const h of hits) {
+        const edited = h.kept ? (h.editedSince ? " [edited since]" : "") : " [edited since; old text gone]";
+        console.log(`  #${h.note.id} [${h.note.namespace}] ${printable(h.note.title)}${edited}`);
+        if (h.kept && h.note.body.trim()) console.log(`      ${printable(h.note.body.replace(/\s+/g, " ").trim(), 80)}`);
+        console.log(`      writer then: ${h.writer ? `${printable(h.writer.by, 80)} (version ${h.writer.rev})` : "not recorded"}`);
+      }
     } finally {
       store.close();
     }
