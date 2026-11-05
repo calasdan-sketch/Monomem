@@ -1,5 +1,6 @@
 // Repetitive notes (captured observations) match hundreds of neighbors; only
 // the top EDGE_STORE_LIMIT per write may be stored, highest score first.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store, EDGE_STORE_LIMIT } from "../src/store.js";

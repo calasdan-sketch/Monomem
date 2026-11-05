@@ -1,5 +1,6 @@
 // REST compare-and-swap (1.5.0): PUT /notes/:id takes `if_rev`, like the MCP tool state_write. Found by benchmark
 // scenario B16: a stale REST edit used to replace a newer write without a word.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

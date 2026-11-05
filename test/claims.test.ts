@@ -16,6 +16,7 @@
 // shipped file must be derived from the code, not asserted beside it. A claim
 // that cannot name its check does not ship.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";

@@ -1,5 +1,6 @@
 // The dashboard's Review view: notes an AI agent wrote that nobody has looked at yet. The page script is run in a
 // stub browser so the filtering and the accept/delete calls are tested for real.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";

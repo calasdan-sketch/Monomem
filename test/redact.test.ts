@@ -1,4 +1,5 @@
 // redact.ts: <private> stripping and secret redaction for everything the capture hooks record.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { stripPrivate, redactSecrets, redact } from "../src/redact.js";

@@ -1,4 +1,5 @@
 // Human-only pinned notes (agents read, only the CLI changes) and rolling back one writer's changes since a time.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

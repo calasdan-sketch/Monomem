@@ -13,7 +13,7 @@
 
 ```sh
 monomem import --from claude-mem --dry-run
-monomem import --from claude-mem            # asks before writing; --yes skips the question
+monomem import --from claude-mem            # asks before writing; --yes skips the question. Without a terminal (a script, a pipe, an agent's shell tool) it refuses to write unless you add --yes
 ```
 
 Get everything across first and check it. Remove the old tool only after that.

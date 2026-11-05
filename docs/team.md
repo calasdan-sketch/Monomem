@@ -40,7 +40,7 @@ file once at startup, so restart it after a change. Each person then points thei
 
 > Or let Monomem write the file: `monomem token add --label alice --scope write --namespace team` makes a strong
 > random token, adds it and shows it once. It has to be run by a person in a terminal (it asks you to type `yes`), so
-> an agent cannot hand itself a token. `monomem token list` shows labels and scopes, never the tokens.
+> an agent running commands without a terminal cannot add one; anyone who can edit `tokens.json` directly still can. The server reads `tokens.json` once at startup, so a new token works, and a removed one stops working, only after a restart. `monomem token list` shows labels and scopes, never the tokens.
 
 `read` can only read, `write` can read and write, `admin` can also approve held writes and change policy. The
 label becomes the note's `written_by`, which the server stamps itself; nobody can write as someone else

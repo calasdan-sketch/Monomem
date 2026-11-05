@@ -1,5 +1,6 @@
 // Hybrid search blends min-max-scaled keyword and semantic scores (0.5 / 0.5) instead of rank-only RRF,
 // so a clear keyword winner is not pulled down by a flat semantic list.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { blendHybrid } from "../src/search-service.js";

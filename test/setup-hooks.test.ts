@@ -1,5 +1,6 @@
 // setup: the automatic memory hooks (planHooks) are appended next to the user's own hooks, are idempotent, need consent
 // (--capture or a typed y; --yes alone never adds them), and come out again with --undo. Everything runs in temp dirs.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

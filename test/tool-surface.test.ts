@@ -10,6 +10,7 @@
 // runner status tool -- command execution -- when the runner itself is not even
 // shipped in the package.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

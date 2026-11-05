@@ -1,5 +1,6 @@
 // The search index carries FTS5's 1-character prefix index (fast "i"* style query words). New stores are created
 // with it; a store made without it is rebuilt once on open, keeping search, update triggers and secure-delete.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

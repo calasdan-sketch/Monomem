@@ -1,5 +1,6 @@
 // state_search on a whole question: FTS5 needs every term, so it used to find
 // nothing. keywordWithFallback tops up with any-keyword hits, below full matches.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/store.js";

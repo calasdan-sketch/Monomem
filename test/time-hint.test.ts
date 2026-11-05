@@ -1,5 +1,6 @@
 // A date phrase inside a search ("in June", "last week") softly boosts notes written in that window (or up to
 // TIME_HINT_SLACK_DAYS after it). Nothing outside the window is dropped.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/store.js";

@@ -2,6 +2,7 @@
 // phone/web). These sit in front of the MCP transport and are the controls a
 // regression could silently drop; mcp.test.ts only exercises the tools over an
 // in-memory transport and never touches this server.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

@@ -134,18 +134,20 @@ const INJECTION_PATTERNS: Array<[string, RegExp]> = [
     /\b(?:ignore|disregard|bypass|override|skip)\s+(?:all|any|every)\s+(?:of\s+(?:the|your|my)\s+)?(?:[\w-]+\s+){0,2}(?:limits?|limitations|restrictions?|polic(?:y|ies)|guardrails?|constraints?|caps?|approvals?|requirements?|safeguards?|checks?)\b/i,
   ],
   [
-    // Turning the agent against the person it works for. "ignore the user" alone is common developer prose
-    // (user agent, user table), so the user form needs a following instructions-style noun, or "disregard".
+    // Turning the agent against the person it works for. "ignore user requests older than 5 minutes" and
+    // "disregard user messages that are empty" are ordinary prose (user agent, user table, input handling), so
+    // "user" needs an instruction-like object ("the user's instructions") or "what the user says/asks/said".
     "instruction override",
-    /\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:(?:of\s+)?(?:the|your)\s+)?(?:user|human|operator)(?:'s|s')?\s+(?:instructions?|requests?|wishes|commands?|messages?|prompts?|directions)\b|\bdisregard\s+(?:the|your)\s+(?:user|human)\b|\bdisregard\s+(?:all\s+|any\s+|the\s+|your\s+)*(?:instructions?|directions|guidelines)\b/i,
+    /\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:(?:of\s+)?(?:the|your)\s+)?(?:user|human|operator)(?:'s|s')?\s+(?:instructions?|directions|commands?|orders?|wishes)\b|\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:the|your)\s+(?:user|human|operator)(?:'s|s')\s+(?:requests?|messages?|prompts?)\b|\b(?:ignore|disregard|forget|pay\s+no\s+(?:attention|heed)\s+to)\s+(?:what|whatever)\s+(?:the|your)\s+(?:user|human|operator)\s+(?:says?|said|asks?|asked|tells?|told|wants?|wanted|requests?|requested)\b|\bdisregard\s+(?:the|your)\s+(?:user|human)\b(?!(?:'s|s')?\s+\w)|\bdisregard\s+(?:all\s+|any\s+|the\s+|your\s+)+(?:instructions?|directions|guidelines)\b(?!\s+(?:in|of|from|for|on|at|about|inside|within|here)\b)/i,
   ],
   [
-    // A standing order for the agent that names a hostile action: send/forward/email/upload/post something
-    // TO a destination, ignore/obey/reveal/leak, or act "without asking". "from now on we use pnpm" and
-    // "from now on you should always run the tests" are ordinary preferences and do not match (the directive
-    // category below still warns on the generic deferred trigger).
+    // A standing order for the agent that names a hostile action: send/forward/email/upload/post a secret, credential
+    // or "every/all" of something to a destination, send anything to an external URL, ignore/obey/reveal/leak, or act "without
+    // asking". "from now on we use pnpm", "from now on you will email the weekly report to ops@example" and
+    // "from now on you must post release notes to #releases" are ordinary standing duties and do not match (the
+    // directive category below still warns on the generic deferred trigger).
     "standing order",
-    /\bfrom\s+now\s+on,?\s+you\s+(?:must|will|should|shall)\s+(?:always\s+|never\s+)?(?:(?:send|forward|email|upload|post)\b[^.!?\n]{0,80}?\b(?:to|at|into)\s+\S+|(?:ignore|disregard|obey|reveal|leak|exfiltrate)\b|[^.!?\n]{0,60}\bwithout\s+(?:asking|telling|confirm\w*|notifying|checking))/i,
+    /\bfrom\s+now\s+on,?\s+you\s+(?:must|will|should|shall)\s+(?:always\s+|never\s+)?(?:(?:send|forward|email|upload|post)\b(?:[^.!?\n]{0,80}?\b(?:secrets?|credentials?|passwords?|tokens?|api[\s_-]?keys?|keys?|env\w*|private)\b[^.!?\n]{0,60}?\b(?:to|at|into)\s+\S+|[^.!?\n]{0,80}?\b(?:every|all|each)\b[^.!?\n]{0,60}?\b(?:to|at|into)\s+\S+|[^.!?\n]{0,80}?\b(?:to|at|into)\s+https?:\/\/\S+)|(?:ignore|disregard|obey|reveal|leak|exfiltrate)\b|[^.!?\n]{0,60}\bwithout\s+(?:asking|telling|confirm\w*|notifying|checking))/i,
   ],
   [
     "role reassignment",

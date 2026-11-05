@@ -14,6 +14,7 @@
 // 10  rebuilds are single-flight and never re-insert a changed note's edges.
 // 11  REST POST /rebuild-edges has the confirm gate + single-flight.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

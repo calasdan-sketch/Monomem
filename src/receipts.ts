@@ -6,6 +6,7 @@
 // Also here: the shareable savings card (`monomem meter --card`) and the CLI commands that use both.
 import { writeFileSync } from "node:fs";
 import { accessLogDays, type Store } from "./store.js";
+import { printable } from "./security.js";
 import { meterStats, meterLine, type MeterTotals } from "./meter.js";
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS memory_receipts (
@@ -156,18 +157,18 @@ export async function receiptsCmd(args: string[]): Promise<void> {
     if (id) {
       const r = receiptGet(store, id);
       if (!r) {
-        console.error(`no receipt for session ${id} (kept ${accessLogDays()} days, MONOMEM_ACCESS_LOG_DAYS)`);
+        console.error(`no receipt for session ${printable(id)} (kept ${accessLogDays()} days, MONOMEM_ACCESS_LOG_DAYS)`);
         process.exit(1);
       }
       if (json) return console.log(JSON.stringify(r, null, 2));
-      console.log(`session ${r.session_id}  ${r.at}  ${r.client || "-"}  ns=${r.namespace || "-"}  ~${r.tokens} tok`);
-      for (const n of r.notes) console.log(`  ${n.rank}. #${n.id} ${n.why} ~${n.tokens} tok  ${n.state === "ok" ? n.title : "(deleted, archived or hidden since)"}`);
+      console.log(`session ${printable(r.session_id)}  ${r.at}  ${printable(r.client || "-")}  ns=${printable(r.namespace || "-")}  ~${r.tokens} tok`);
+      for (const n of r.notes) console.log(`  ${n.rank}. #${n.id} ${n.why} ~${n.tokens} tok  ${n.state === "ok" ? printable(n.title) : "(deleted, archived or hidden since)"}`);
       return;
     }
     const list = receiptList(store);
     if (json) return console.log(JSON.stringify(list, null, 2));
     if (!list.length) return console.log("No receipts yet: they are written by the next session the SessionStart hook runs for.");
-    for (const s of list) console.log(`${s.session_id}  ${s.at}  ${s.notes} note(s)  ~${s.tokens} tok  ${s.client || "-"}`);
+    for (const s of list) console.log(`${printable(s.session_id)}  ${s.at}  ${s.notes} note(s)  ~${s.tokens} tok  ${printable(s.client || "-")}`);
   } finally {
     store.close();
   }

@@ -1,6 +1,7 @@
 // Trust policy (1.4.0): stable writer ids and the per-namespace distrust list.
 // Every read path that can show a note to an agent must leave out a distrusted
 // writer's notes by default and show them, marked, only on request.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

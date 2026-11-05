@@ -3,6 +3,7 @@
 // Covers: migration v3 columns + defaults, touch(), read() trackAccess opt,
 // search-result bumps (top N only), the ranking boost math, accessStats,
 // and the memory_stats MCP tool (including namespace scoping).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

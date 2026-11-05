@@ -1,4 +1,5 @@
 // 1.4.2: regression tests for the third expert review (RV5). Each test pins one verified defect of 1.4.1.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, statSync, readFileSync, writeFileSync, mkdirSync, readdirSync, symlinkSync, copyFileSync, utimesSync, chmodSync } from "node:fs";

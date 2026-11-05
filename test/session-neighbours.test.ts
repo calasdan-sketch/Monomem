@@ -1,5 +1,6 @@
 // memory_index runs the same keyword search as state_search (a whole question works), and a captured row next to another
 // hit in the same capture session ranks higher.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/store.js";

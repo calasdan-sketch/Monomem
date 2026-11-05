@@ -1,6 +1,7 @@
 // 1.2.1 core fixes: REST/MCP surfaces (namespace-scoped sweep, fail-closed
 // token pins, tampered-row handling, rate limiting, input validation, MCP
 // version/explain/forget_after, stdio parse errors, --version, key perms).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

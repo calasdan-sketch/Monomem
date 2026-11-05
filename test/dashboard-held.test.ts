@@ -1,4 +1,5 @@
 // Held view, writer chips, pinned badge, inline confirm, tab bar. Page script runs in a stub browser.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";

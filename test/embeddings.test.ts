@@ -3,6 +3,7 @@
 // semantic / hybrid / fallback branches (dark until now because no test ever
 // turned embeddings on) are exercised with a stubbed fetch and preloaded
 // vectors, so no real embedding server is needed.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/store.js";

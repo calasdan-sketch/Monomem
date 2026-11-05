@@ -1,5 +1,6 @@
 // Read access log (who read what, never note text) and the flood guard (a writer making too many writes in an hour is
 // paused until an operator resumes it). Both are operator-only: CLI and admin REST, no MCP tool.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

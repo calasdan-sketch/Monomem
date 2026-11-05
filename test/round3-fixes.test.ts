@@ -2,6 +2,7 @@
 // starvation and quota, lease rules, approval key in backups, the real writer
 // in the change feed (v12), markdown restore of reserved tags, purge-aware
 // markers, audit rotation under concurrency, watch signals, claim/due checks.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";

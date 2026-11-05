@@ -2,6 +2,7 @@
 // the exporting server's Ed25519 key; an import believes the signature only for
 // keys the importing admin chose to trust. These tests pin what it does prove
 // (the record was not altered) and the ways it must NOT be fooled.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, statSync, readFileSync, writeFileSync } from "node:fs";

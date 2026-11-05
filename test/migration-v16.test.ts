@@ -1,5 +1,6 @@
 // Schema v16 (2.0.0): automatic memory. Upgrade from the real v15 shape (plain and encrypted), one pre-upgrade backup,
 // idempotent reopen, ordinary reads still see notes only, the no-migrate open used by the hooks, and the raw-event TTL.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";

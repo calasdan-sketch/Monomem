@@ -1,5 +1,6 @@
 // Feature: auto-consolidation / dedup (cosine-similarity candidate
 // detection + note merging), MCP tools, and interval parsing.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

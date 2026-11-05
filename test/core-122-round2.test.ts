@@ -1,6 +1,7 @@
 // 1.2.1 round-2 core fixes: key stranded by a crashed `encrypt disable`,
 // unreadable export markers, REST/MCP validation parity, auth tarpit,
 // blank stdio lines, doctor honesty, v1 ciphertext upgrade on open.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

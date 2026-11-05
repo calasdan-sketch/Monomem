@@ -1,5 +1,6 @@
 // setup round 2: a real line diff, onememory entries replaced (not duplicated), the old npx hook rewritten, plain env
 // labels, the claude-mem preview offer, and the MCP memory dry-run preview. Temp dirs only.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

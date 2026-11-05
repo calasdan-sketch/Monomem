@@ -672,10 +672,10 @@ export function audit(entry: {
 /**
  * Text that came from an untrusted file or peer (titles, server ids, error text) made safe to print on
  * a terminal or into a log: control characters (escape sequences, carriage returns, newlines) become "?",
- * and it is cut to `max` characters, so it cannot clear the line or fake a "run this command" line.
+ * bidi overrides (RLO etc.) too, and it is cut to `max` characters, so it cannot clear the line or fake a "run this command" line.
  */
 export function printable(s: unknown, max = 120): string {
   // eslint-disable-next-line no-control-regex
-  const t = String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, "?");
+  const t = String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "?");
   return t.length > max ? t.slice(0, max) + "..." : t;
 }

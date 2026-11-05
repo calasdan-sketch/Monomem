@@ -1,5 +1,6 @@
 // v16: captured observations and summaries do not feed the note housekeeping: memory_stats totals, the stale count and
 // every duplicate/consolidation path leave them out.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { Store, ValidationError } from "../src/store.js";

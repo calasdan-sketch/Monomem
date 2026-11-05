@@ -1,6 +1,7 @@
 // Approve-first namespaces: every agent write waits in the quarantine queue until an operator approves it.
 // The operator is the local `monomem` CLI (writer marker `cli`); MCP, REST (any token) and library callers are held.
 // Also: state_search mode "relevant" does what state_relevant does, and state_relevant left the default tool set.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

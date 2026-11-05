@@ -1,5 +1,6 @@
 // 1.4.1: regression tests for the second expert review. Each test pins one verified exploit or defect
 // of 1.4.0 (distrust laundering, signing-key handling, import robustness, ...).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, statSync, readFileSync, writeFileSync, mkdirSync, chmodSync, readdirSync } from "node:fs";

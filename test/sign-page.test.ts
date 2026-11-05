@@ -1,6 +1,7 @@
 // The phone signing page belongs to the separately shipped runner, so a plain
 // memory install must not expose it. Served only with
 // MONOMEM_ENABLE_SIGN_PAGE=1; otherwise /sign and /signer.js are 404.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

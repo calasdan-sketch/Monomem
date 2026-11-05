@@ -1,6 +1,7 @@
 // Task board, session handoffs and catch-up: the tasks.ts service, the
 // task_put / task_list / session_handoff / catch_up MCP tools, the REST
 // routes, the exact-tag list filter, and the SessionStart recall section.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

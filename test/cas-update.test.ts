@@ -10,6 +10,7 @@
 // (`rev = ?`), not a separate read-then-check, so the DB enforces it rather than
 // application timing -- that's design/code-review territory, not an in-process
 // test.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

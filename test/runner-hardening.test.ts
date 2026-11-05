@@ -1,6 +1,7 @@
 // Regression tests for the runner security review (round 5). Each block maps
 // to one finding: flood budget, unauthenticated claims/results/heartbeat,
 // shell-interpreter allowlist entries, canonical-format ambiguity.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";

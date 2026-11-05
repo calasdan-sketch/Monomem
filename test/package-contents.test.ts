@@ -1,6 +1,7 @@
 // The command runner ships separately from the memory package. This guards
 // the published tarball: if any runner file (code, docs, scripts, example
 // allowlist, phone signing page) ever appears in `npm pack`, it fails.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

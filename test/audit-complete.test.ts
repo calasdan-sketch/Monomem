@@ -1,4 +1,5 @@
 // Every state change is audited, and the audit log is a hash chain (`prev`) that `audit verify` walks.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

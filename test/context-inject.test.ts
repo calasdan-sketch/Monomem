@@ -1,4 +1,5 @@
 // context-inject.ts: what the session-start hook injects (relevance, budget, banner, trust, namespace fail-closed).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

@@ -7,6 +7,7 @@
 //     and deletes are all captured).
 //  4  approving a held update is pinned to the rev it was judged against.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";

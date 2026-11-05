@@ -1,5 +1,6 @@
 // llm.ts: the optional local-model summary. Off by default, loopback only, bounded, re-redacted, linted, and on any
 // failure the deterministic summary stays. A local http stub plays the model.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
