@@ -91,8 +91,8 @@ describe("archive, restore and supersede-undo history", () => {
     const store = new Store(":memory:");
     as("a", () => store.create({ title: "n", body: "x" }));
     const early = new Date(Date.now() - 86_400_000);
-    assert.match(asOfHeader(asOfView(store, early)), /recorded only since \d{4}-\d\d-\d\d \d\d:\d\d:\d\d [+-]\d\d:\d\d/);
-    assert.match(asOfHeader(asOfView(store, await mark())), /recorded from before this time/);
+    assert.match(asOfHeader(asOfView(store, early)), /history only starts at \d{4}-\d\d-\d\d \d\d:\d\d:\d\d [+-]\d\d:\d\d/);
+    assert.match(asOfHeader(asOfView(store, await mark())), /history covers this time/);
   });
 
   test("deleting a note drops its archive rows", () => {

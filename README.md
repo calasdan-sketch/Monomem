@@ -9,36 +9,18 @@ npx monomem setup
 
 Needs Node 22.16 or newer (check with `node -v`). On an older Node, use [Docker](#docker).
 
-Stop explaining your project to every assistant again. Tell Claude Code something once, and Cursor, Codex and Gemini CLI can read it too, because they all share one memory. It's one SQLite file on your own machine. No cloud, no API keys, no hidden model calls. Already use another memory tool? See [how it compares](#how-it-compares). To check what it holds and why, see [Check and explain your memory](#check-and-explain-your-memory).
+![A poisoned write is held, a second agent's search never sees it, and the dashboard rejects it](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/monomem-demo.gif)
+
+*Recorded from a real run against a throwaway store ([transcript](https://github.com/calasdan-sketch/monomem/blob/main/docs/brand/demo-transcript.txt)): a write containing an injected instruction is held and never reaches the other agent's search, then rejected from the real dashboard. The two terminal panes are drawn from the real REST responses; the dashboard is a screen recording. Nothing sped up.*
+
+- **One memory for all your assistants.** Tell Claude Code something once, and Cursor, Codex and Gemini CLI can read it too. It's one SQLite file on your own machine: no cloud, no API keys, no hidden model calls. Already use another memory tool? See [how it compares](#how-it-compares).
+- **Knows who wrote it.** Every note records its writer. For callers that use a token, the server stamps the name; for local apps it is a label from that app's config file, so it tells your apps apart but is not proof.
+- **Holds suspicious writes.** A write that looks like prompt injection (an instruction planted to steer your other assistants) is held back until you approve it. To make every agent write wait for your OK, use `monomem approve-first --all on` (it covers namespaces created later), or set it for one namespace (a named group of notes). The check is pattern matching, so it doesn't catch everything.
 
 [![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D22.16-green)
-
-![A poisoned write is held, a second agent's search never sees it, and the dashboard rejects it](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/monomem-demo.gif)
-
-*Recorded from a real run against a throwaway store ([transcript](https://github.com/calasdan-sketch/monomem/blob/main/docs/brand/demo-transcript.txt)): a write containing an injected instruction is held and never reaches the other agent's search, then rejected from the real dashboard. The two terminal panes are drawn from the real REST responses; the dashboard is a screen recording. Nothing sped up.*
-
-- **Knows who wrote it.** Every note records its writer. For callers that use a token, the server stamps the name; for local apps it is a label from that app's config file, so it tells your apps apart but is not proof.
-- **Holds suspicious writes.** A write that looks like prompt injection (an instruction planted to steer your other assistants) is held back until you approve it. You can also make a whole namespace (a named group of notes) approve-first, so every agent write waits for your OK. The check is pattern matching, so it doesn't catch everything.
-- **Takes back mistakes.** Edits and replacements keep the earlier versions (up to 20 per note by default) and can be undone. Deleting a note is permanent, on purpose.
-- **Sets itself up.** `setup` finds the supported apps on your computer, shows the exact lines it will change, backs up each file, and waits for you to type `y`.
-
-## More detail
-
-**Every note records who wrote it and keeps its earlier versions (up to 20 by
-default). Replacing or editing a note can be undone; deleting one is permanent,
-by design.** The default local setup marks each app's notes `stdio:<app>`
-(`stdio:cursor`, `stdio:claude-code`, ...), a name the app's config file
-declares, not a login; give each app its own token when the writer must be
-authenticated. [Benchmarks](#benchmark) back each of these claims.
-
-`setup` wires up eight clients on this computer: **Claude Code, Claude Desktop,
-Cursor, Codex, Gemini CLI, Muse, VS Code and Zed.** Anything else that speaks
-MCP or HTTP can connect too — including a browser on your phone, if you expose
-the HTTP endpoint yourself ([INFRA.md](./INFRA.md) covers tunnels and phone or
-web access).
 
 ---
 
@@ -63,6 +45,15 @@ Already have notes in Claude Code? `monomem import --claude --dry-run` shows wha
 Claude Code's auto memory (secrets are skipped, nothing leaves your computer). Coming from claude-mem, mem0, basic-memory or the official MCP memory server?
 `monomem import --from claude-mem --dry-run` (or `mem0 --path export.json`, `basic-memory`, `mcp-memory`); see [docs/switching.md](./docs/switching.md)
 for the import and a clean uninstall of the old tool.
+
+In Claude Code you can also install Monomem as a plugin instead of running `setup` ([what the plugin does and does not do](./docs/plugin.md)):
+
+```
+/plugin marketplace add calasdan-sketch/monomem
+/plugin install monomem@monomem
+```
+
+Anything else that speaks MCP or HTTP can connect too, including a browser on your phone if you expose the HTTP endpoint yourself ([INFRA.md](./INFRA.md) covers tunnels and phone or web access).
 
 The manual way, if you prefer:
 
@@ -165,23 +156,19 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 
 ## Check and explain your memory
 
-```bash
-monomem drill       # replay known poisoning attacks on a copy of your store; says which reached an agent
-monomem health      # one grade A-F with the reason: setup, settings, drill, audit chain, held writes
-monomem why 42      # the story of note #42: who wrote each version, what replaced it, which sessions were shown it
-monomem conflicts   # possible disagreements between writers
-monomem facts       # the decisions agents recorded as facts, with who wrote them; disputed keys marked
-monomem receipts    # which notes the last session start showed, and why
-```
+Notes keep their earlier versions (up to 20 per note by default), so replacing or editing a note can be undone; deleting one is permanent, by design. Local apps are marked `stdio:<app>` (`stdio:cursor`, `stdio:claude-code`, ...), a name the app's config file declares, not a login; give each app its own token when the writer must be authenticated. [Benchmarks](#benchmark) back these claims.
 
-`conflicts` only flags: it matches exact facts and keys, so a disagreement that is reworded is missed, and it never changes a note. Agents that record decisions as `facts` (deploy_target, package_manager ...) get an exact match: a different value from another writer is flagged on write and, at session start, shown as a short "writers disagree" line. `health` opens your store (an older database file is upgraded once) and writes one small row noting how long the audit log was, so the next run can see lines removed. These are local commands: `drill` and `health` run the drill with embeddings forced off, so they make no embedding call (and no call to any other machine; the drill talks only to a temporary server on 127.0.0.1) even when `MONOMEM_EMBEDDINGS` and a remote `MONOMEM_EMBED_URL` are set (`health` only reports that such a URL is configured).
+| Command | What it shows | What it can't catch |
+|---|---|---|
+| `monomem drill` | Replays known poisoning attacks on a copy of your store and says which reached an agent | Only attacks it already knows about |
+| `monomem health` | One grade A-F with the reason: setup, settings, drill, audit chain, held writes | It grades what it checks, not everything in your notes |
+| `monomem why 42` | The story of note #42: who wrote each version, what replaced it, which sessions were shown it | Who read the note (only a count and the last read time are kept), and versions older than the kept history (20 by default) |
+| `monomem conflicts` | Possible disagreements between writers; it only flags and never changes a note | It matches exact facts and keys, so a reworded disagreement is missed |
+| `monomem facts` | The decisions agents recorded as facts, with who wrote them; disputed keys marked | Decisions nobody recorded as a fact |
+| `monomem receipts` | Which notes the last session start showed, and why | Notes an agent found later by searching, and sessions older than the receipt window (30 days by default) |
+| `monomem search --as-of <time>` | What your memory held at an earlier time, rebuilt from history | Notes deleted for good, and text older than the kept versions |
 
-In Claude Code you can also install Monomem as a plugin instead of running `setup` ([what the plugin does and does not do](./docs/plugin.md)):
-
-```
-/plugin marketplace add calasdan-sketch/monomem
-/plugin install monomem@monomem
-```
+Agents that record decisions as `facts` (deploy_target, package_manager ...) get an exact match: a different value from another writer is flagged on write and, at session start, shown as a short "writers disagree" line. `health` opens your store (an older database file is upgraded once) and writes one small row noting how long the audit log was, so the next run can see lines removed. These are local commands: `drill` and `health` run the drill with embeddings forced off, so they make no embedding call (and no call to any other machine; the drill talks only to a temporary server on 127.0.0.1) even when `MONOMEM_EMBEDDINGS` and a remote `MONOMEM_EMBED_URL` are set (`health` only reports that such a URL is configured).
 
 ## Automatic memory
 
@@ -418,7 +405,7 @@ monomem export --format json [--attest] --out a.json     monomem import --file a
 monomem supersede --old 12 --title "..." --body "..."   # replace a note: shows what you would lose, asks you to type the count
 monomem supersede undo <id>     monomem history <id> | restore <id> <version> | purge <id>
 monomem quarantine [list | approve <id> | reject <id>]
-monomem approve-first [<namespace> on|off]   # hold every agent write to a namespace for your approval
+monomem approve-first [<namespace> on|off | --all on|off]   # hold every agent write (one namespace, or all) for your approval
 monomem pin [<id>]     monomem unpin <id>     # agents can read a pinned note; only this CLI can change it
 monomem rollback --writer stdio:cursor --since 2h [--include-conflicts]   # undo one writer's changes (preview, then confirm)
 monomem access [--since 24h] [--writer label]   # who read memory, with which tool (never note text)

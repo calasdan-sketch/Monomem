@@ -68,7 +68,7 @@ describe("asOfView", () => {
     assert.equal(v.notes[0].note.title, NOT_KEPT_TITLE);
     assert.equal(v.notes[0].note.body, "");
     assert.equal(v.notKept, 1);
-    assert.match(asOfHeader(v), /1 notes' text from that time is no longer kept/);
+    assert.match(asOfHeader(v), /1 note's text from that time is no longer kept/);
   });
 
   test("a purged history is marked not kept", async () => {
@@ -150,7 +150,7 @@ describe("cli --as-of", () => {
       const cli = join(PROJECT_ROOT, "dist", "src", "cli.js");
       const r = spawnSync(process.execPath, [cli, "search", "oregon", "--as-of", t.toISOString()], { encoding: "utf8", env });
       assert.equal(r.status, 0, r.stderr);
-      assert.match(r.stdout, /^Memory as of .* \(reconstructed from history; 0 notes' text from that time is no longer kept\)/);
+      assert.match(r.stdout, /^Memory as of .* \(reconstructed from history\)\n/);
       assert.match(r.stdout, /#\d+ \[.*\] region/);
       assert.equal(spawnSync(process.execPath, [cli, "search", "tokyo", "--as-of", t.toISOString()], { encoding: "utf8", env }).stdout.includes("#"), false);
       assert.equal(spawnSync(process.execPath, [cli, "search", "x", "--as-of", "soon"], { encoding: "utf8", env }).status, 1);

@@ -89,7 +89,6 @@ export async function runDrill(opts: { dbPath: string; dir?: string; seed?: numb
   if (!existsSync(opts.dbPath)) throw new Error(`no store at ${opts.dbPath}`);
   // Embeddings are forced OFF for the drill (and so for `health`): it must never send text to a network endpoint, remote or local.
   const savedEmbeddings = process.env.MONOMEM_EMBEDDINGS;
-  process.env.MONOMEM_EMBEDDINGS = "off";
   const started = Date.now();
   const tmp = mkdtempSync(join(tmpdir(), "monomem-drill-"));
   const copy = join(tmp, "copy.db");
@@ -103,6 +102,7 @@ export async function runDrill(opts: { dbPath: string; dir?: string; seed?: numb
   process.once("SIGTERM", onSignal);
   process.once("exit", cleanup);
   try {
+    process.env.MONOMEM_EMBEDDINGS = "off"; // inside the try so the finally restores it on every path
     copyFileSync(opts.dbPath, copy);
     if (existsSync(opts.dbPath + "-wal")) copyFileSync(opts.dbPath + "-wal", copy + "-wal");
     const realKey = keyPath(dirname(opts.dbPath));

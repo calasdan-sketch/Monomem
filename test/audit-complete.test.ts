@@ -3,11 +3,40 @@ import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file r
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, renameSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, renameSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/store.js";
-import { audit, verifyAuditChain } from "../src/security.js";
+import { audit, auditPath, verifyAuditChain } from "../src/security.js";
+
+describe("in-memory store and the audit log", () => {
+  test("a Store(':memory:') with no audit path configured writes no audit.log", () => {
+    const home = mkdtempSync(join(tmpdir(), "monomem-audit-mem-"));
+    const saveHome = process.env.MONOMEM_HOME;
+    const saveLog = process.env.MONOMEM_AUDIT_LOG;
+    delete process.env.MONOMEM_AUDIT_LOG;
+    process.env.MONOMEM_HOME = home; // advisory: DATA_DIR is fixed at import, so also assert via the explicit path below
+    try {
+      const s = new Store(":memory:");
+      s.create({ title: "a", body: "alpha" });
+      s.setApproveFirst("x", true);
+      s.close();
+      assert.equal(existsSync(join(home, "audit.log")), false);
+      assert.equal(existsSync(auditPath()), false, "nor the default path this process resolves");
+      // An explicit path is still honoured.
+      const log = join(home, "explicit.log");
+      process.env.MONOMEM_AUDIT_LOG = log;
+      const s2 = new Store(":memory:");
+      s2.create({ title: "b", body: "beta" });
+      s2.close();
+      assert.equal(existsSync(log), true);
+    } finally {
+      if (saveHome === undefined) delete process.env.MONOMEM_HOME; else process.env.MONOMEM_HOME = saveHome;
+      if (saveLog === undefined) delete process.env.MONOMEM_AUDIT_LOG; else process.env.MONOMEM_AUDIT_LOG = saveLog;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("audit completeness and chain", () => {
   let dir: string;

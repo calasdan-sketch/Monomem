@@ -158,6 +158,46 @@ describe("approve-first namespaces", () => {
     store.close();
   });
 
+  test("the store-wide switch holds an agent write to a namespace created later", () => {
+    const store = new Store(":memory:");
+    setProcessWriter("stdio");
+    assert.ok(store.create({ namespace: "before", title: "free" }));
+    store.setApproveFirstAll(true);
+    assert.equal(store.approveFirstAll(), true);
+    assert.equal(store.isApproveFirst("brand-new-ns"), true);
+    assert.throws(() => store.create({ namespace: "brand-new-ns", title: "held" }), QuarantinedError);
+    assert.deepEqual(store.approveFirstNamespaces(), [], "the per-namespace list is untouched");
+    setProcessWriter("cli");
+    assert.ok(store.create({ namespace: "brand-new-ns", title: "operator ok" }));
+    store.setApproveFirstAll(false);
+    setProcessWriter("stdio");
+    assert.ok(store.create({ namespace: "another-new", title: "free again" }));
+    store.close();
+  });
+
+  test("REST: PUT {all:true,on} flips the switch; a namespace-pinned token cannot", async () => {
+    const store = new Store(":memory:");
+    const server = createApiServer(store, "tok-admin-1234567890");
+    await new Promise<void>((r) => server.listen(0, r));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const H = { Authorization: "Bearer tok-admin-1234567890", "Content-Type": "application/json" };
+    try {
+      let res = await fetch(`${base}/approve-first`, { method: "PUT", headers: H, body: JSON.stringify({ all: true, on: true }) });
+      assert.equal(res.status, 200);
+      assert.deepEqual(await (await fetch(`${base}/approve-first`, { headers: H })).json(), { namespaces: [], all: true });
+      res = await fetch(`${base}/approve-first`, { method: "PUT", headers: H, body: JSON.stringify({ all: true }) });
+      assert.equal(res.status, 400);
+      res = await fetch(`${base}/notes`, { method: "POST", headers: H, body: JSON.stringify({ namespace: "fresh", title: "via rest" }) });
+      assert.equal(res.status, 202);
+      res = await fetch(`${base}/approve-first`, { method: "PUT", headers: H, body: JSON.stringify({ all: true, on: false }) });
+      assert.equal(res.status, 200);
+      assert.equal(store.approveFirstAll(), false);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+      store.close();
+    }
+  });
+
   test("a secret is still refused, not held", () => {
     const store = new Store(":memory:");
     store.setApproveFirst("team", true);
@@ -203,7 +243,7 @@ describe("approve-first namespaces", () => {
     try {
       let res = await fetch(`${base}/approve-first`, { method: "PUT", headers: H, body: JSON.stringify({ namespace: "team", on: true }) });
       assert.equal(res.status, 200);
-      assert.deepEqual(await (await fetch(`${base}/approve-first`, { headers: H })).json(), { namespaces: ["team"] });
+      assert.deepEqual(await (await fetch(`${base}/approve-first`, { headers: H })).json(), { namespaces: ["team"], all: false });
       res = await fetch(`${base}/approve-first`, { method: "PUT", headers: H, body: JSON.stringify({ namespace: "team" }) });
       assert.equal(res.status, 400);
       res = await fetch(`${base}/notes`, { method: "POST", headers: H, body: JSON.stringify({ namespace: "team", title: "via rest" }) });
@@ -270,6 +310,17 @@ describe("approve-first namespaces", () => {
       s2.setApproveFirst("team", false); // the store method itself is unchanged
       s2.close();
       assert.match(cli().stdout, /No namespace is approve-first/);
+      // The store-wide switch: on is scriptable, off needs the same terminal gate, and the list shows it.
+      assert.match(cli().stdout, /All namespaces: off/);
+      r = cli("--all", "on");
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(cli().stdout, /All namespaces: on/);
+      const allOff = cli("--all", "off");
+      assert.equal(allOff.status, 1);
+      assert.match(allOff.stderr, /person must run it in a terminal/);
+      assert.match(cli().stdout, /All namespaces: on/);
+      assert.equal(cli("--all").status, 1);
+      assert.equal(cli("--all", "maybe").status, 1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

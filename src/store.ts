@@ -2781,7 +2781,7 @@ export class Store {
       throw e;
     }
     if (!nested) this.announceChange();
-    audit({ op: "create", id, namespace, bytes: body.length });
+    this.audit({ op: "create", id, namespace, bytes: body.length });
     return this.read(id)!;
   }
 
@@ -3544,7 +3544,7 @@ export class Store {
     }
 
     if (!nested) this.announceChange();
-    audit({ op: "update", id, namespace, bytes: body.length });
+    this.audit({ op: "update", id, namespace, bytes: body.length });
     return this.read(id);
   }
 
@@ -3611,7 +3611,7 @@ export class Store {
     if (n > 0) {
       this.edgeIndexes.clear(); // archived notes leave the similarity index
       this.announceChange();
-      audit({ op: "sweep-expire", bytes: n }); // `bytes` holds the count, as in supersede
+      this.audit({ op: "sweep-expire", bytes: n }); // `bytes` holds the count, as in supersede
     }
     this.sweepCaptureEvents(now, namespaces);
     if (!namespaces) this.sweepAccessLog(now); // retention is store-wide: only the unscoped (hourly) sweep runs it
@@ -3708,7 +3708,7 @@ export class Store {
     if (done > 0) {
       this.edgeIndexes.clear();
       this.announceChange();
-      audit({ op: "sweep-decay", bytes: done });
+      this.audit({ op: "sweep-decay", bytes: done });
     }
     return done;
   }
@@ -3926,7 +3926,7 @@ export class Store {
       for (const g of gone) this.recordDropped(noteId, g.saved_by, g.saved_at);
       return Number(this.db.prepare("DELETE FROM note_history WHERE note_id = ?").run(noteId).changes ?? 0);
     });
-    if (n > 0) audit({ op: "history-purge", id: noteId, bytes: n });
+    if (n > 0) this.audit({ op: "history-purge", id: noteId, bytes: n });
     return n;
   }
 
@@ -4097,7 +4097,7 @@ export class Store {
     }
     this.edgeIndexes.clear();
     if (!nested) this.announceChange();
-    audit({ op: "supersede", id: input.newId, namespace: "", bytes: input.oldIds.length });
+    this.audit({ op: "supersede", id: input.newId, namespace: "", bytes: input.oldIds.length });
     return { retired: input.oldIds };
   }
 
@@ -4133,7 +4133,7 @@ export class Store {
     }
     this.edgeIndexes.clear();
     this.announceChange();
-    audit({ op: "supersede-undo", id, namespace: "", bytes: 0 });
+    this.audit({ op: "supersede-undo", id, namespace: "", bytes: 0 });
     return this.read(id);
   }
 
@@ -4211,7 +4211,7 @@ export class Store {
     this.db.prepare("DELETE FROM note_vectors WHERE note_id = ?").run(id);
     this.edgeIndexes.clear();
     this.announceChange();
-    audit({ op: "archive", id, namespace: ns });
+    this.audit({ op: "archive", id, namespace: ns });
     return this.read(id);
   }
 
@@ -4240,7 +4240,7 @@ export class Store {
       .run(opts.forget_after === undefined ? null : retentionDeadline(opts.forget_after), new Date().toISOString(), id);
     this.edgeIndexes.clear(); // restored note rejoins the similarity index lazily
     this.announceChange();
-    audit({ op: "restore", id, namespace: restoreNs });
+    this.audit({ op: "restore", id, namespace: restoreNs });
     return this.read(id);
   }
 
@@ -4496,7 +4496,7 @@ export class Store {
     if (ok) {
       this.noteWritten(row.namespace, id, null);
       if (!this.db.isTransaction) this.announceChange();
-      audit({ op: "delete", id });
+      this.audit({ op: "delete", id });
     }
     return ok;
   }
@@ -6444,7 +6444,7 @@ export class Store {
       .prepare("INSERT INTO trust_log (at, actor, action, namespace, subject) VALUES (?, ?, ?, ?, ?)")
       .run(new Date().toISOString(), actor, action, namespace, subject);
     this.pruneTrustLog(namespace);
-    audit({ op: `trust.${action}`, namespace, label: actor, kind: "trust", detail: subject.slice(0, 200) });
+    this.audit({ op: `trust.${action}`, namespace, label: actor, kind: "trust", detail: subject.slice(0, 200) });
   }
 
   /**
@@ -7079,7 +7079,7 @@ export class Store {
     this.setMeta("flood_paused", JSON.stringify(all.filter((x) => x !== w)));
     // A fresh hour: otherwise its very next write would trip the guard again on the old count.
     this.db.prepare("DELETE FROM write_rate WHERE writer = ?").run(w);
-    audit({ op: "flood-resume", label: w });
+    this.audit({ op: "flood-resume", label: w });
     return true;
   }
 
@@ -7125,11 +7125,17 @@ export class Store {
       // One statement, no transaction: a write can run inside a caller's transaction (which this throw rolls back, pause
       // included; the count stays, so the next write pauses it again).
       this.setMeta("flood_paused", JSON.stringify([...new Set([...this.pausedWriters(), w])].sort()));
-      audit({ op: "flood-pause", label: w, detail: `${n} writes in the last hour (limit ${limit})` });
+      this.audit({ op: "flood-pause", label: w, detail: `${n} writes in the last hour (limit ${limit})` });
       console.error(`[monomem] flood guard: paused writer "${w}" after ${n} writes in an hour. Resume with: monomem resume ${w}`);
       throw this.pausedError(w);
     }
     this.db.prepare("INSERT INTO write_rate (writer, at) VALUES (?, ?)").run(w, new Date(now).toISOString());
+  }
+
+  /** Audit line, except from an in-memory store with no MONOMEM_AUDIT_LOG: that must never touch the owner's real log. */
+  private audit(entry: Parameters<typeof audit>[0]): void {
+    if (this.dbPath === ":memory:" && !process.env.MONOMEM_AUDIT_LOG) return;
+    audit(entry);
   }
 
   // --- Approve-first namespaces ---------------------------------------------
@@ -7145,8 +7151,19 @@ export class Store {
     }
   }
 
+  /** True when approve-first is on for every namespace, including ones created later. */
+  approveFirstAll(): boolean {
+    return this.getMeta("approve_first_all") === "1";
+  }
+
   isApproveFirst(namespace: string): boolean {
-    return this.approveFirstNamespaces().includes(namespace);
+    return this.approveFirstAll() || this.approveFirstNamespaces().includes(namespace);
+  }
+
+  /** Turn approve-first on or off for every namespace at once. Operator-only, like the per-namespace switch. */
+  setApproveFirstAll(on: boolean): void {
+    this.setMeta("approve_first_all", on ? "1" : "0");
+    this.audit({ op: on ? "approve-first-all-on" : "approve-first-all-off" });
   }
 
   /** Turn approve-first on or off for a namespace. Writes already held stay in the queue either way. */
@@ -7157,7 +7174,7 @@ export class Store {
       const rest = this.approveFirstNamespaces().filter((n) => n !== ns);
       this.setMeta("approve_first", JSON.stringify(on ? [...rest, ns].sort() : rest));
     });
-    audit({ op: on ? "approve-first-on" : "approve-first-off", namespace: ns });
+    this.audit({ op: on ? "approve-first-on" : "approve-first-off", namespace: ns });
   }
 
   // --- Pinned notes (v18) ----------------------------------------------------
@@ -7183,7 +7200,7 @@ export class Store {
     const where = namespaces ? ` AND namespace IN (${namespaces.map(() => "?").join(",")})` : "";
     const res = this.db.prepare(`UPDATE notes SET pinned = ? WHERE id = ?${where}`).run(on ? 1 : 0, id, ...(namespaces ?? []));
     const ok = Number(res.changes) > 0;
-    if (ok) audit({ op: on ? "pin" : "unpin", id });
+    if (ok) this.audit({ op: on ? "pin" : "unpin", id });
     return ok;
   }
 
@@ -7292,7 +7309,7 @@ export class Store {
       throw e;
     }
     // Audit records the decision, never the content.
-    audit({ op: "quarantine", id, namespace: q.namespace, bytes: (q.body ?? "").length });
+    this.audit({ op: "quarantine", id, namespace: q.namespace, bytes: (q.body ?? "").length });
     return id;
   }
 
@@ -7411,7 +7428,7 @@ export class Store {
       drop.run(id);
       note = updated;
     }
-    audit({ op: "quarantine-approve", id, namespace: q.namespace });
+    this.audit({ op: "quarantine-approve", id, namespace: q.namespace });
     return note;
   }
 
@@ -7420,7 +7437,7 @@ export class Store {
     const q = this.getQuarantine(id);
     if (!q) return false;
     this.db.prepare("DELETE FROM quarantine WHERE id = ?").run(id);
-    audit({ op: "quarantine-reject", id, namespace: q.namespace });
+    this.audit({ op: "quarantine-reject", id, namespace: q.namespace });
     return true;
   }
 
