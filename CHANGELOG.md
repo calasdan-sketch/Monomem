@@ -8,6 +8,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`monomem facts [--namespace ns] [--json]`**: every fact key per namespace with its current value(s), who wrote them
+  and since when; disputed keys are marked, and agreement shows as "N writers agree". `monomem fact remove <id> <key>`
+  drops one fact from a note. A write whose title or body names a different value than one of its own facts gets a
+  `fact_warnings` entry (it is still stored).
+
 - **Time travel.** `monomem search "<query>" --as-of <ISO|7d|2h>` and the MCP `state_search` `as_of` show memory as it
   stood at a past time, rebuilt from note history. A note whose text from then was pruned or purged says "text from
   that time not kept" instead of showing newer text as old; hard-deleted notes cannot be rebuilt and the output says so.
@@ -135,6 +140,23 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log (`mcp.connect`) as a **claim** only; they are never used for `written_by` or any decision.
 
 ### Changed
+
+- **Dispute lines work in a default install** (no namespace setup needed). Each is a notice from Monomem with the
+  quoted values, note numbers and writers, one value per writer, at most two lines plus "+N more"; notes marked
+  never-show and distrusted writers are left out. A writer who changed their mind is not shown as disagreeing with
+  themselves.
+- `similar_keys` gives the existing value, note and writer plus a one-line hint, no longer flags a subject-prefixed
+  key against its own base key, and a value set under a synonym key (`hosting` vs `deploy_target`) is reported as a
+  conflict. REST `PUT /notes/:id` accepts `facts` and returns the same conflict information as `POST`.
+- Dashboard Keep reports a change that was held for review as held, marks the other note `fact-removed:<key>` and
+  says its text may still name the old value; Pin and Distrust sit under "More".
+- `--as-of` no longer shows today's writer id, attestation or confidence next to old text; times include seconds; the
+  header counts notes that were archived or replaced then.
+- `monomem drill` and `health` run with embeddings off and make no network call, even when a remote
+  `MONOMEM_EMBED_URL` is set. An unrecognised `MONOMEM_LINT` value gets a "did you mean" hint and names the default
+  used. A failing embeddings backend is reported once per process, not once per note.
+- REST `PUT /notes/:id` accepts and ignores the server's own read-only fields, so reading a note and sending it back
+  works; unknown fields are still refused.
 
 - **Facts are easier to get right.** `state_write` tells agents to attach `facts` when they record a decision, and to
   use a common key when one fits (deploy_target, package_manager, test_runner, database, node_version, base_url,
