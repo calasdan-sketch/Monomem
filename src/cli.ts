@@ -252,8 +252,10 @@ function usage(all = false): void {
       "            Also runs on its own in the expiry sweep and at the end of a captured session.",
       "  archive <id> | restore <id>",
       "            Soft-archive a note, or bring an archived one back (the undo for decay and archive).",
-      "  audit verify",
+      "  audit verify [--expect <head-hash>]",
       "            Walk the audit log's hash chain and report the first broken line (edits/deletions inside the chain).",
+      "            Keep the printed head hash off this machine (a git commit, a password manager). --expect <hash> exits 1 if",
+      "            that line is no longer in the log (rewritten or cut off); the log growing past it is fine. Usage errors exit 2.",
       "  delete <id> [--yes]",
       "            Delete a note permanently, with all its earlier versions. Asks first; cannot be undone.",
       "  encrypt <enable|status|disable>",
@@ -2678,20 +2680,31 @@ async function main(): Promise<void> {
       await deleteCmd();
       break;
     case "audit": {
-      if (process.argv[3] !== "verify") {
-        console.error("Usage: monomem audit verify");
-        process.exit(1);
+      const usage = "Usage: monomem audit verify [--expect <head-hash>]";
+      const rest = process.argv.slice(4);
+      const ei = rest.indexOf("--expect");
+      const expect = ei >= 0 ? rest[ei + 1]?.trim().toLowerCase() : undefined;
+      const extraArgs = rest.filter((_, k) => k !== ei && k !== ei + 1 || ei < 0);
+      if (process.argv[3] !== "verify" || extraArgs.length > 0 || (ei >= 0 && !/^[0-9a-f]{64}$/.test(expect ?? ""))) {
+        console.error(usage + (ei >= 0 ? " (the head hash is 64 hex characters, as printed by `monomem audit verify`)" : ""));
+        process.exit(2);
       }
       const { verifyAuditChain } = await import("./security.js");
-      const r = verifyAuditChain();
+      const r = verifyAuditChain(undefined, expect);
       const extra = `${r.forks} fork(s) (two processes writing at once, or a line inserted), ${r.unchained} line(s) from before the chain`;
-      if (r.ok) {
-        console.log(`Audit chain intact: ${r.lines} line(s), ${extra}.`);
-        console.log(`Head ${r.head ?? "(empty)"}: note it somewhere else to detect a later rewrite or cut-off.`);
-        console.log("Detects lines edited or removed inside the chain. Not: a line inserted (it looks like a fork), the newest lines cut off, rotated files deleted, or a full rewrite by anyone who can write the file.");
-      } else {
+      if (!r.ok) {
         console.error(`Audit chain BROKEN: ${r.breaks} break(s), first at line ${r.brokenLine} of ${r.file} (it follows from none of the lines before it). ${extra}.`);
         process.exit(1);
+      }
+      console.log(`Audit chain intact: ${r.lines} line(s), ${extra}.`);
+      console.log(`Head ${r.head ?? "(empty)"}: keep it somewhere that is not this machine (a git commit, a password manager), then check later with: monomem audit verify --expect <head>.`);
+      console.log("Detects lines edited or removed inside the chain. Not: a line inserted (it looks like a fork), rotated files deleted, or a full rewrite by anyone who can write the file. Without a saved head it also cannot see the newest lines cut off.");
+      if (r.anchor) {
+        if (!r.anchor.found) {
+          console.error("Anchor NOT FOUND: no line in the log has the hash you gave. The log was rewritten or cut off before that point (or the hash is from another log).");
+          process.exit(1);
+        }
+        console.log(r.anchor.linesAfter === 0 ? "Anchor OK: the hash you gave is the current head." : `Anchor OK: the line you noted is still in the chain, ${r.anchor.linesAfter} line(s) older than the head (the log has grown since).`);
       }
       break;
     }

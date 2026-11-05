@@ -1,7 +1,7 @@
 // `monomem why <id>`: the story of one note, in time order, from data Monomem already keeps (note history, change log,
 // supersede log, held writes, receipts, distrust list, pin flag). Nothing new is recorded for it.
 // Text rule: titles only (printed through printable()); a body only when the operator passes --body on the CLI.
-import { WRITER_MARKERS } from "./actor.js";
+import { isWriterMarker } from "./actor.js";
 import { accessLogDays, type NoteRecord, type Store } from "./store.js";
 import { describeWriter, printable, printableWords } from "./security.js";
 import { localTime, whyText } from "./receipts.js";
@@ -43,8 +43,8 @@ export const NOT_RECORDED =
 export function writerKind(w: string, claimed = false): string {
   if (claimed) return "claimed by an import file, not verified";
   if (!w) return "unknown (written before writers were recorded)";
-  if (w.startsWith("stdio:")) return "self-declared by its launch config, no token";
-  if ((WRITER_MARKERS as readonly string[]).includes(w)) return "server-stamped marker";
+  if (w.startsWith("stdio:")) return "self-declared by its launch config, no sign-in";
+  if (isWriterMarker(w)) return "server-stamped marker";
   return "token label, stamped by the server from the token";
 }
 

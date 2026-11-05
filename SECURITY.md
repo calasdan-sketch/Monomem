@@ -214,6 +214,12 @@ CLI itself, so none of them stops an agent that can run commands.**
 - Rate limiting is per client address and runs before authentication;
   behind a shared tunnel, clients share a bucket.
 - The audit log records operations, never note content.
+- **Dispute notices are a nuisance vector.** Any writer that can write a fact can make
+  Monomem print "writers disagree on <key>" at the start of sessions in that namespace. The
+  notice never shows a fact value that the injection or directive scan, or the fact-value
+  check, flags (it prints "[value withheld: flagged, see monomem conflicts]"), but it can
+  still be triggered with a harmless-looking value. Distrusting the writer
+  (`monomem trust distrust <writer>`) removes it from the notice.
 - Encryption limits are listed above.
 
 ## Reporting a vulnerability

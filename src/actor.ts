@@ -39,6 +39,23 @@ export function currentActor(): string {
 export const WRITER_MARKERS = ["stdio", "cli", "server", "runner", "import:claude", "capture"] as const;
 export type WriterMarker = (typeof WRITER_MARKERS)[number];
 
+/** One plain-words description per marker. describeWriter, describeCreator and why's writerKind are all built from this, so a new marker cannot drift. */
+export const MARKER_DESCRIPTIONS: Record<WriterMarker, string> = {
+  stdio: "local MCP client, no sign-in",
+  cli: "the local monomem command",
+  server: "Monomem's own background job",
+  runner: "the command runner process on the owner's PC",
+  "import:claude": "monomem import --claude, run by the machine owner",
+  capture: "a capture hook (monomem hook), no sign-in",
+};
+
+export const isWriterMarker = (w: string): w is WriterMarker => (WRITER_MARKERS as readonly string[]).includes(w);
+
+/** Markers for notes the machine owner or the server wrote itself (not an agent). The dashboard review queue skips these, and unstamped ("") rows. */
+export const HUMAN_WRITER_MARKERS: readonly WriterMarker[] = ["cli", "server", "import:claude"];
+/** {cli:1, server:1, "import:claude":1, "":1}: the lookup object dashboard.ts HUMAN_WRITERS uses. */
+export const humanWriterMap = (): Record<string, 1> => Object.fromEntries([...HUMAN_WRITER_MARKERS, ""].map((k) => [k, 1 as const]));
+
 let processWriter = "";
 
 /** Set once by an entry point (mcp-stdio, cli, start) for writes with no token. */

@@ -56,6 +56,7 @@ export function downgradeTo(path: string, version: 11 | 12 | 13 | 14 | 15 | 16 |
   try {
     // v18 additions, removed for every older shape.
     raw.exec("DROP TABLE IF EXISTS note_history_dropped; ALTER TABLE notes DROP COLUMN pinned;");
+    raw.exec("DROP TRIGGER IF EXISTS notes_archive_log_au; DROP TRIGGER IF EXISTS notes_archive_log_ad; DROP TABLE IF EXISTS archive_log; DELETE FROM _meta WHERE key = 'archive_log_since';");
     if (version === 17) {
       raw.exec("PRAGMA user_version = 17");
       return;

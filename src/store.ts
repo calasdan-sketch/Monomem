@@ -1551,34 +1551,46 @@ export class Store {
   /**
    * Archive/restore history for time travel (`--as-of`). notes only keeps the CURRENT archived_at, so a note archived and
    * restored looked live the whole time. A trigger records every archived_at flip (archive, expiry/decay sweep, supersede,
-   * restore, supersede-undo): ids and times only, no text; deleting a note drops its rows. No schema bump: IF NOT EXISTS on
-   * every open. A read-only file goes without. It reaches back only to `archive_log_since` (_meta).
+   * restore, supersede-undo): ids and times only, no text; deleting a note drops its rows. Created by the v18 migration. It reaches
+   * back only to `archive_log_since` (_meta). Caller holds the write lock; errors propagate.
+   */
+  private createArchiveLog(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS archive_log (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id INTEGER NOT NULL,
+        at TEXT NOT NULL,
+        archived INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_archive_log_note ON archive_log(note_id);
+      CREATE TRIGGER IF NOT EXISTS notes_archive_log_au AFTER UPDATE OF archived_at ON notes
+      WHEN old.archived_at IS NOT new.archived_at
+      BEGIN
+        INSERT INTO archive_log (note_id, at, archived) VALUES (new.id, COALESCE(new.archived_at, ${SQL_NOW}), new.archived_at IS NOT NULL);
+      END;
+      CREATE TRIGGER IF NOT EXISTS notes_archive_log_ad AFTER DELETE ON notes
+      BEGIN
+        DELETE FROM archive_log WHERE note_id = old.id;
+      END;
+      INSERT OR IGNORE INTO _meta (key, value) VALUES ('archive_log_since', ${SQL_NOW});
+    `);
+  }
+
+  /**
+   * Only for a database an earlier build of this branch already marked v18 without archive_log (it was added after the v18 bump).
+   * Released upgrades get it from the migration. Reads first, writes only if missing. A read-only or busy file is skipped
+   * (no archive history until a writer opens it); any other error is logged, not hidden. ponytail: delete once no dev v18 file lacks it.
    */
   private ensureArchiveLog(): void {
     try {
-      // Already there: write nothing. Only the FIRST open of an older database adds the table and trigger (a one-time write); later opens leave the file alone.
       if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'notes_archive_log_ad'").get()) return;
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS archive_log (
-          seq INTEGER PRIMARY KEY AUTOINCREMENT,
-          note_id INTEGER NOT NULL,
-          at TEXT NOT NULL,
-          archived INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_archive_log_note ON archive_log(note_id);
-        CREATE TRIGGER IF NOT EXISTS notes_archive_log_au AFTER UPDATE OF archived_at ON notes
-        WHEN old.archived_at IS NOT new.archived_at
-        BEGIN
-          INSERT INTO archive_log (note_id, at, archived) VALUES (new.id, COALESCE(new.archived_at, ${SQL_NOW}), new.archived_at IS NOT NULL);
-        END;
-        CREATE TRIGGER IF NOT EXISTS notes_archive_log_ad AFTER DELETE ON notes
-        BEGIN
-          DELETE FROM archive_log WHERE note_id = old.id;
-        END;
-        INSERT OR IGNORE INTO _meta (key, value) VALUES ('archive_log_since', ${SQL_NOW});
-      `);
-    } catch {
-      /* read-only file: no archive history until a writer opens it */
+      this.createArchiveLog();
+    } catch (e) {
+      const err = e as { errcode?: number; message?: string };
+      const base = typeof err.errcode === "number" ? err.errcode & 0xff : -1;
+      // SQLITE_BUSY 5, SQLITE_LOCKED 6, SQLITE_READONLY 8
+      if (base === 5 || base === 6 || base === 8 || /readonly|read-only|locked|busy/i.test(err.message ?? "")) return;
+      console.error(`[monomem] could not create archive_log: ${err.message ?? String(e)}`);
     }
   }
 
@@ -2498,6 +2510,9 @@ export class Store {
           PRIMARY KEY (note_id, saved_by)
         );
       `);
+      //  - archive_log (+ triggers): archive/restore history for --as-of. Part of v18, so the migration (one transaction, under the
+      //    write lock) creates it once and a failure aborts the upgrade instead of being swallowed.
+      this.createArchiveLog();
     }
   }
 

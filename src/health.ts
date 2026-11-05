@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { BIND_HOST, DATA_DIR, DB_PATH } from "./config.js";
-import { runDrill, type DrillReport } from "./drill.js";
+import { runDrill, DRILL_SCOPE, type DrillReport } from "./drill.js";
 import { meterStats } from "./meter.js";
 import { esc } from "./receipts.js";
 import { auditPath as defaultAuditPath, printable, verifyAuditChain } from "./security.js";
@@ -37,7 +37,7 @@ export interface HealthReport {
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 export const GRADE_RULE =
   "Start at A. Each warn lowers it one step (A to F). Any fail caps it at D. Unexpected drill reach (an attack other than the two known misses got through) is F. Info lines never change the grade. A to C exits 0, D to F exits 1.";
-export const NOT_COVERED = "Not covered: the injection check is a pattern linter; reworded attacks and self-poisoning still get through.";
+export const NOT_COVERED = "Not covered: the injection check is a pattern linter; reworded attacks and self-poisoning still get through. " + DRILL_SCOPE;
 
 /** The grade, computed only from the check statuses (the drill check failing is the F case). */
 export function gradeOf(checks: Pick<HealthCheck, "id" | "status">[]): string {
@@ -319,8 +319,9 @@ export function renderHealthCard(r: HealthReport): string {
     `<text x="40" y="215" font-size="150" font-weight="700" fill="${gradeColour}">${esc(r.grade)}</text>` +
     rows +
     `<text x="40" y="290" font-size="14" font-weight="600" fill="${gradeColour}">${esc(gradeReason(r))}</text>` +
-    `<text x="40" y="318" font-size="12" fill="#FFFFFF">${esc(r.not_covered)}</text>` +
-    `<text x="40" y="340" font-size="13" font-weight="600" fill="#F0C171">${esc(r.date)}</text>` +
+    `<text x="40" y="310" font-size="11" fill="#FFFFFF">${esc(r.not_covered.replace(DRILL_SCOPE, "").trim())}</text>` +
+    `<text x="40" y="326" font-size="11" fill="#FFFFFF">${esc(DRILL_SCOPE)}</text>` +
+    `<text x="40" y="348" font-size="13" font-weight="600" fill="#F0C171">${esc(r.date)}</text>` +
     `</svg>\n`
   );
 }

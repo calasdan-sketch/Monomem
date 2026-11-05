@@ -9,6 +9,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { dirname, join } from "node:path";
 import type { IncomingMessage } from "node:http";
 import { DATA_DIR, isLoopback, type Scope, type TokenEntry } from "./config.js";
+import { isWriterMarker, MARKER_DESCRIPTIONS } from "./actor.js";
 
 // ---- Untrusted-data banner --------------------------------------------------
 // Note contents are returned to autonomous agents, which makes a stored note a
@@ -38,18 +39,15 @@ function oneLine(s: unknown, max: number): string {
 export function describeWriter(writtenBy: unknown): string {
   const w = oneLine(writtenBy, 100);
   if (!w) return "an unknown writer (stored before writers were recorded)";
-  if (w === "stdio") return "stdio (local MCP client, no token)";
-  if (w.startsWith("stdio:")) return `${w} (local MCP client, no token; app name self-declared by its launch config)`;
-  if (w === "cli") return "cli (the local monomem command)";
-  if (w === "server") return "server (Monomem's own background job)";
-  if (w === "runner") return "runner (the command runner process on the owner's PC)";
+  if (isWriterMarker(w)) return `${w} (${MARKER_DESCRIPTIONS[w]})`;
+  if (w.startsWith("stdio:")) return `${w} (local MCP client, no sign-in; app name self-declared by its launch config)`;
   return `${w} (token)`;
 }
 
 /** created_by for the banner: a fixed marker as-is, a token label JSON-quoted. */
-function describeCreator(createdBy: unknown): string {
+export function describeCreator(createdBy: unknown): string {
   const w = oneLine(createdBy, 100);
-  return ["stdio", "cli", "server", "runner"].includes(w) || w.startsWith("stdio:") ? w : `${JSON.stringify(w.slice(0, 60))} (token)`;
+  return isWriterMarker(w) || w.startsWith("stdio:") ? w : `${JSON.stringify(w.slice(0, 60))} (token)`;
 }
 
 /**
@@ -592,8 +590,10 @@ function lastAuditLineHash(path: string): string {
  * Lines written before the chain existed (no `prev`) are counted as unchained.
  */
 const FORK_WINDOW = 16;
-export function verifyAuditChain(path: string = auditPath()): {
+export function verifyAuditChain(path: string = auditPath(), expect?: string): {
   ok: boolean;
+  /** Only with `expect`: the line whose hash is `expect` is still in the log, and how many lines follow it (0 = it is the head). */
+  anchor?: { found: boolean; linesAfter: number };
   lines: number;
   brokenLine?: number;
   file?: string;
@@ -613,6 +613,7 @@ export function verifyAuditChain(path: string = auditPath()): {
   let chained = false; // once a line carries `prev`, a later line without one was not written by this version: a break
   let brokenLine: number | undefined;
   let file: string | undefined;
+  let anchorAt = -1; // line number whose hash equals `expect`
   for (const f of files) {
     for (const line of readFileSync(f, "utf8").split("\n")) {
       if (!line) continue;
@@ -638,11 +639,13 @@ export function verifyAuditChain(path: string = auditPath()): {
           if (brokenLine === undefined) [brokenLine, file] = [n, f];
         }
       }
-      recent.push(sha(line));
+      const h = sha(line);
+      if (expect !== undefined && h === expect) anchorAt = n;
+      recent.push(h);
       if (recent.length > FORK_WINDOW) recent.shift();
     }
   }
-  return { ok: breaks === 0, lines: n, breaks, forks, unchained, ...(brokenLine !== undefined ? { brokenLine, file } : {}), ...(recent.length ? { head: recent[recent.length - 1] } : {}) };
+  return { ok: breaks === 0, lines: n, ...(expect !== undefined ? { anchor: { found: anchorAt > 0, linesAfter: anchorAt > 0 ? n - anchorAt : 0 } } : {}), breaks, forks, unchained, ...(brokenLine !== undefined ? { brokenLine, file } : {}), ...(recent.length ? { head: recent[recent.length - 1] } : {}) };
 }
 
 export function audit(entry: {
