@@ -79,6 +79,8 @@ function parseEmbedding(json: unknown): Float32Array | null {
  * Embed a single string. Returns null (never throws) on disabled, timeout,
  * network error, non-200, or an unrecognized response shape.
  */
+const loggedFailures = new Set<string>();
+
 export async function embed(
   text: string,
   cfg: EmbeddingsConfig = embeddingsConfig()
@@ -88,7 +90,11 @@ export async function embed(
   // auto: a failure is expected (no backend on this machine), so it is quiet and backs off instead of logging.
   const fail = (msg: string): null => {
     if (cfg.auto) autoDownUntil = Date.now() + AUTO_RETRY_MS;
-    else console.error(msg);
+    else if (!loggedFailures.has(msg)) {
+      // The same failure (backend down) repeats on every call: say it once per process, not once per note.
+      loggedFailures.add(msg);
+      console.error(`${msg} (repeats of this error are not shown)`);
+    }
     return null;
   };
 
