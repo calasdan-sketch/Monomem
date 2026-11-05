@@ -482,7 +482,13 @@ function loadQuality(){
       return "<div class='card'><div class='cardhead'><div><h3><span class='tag'>"+esc(i.type)+"</span>"+esc(i.detail)+"</h3>"+
         "<div class='meta'>"+esc(i.namespace)+" &middot; "+esc(i.fix)+(i.alt ? " &middot; or "+esc(i.alt) : "")+"</div></div>"+acts(btn)+"</div></div>";
     }).join("");
-    $("list").innerHTML = rows || empty("No quality issues found. Duplicates, stale notes and held writes will be listed here.");
+    var cf = j.conflicts || [];
+    var crow = cf.length ? "<div class='card'><h3>Possible conflicts ("+cf.length+")</h3><div class='meta'>Different writers, same key, different value. Flag only: pick Replace (supersede, asks first), pin, or distrust a writer.</div>"+
+      cf.map(function(c){ var a = Number(c.a.id), b = Number(c.b.id);
+        return "<div class='cardhead'><div><h3><span class='tag'>"+esc(c.confidence)+"</span>"+esc(c.key)+": "+esc(c.values[0])+" vs "+esc(c.values[1])+"</h3>"+
+          "<div class='meta'>#"+a+" "+esc(c.a.title)+" ("+esc(c.a.writer)+", "+esc(String(c.a.at).slice(0,10))+") &middot; #"+b+" "+esc(c.b.title)+" ("+esc(c.b.writer)+", "+esc(String(c.b.at).slice(0,10))+") &middot; "+esc(c.namespace)+"</div></div>"+
+          acts("<button onclick='qReplace("+a+","+b+")'>Replace #"+a+" with #"+b+"</button> <button class='ghost' onclick='qReplace("+b+","+a+")'>Replace #"+b+" with #"+a+"</button>")+"</div>"; }).join("")+"</div>" : "";
+    $("list").innerHTML = crow + rows || empty("No quality issues found. Duplicates, stale notes and held writes will be listed here.");
   }).catch(failList);
 }
 function qReplace(oldId, newId){
