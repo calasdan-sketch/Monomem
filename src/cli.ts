@@ -149,6 +149,8 @@ function usage(): void {
       "            Also runs on its own in the expiry sweep and at the end of a captured session.",
       "  archive <id> | restore <id>",
       "            Soft-archive a note, or bring an archived one back (the undo for decay and archive).",
+      "  audit verify",
+      "            Walk the audit log's hash chain and report the first broken line (edits/deletions inside the chain).",
       "  delete <id> [--yes]",
       "            Delete a note permanently, with all its earlier versions. Asks first; cannot be undone.",
       "  encrypt <enable|status|disable>",
@@ -2410,6 +2412,21 @@ async function main(): Promise<void> {
     case "delete":
       await deleteCmd();
       break;
+    case "audit": {
+      if (process.argv[3] !== "verify") {
+        console.error("Usage: monomem audit verify");
+        process.exit(1);
+      }
+      const { verifyAuditChain } = await import("./security.js");
+      const r = verifyAuditChain();
+      if (r.ok) {
+        console.log(`Audit chain intact: ${r.lines} line(s). (Detects edits and deletions inside the chain; not truncation of the newest lines, nor a full rewrite.)`);
+      } else {
+        console.error(`Audit chain BROKEN at line ${r.brokenLine} of ${r.file}: it does not follow from the line before it.`);
+        process.exit(1);
+      }
+      break;
+    }
     case "quality":
       await qualityCmd();
       break;

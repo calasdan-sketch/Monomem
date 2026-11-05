@@ -3498,6 +3498,7 @@ export class Store {
     if (n > 0) {
       this.edgeIndexes.clear(); // archived notes leave the similarity index
       this.announceChange();
+      audit({ op: "sweep-expire", bytes: n }); // `bytes` holds the count, as in supersede
     }
     this.sweepCaptureEvents(now, namespaces);
     if (!namespaces) this.sweepAccessLog(now); // retention is store-wide: only the unscoped (hourly) sweep runs it
@@ -3594,6 +3595,7 @@ export class Store {
     if (done > 0) {
       this.edgeIndexes.clear();
       this.announceChange();
+      audit({ op: "sweep-decay", bytes: done });
     }
     return done;
   }
@@ -4096,6 +4098,7 @@ export class Store {
     this.db.prepare("DELETE FROM note_vectors WHERE note_id = ?").run(id);
     this.edgeIndexes.clear();
     this.announceChange();
+    audit({ op: "archive", id, namespace: ns });
     return this.read(id);
   }
 
@@ -4124,6 +4127,7 @@ export class Store {
       .run(opts.forget_after === undefined ? null : retentionDeadline(opts.forget_after), new Date().toISOString(), id);
     this.edgeIndexes.clear(); // restored note rejoins the similarity index lazily
     this.announceChange();
+    audit({ op: "restore", id, namespace: restoreNs });
     return this.read(id);
   }
 
