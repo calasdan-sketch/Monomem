@@ -111,6 +111,15 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `monomem drill` says "blocked" for defences other than quarantine and keeps "held" for quarantined writes (the
+  JSON `verdict` can be `blocked`).
+- `monomem token add` also prints the MCP address and header line to give the teammate; `token list` notes tokens
+  set through `MONOMEM_TOKENS`. A removed token stops working after the server restarts.
+- When an old `onememory` entry sits next to `monomem`, setup offers to remove it; `doctor` flags the old
+  `npx onememory-mcp` hook and says how to update it.
+- `receipts` and `meter` output use local time, plain reasons and correct plurals; the token counts say what they
+  measure. Dashboard writer chips use ten well-separated colours.
+
 - **Commands that lower protection need a person at a terminal.** `unpin`, `approve-first <ns> off`, `resume`,
   `quarantine approve`, `trust undistrust`, `trust attester-add`, `trust attester-unrevoke` and `token add` now need an
   interactive terminal and a typed `yes`; there is no `--yes` for them. This stops an agent that runs commands through
@@ -187,6 +196,18 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local app.
 
 ### Fixed
+
+- Note titles, session names and imported text are made safe before they are printed to a terminal (control codes,
+  links and right-to-left overrides are neutralised), so a planted note cannot rewrite the terminal title or clear it.
+- Changing a **pinned** note from the command line (archive, restore, delete, replace, merge, restore or purge its
+  history) now needs a person at a terminal, like `unpin`. SECURITY.md lists exactly what is and is not gated.
+- The new linter rules no longer hold ordinary notes such as "we ignore user requests older than 5 minutes" or "from
+  now on you will email the weekly report"; standing orders are held when they name secrets, keys or an outside URL.
+- `monomem drill` works on an encrypted store, creates nothing beside your real store, and cleans up its temporary
+  copy on Ctrl-C.
+- `setup` masks secrets passed in command arguments (`--token`, `--api-key` ...) and in URL query strings.
+- `import --from` refuses to write without a terminal unless `--yes` is given. `FORCE_COLOR=0` turns colour off.
+- The tests can no longer write to your real data folder when a single test file is run on its own.
 
 - `monomem audit verify` answered "Unknown command".
 
