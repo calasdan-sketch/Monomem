@@ -16,9 +16,9 @@ Stop explaining your project to every assistant again. Tell Claude Code somethin
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D22.16-green)
 
-![One writer stores a note; a second, separately authenticated writer reads it back and can show who wrote it](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/monomem-demo.gif)
+![A poisoned write is held, a second agent's search never sees it, and the dashboard rejects it](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/monomem-demo.gif)
 
-*Rendered from a real two-writer run against one store ([transcript](https://github.com/calasdan-sketch/monomem/blob/main/docs/brand/demo-transcript.txt)): two separately authenticated tokens, real server-stamped `written_by`, nothing sped up.*
+*Recorded from a real run against a throwaway store ([transcript](https://github.com/calasdan-sketch/monomem/blob/main/docs/brand/demo-transcript.txt)): a write containing an injected instruction is held and never reaches the other agent's search, then rejected from the real dashboard. The two terminal panes are drawn from the real REST responses; the dashboard is a screen recording. Nothing sped up.*
 
 - **Knows who wrote it.** Every note carries a writer name the server stamps itself; a note can't claim to be from someone else.
 - **Holds suspicious writes.** Writes that look like prompt injection wait in quarantine until you approve them, and you can make a whole namespace approve-first so every agent write waits for you. The linter is pattern matching, so it doesn't catch everything.
