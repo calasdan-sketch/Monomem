@@ -50,6 +50,19 @@ Supported phrases (case-insensitive, found anywhere in the string, so
 Day boundaries are computed in your timezone: set `MONOMEM_TIMEZONE`
 (e.g. `America/Winnipeg`, default: the host's system timezone). Invalid names fall back to UTC.
 
+## Time travel (`--as-of`)
+
+`monomem search "deploy region" --as-of 7d` (or an ISO time, `2h`, `2026-10-01`) shows memory as it stood then. With no words it lists the notes. The MCP tool `state_search` takes the same thing as `as_of`. It only reads; nothing is written.
+
+It is rebuilt from what Monomem already keeps: creation time, archive and replace times, and the note's saved earlier versions (`note_history`). A note made after that time is absent. A note archived or replaced after it is shown as live. A note archived or replaced before it is hidden. A note edited since shows the version that was current then.
+
+What it cannot do, and says so:
+
+- A version that was pruned (default: 20 kept per note) or purged is gone. That note is listed as "text from that time not kept" and counted in the header. The newer text is never shown in its place.
+- A note deleted for good (hard delete) is not shown. No text survives a hard delete.
+- Only text changes make history. Tag or source edits, and who wrote the note then, are not reconstructed. A note archived and later restored shows as live the whole time. If history was switched off (`MONOMEM_HISTORY_VERSIONS=0`), an edited note is "not kept".
+- Search at a past time scores the rebuilt notes with the keyword scorer (share of your words found, newest first on ties). It does not use the search index, which only holds today's text, and has no semantic ranking, time phrases or writer filters.
+
 ## Relevant-memory search
 
 Don't know the exact wording? `state_search` with `mode: "relevant"` (or the

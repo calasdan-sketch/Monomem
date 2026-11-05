@@ -678,12 +678,45 @@ export function createMcpServer(
           .describe(
             "Attach a `breakdown` to each result: the base relevance, access boost and staleness factors that produced its rank. Default false."
           ),
+        as_of: z
+          .string()
+          .optional()
+          .describe(
+            "Read-only time travel: search memory as it stood at this time (ISO date/time or an age like 7d, 2h), rebuilt from note history. Keyword match on the old text only; notes whose old text is no longer kept are counted, not shown. Cannot be combined with mode, when, explain, written_by, not_written_by or include_superseded."
+          ),
         ...WRITER_FILTER_SHAPE,
         ...SUPERSEDED_SHAPE,
       },
     },
-    async ({ query, namespace, limit, mode, when, explain, written_by, not_written_by, include_distrusted, include_superseded }) => {
+    async ({ query, namespace, limit, mode, when, explain, as_of, written_by, not_written_by, include_distrusted, include_superseded }) => {
       try {
+        if (as_of !== undefined) {
+          if (mode !== undefined || when !== undefined || explain !== undefined || written_by || not_written_by || include_superseded !== undefined) {
+            return errorResult("as_of cannot be combined with mode, when, explain, written_by, not_written_by or include_superseded");
+          }
+          const denied = denyIfUnder("read");
+          if (denied) return errorResult(denied);
+          if (limit !== undefined && limit < 1) return errorResult("limit must be an integer >= 1");
+          const { parseAsOf, asOfView, asOfSearch } = await import("./asof.js");
+          let at: Date;
+          try {
+            at = parseAsOf(as_of);
+          } catch (e) {
+            return errorResult((e as Error).message);
+          }
+          // Same namespace gating as the live search: the hint is untrusted when namespaces are enforced.
+          const hint = nsActive ? trustedHint(namespace) : namespace;
+          const spaces = nsActive ? (hint ? [hint] : readable()) : hint ? [hint] : undefined;
+          const view = asOfView(store, at, { ...(spaces ? { namespaces: spaces } : {}), ...(include_distrusted === true ? { includeDistrusted: true } : {}) });
+          const hits = asOfSearch(view, query, clampInt(limit, 20, 1, 200));
+          return untrustedResult({
+            as_of: at.toISOString(),
+            note: "Reconstructed from note history; hard-deleted notes cannot be shown.",
+            not_kept: view.notKept,
+            results: hits.map((h) => ({ ...withWhen(h.note), text_kept: h.kept })),
+            searchedNamespaces: spaces ?? [],
+          });
+        }
         if (mode === "relevant") {
           if (when !== undefined || explain !== undefined || include_superseded !== undefined) {
             return errorResult("when, explain and include_superseded do not apply to mode 'relevant'");
