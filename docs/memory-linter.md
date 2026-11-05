@@ -175,7 +175,8 @@ A held write goes into the same queue with the reason
 (next to any linter findings), and is approved or rejected like any other.
 Approval keeps the real writer. What is held: creates, and updates that change
 the title, body or source, add tags, or move a note into or out of the
-namespace. Patches that only set `confidence` or `forget_after` are not.
+namespace. Patches that only set `confidence` are not. Setting `forget_after` (other than `0`, keep forever)
+is a delayed forget, so it is refused like forgetting (below).
 
 Who is held: everything except the local `monomem` CLI (writer marker `cli`).
 That includes MCP over stdio and HTTP, every REST call (an admin token
@@ -188,8 +189,10 @@ so they are not held either. Secrets are still blocked before anything is held.
 Forgetting (archiving), restoring and replacing (supersede) a note change what agents see but cannot
 wait in the queue, so in an approve-first namespace they are refused for everyone except the local
 `monomem` CLI: `state_delete`, `memory_supersede_preview` and `memory_supersede_confirm` return an
-error naming the namespace, and so do the REST archive and restore routes. The operator does them
-with `monomem archive`, `monomem restore` and so on.
+error naming the namespace, and so do the REST archive and restore routes, undoing a replacement
+(`memory_supersede_undo`) and setting a `forget_after` date. The operator does them with `monomem archive`,
+`monomem restore` and so on.
+The REST hard delete (`DELETE /notes/:id`) is refused there too. "Only the CLI" means any process run as `monomem`. An agent with a shell tool can run that CLI itself, so this protects against MCP and REST agents, not against agents that can run commands (see SECURITY.md).
 
 Responses:
 

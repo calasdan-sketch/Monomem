@@ -1650,7 +1650,7 @@ export class Store {
 
   /**
    * Before the first upgrade of a non-empty file (any older version -> the current one), keep one
-   * copy of the pre-upgrade database next to it: `<db>.pre-v17-backup`. It is a
+   * copy of the pre-upgrade database next to it: `<db>.pre-v18-backup` (named after the schema it upgrades to). It is a
    * consistent snapshot (VACUUM INTO) still at the OLD schema version, so an
    * older monomem can open it (rollback = stop everything, put this file
    * back as the database, delete the -wal and -shm files beside it, install the older version). Never overwrites an
@@ -3220,7 +3220,11 @@ export class Store {
     const findings = lintFor(changed, opts.lint ?? "full");
     const linted = applyLintPolicy(findings, opts);
     // Approve-first: an agent's content change (what the linter looks at) or a move, into or out of such a namespace, is held.
-    // Metadata-only patches (confidence, forget_after, re-sent unchanged fields) are not.
+    // Metadata-only patches (confidence, re-sent unchanged fields) are not. Setting forget_after is a delayed forget, and
+    // forgetting there is the operator's alone, so an agent is refused (0 = keep forever, harmless, stays allowed).
+    if (patch.forget_after !== undefined && patch.forget_after !== 0) {
+      refuseAgentInApproveFirst(this, existing.namespace, "setting a forget date on a note");
+    }
     const movedTo = patch.namespace?.trim();
     if (
       !isOperatorWrite(opts.lint ?? "full") &&
@@ -3432,6 +3436,11 @@ export class Store {
   }
 
   delete(id: number): boolean {
+    // Same guards as archive(): a paused writer and an agent in an approve-first namespace cannot hard-delete either.
+    // Consolidation deletes through deleteIfRev and is not affected.
+    const ns = (this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined)?.namespace;
+    this.refusePaused();
+    if (ns !== undefined) refuseAgentInApproveFirst(this, ns, "deleting a note");
     const ok = this.deleteWhere(id, null);
     if (ok) this.reviveAfterReplacementDeleted(id);
     return ok;
@@ -3980,6 +3989,8 @@ export class Store {
   /** Bring a retired note back (the replacement is NOT touched). Safe: it only restores, and it is logged. */
   supersedeUndo(id: number, actor: string): NoteRecord | null {
     this.refuseAgentOnPinned(id, "bringing it back");
+    const nsRow = this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined;
+    if (nsRow) refuseAgentInApproveFirst(this, nsRow.namespace, "bringing back a replaced note");
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {

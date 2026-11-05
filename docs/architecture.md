@@ -200,7 +200,7 @@ rules, per namespace), `trust_attesters` (trusted export signers: key, pinned `s
 `confidence_by` / `superseded_by` / `superseded_at` / `superseded_by_writer` and tables `note_history` (earlier versions, bounded per note),
 `supersede_used` (single-use confirmation codes) and `supersede_log`; see [replacing-memories.md](./replacing-memories.md), v17
 `access_log` (the read access log) and `write_rate` (the flood guard's per-writer counter); see [access-log.md](./access-log.md), v18
-`notes.pinned` (human-only notes) and `note_history_dropped` (when versions left the history, per writer; no text, for rollback); see
-[replacing-memories.md](./replacing-memories.md#pinned-notes-human-only). Opening an
+`notes.pinned` (CLI-only notes) and `note_history_dropped` (when versions left the history, per writer; no text, for rollback); see
+[replacing-memories.md](./replacing-memories.md#pinned-notes-cli-only). Opening an
 older database first writes a verified `<db>.pre-v18-backup`. There is no downgrade path: once a 1.1.0 binary
 has opened a database, don't go back to 1.0.x.

@@ -1,5 +1,11 @@
 # Upgrading from 1.3.x
 
+> **Moving to monomem 1.2.0 from 1.1.x?** The first start migrates the database from schema v16 to **v18** (the read access log, flood-guard
+> counts, pinned notes and per-writer history for rollback). No note text is rewritten. A verified copy is made first at
+> `<database>.pre-v18-backup`, and the upgrade does not run if that copy cannot be made. An older monomem cannot open a v18 database. To go back:
+> stop everything, put that copy back as the database (delete the `-wal` and `-shm` files beside it), install the older version. The first start
+> also rebuilds the search index once for prefix search (about half a second per 50,000 notes). What is new: [CHANGELOG.md](../CHANGELOG.md).
+
 > **Moving to 1.6.0 from 1.4.x or 1.5.0?** The first start migrates the database from schema v14 to **v15** (confidence and replace columns,
 > and tables for history, one-time codes and the replace log). Nothing is rewritten: no note text is touched. A verified copy is made first at
 > `<database>.pre-v18-backup`, and the upgrade does not run if that copy cannot be made. To go back: stop everything, put that copy back as the

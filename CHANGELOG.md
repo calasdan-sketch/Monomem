@@ -21,15 +21,15 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source, add tags, or move a note into or out of the namespace. MCP (stdio and HTTP), every REST call (an admin token
   included: REST cannot tell an operator from an agent holding one), the runner and the capture hooks are held. No MCP
   tool changes the setting. Secrets are still refused outright. Forgetting, restoring and replacing notes there cannot
-  be queued, so they are refused for everyone but the CLI (state_delete, supersede preview/confirm, REST archive and
-  restore return an error naming the namespace). Details: [docs/memory-linter.md](./docs/memory-linter.md).
-- **Pinned notes (human-only).** `monomem pin <id>` / `monomem unpin <id>` (`monomem pin` lists them), or admin-only
+  be queued, so they are refused for everyone but the CLI (state_delete, supersede preview/confirm/undo, setting a
+  `forget_after` date, REST archive, restore and hard delete return an error naming the namespace). An agent with a shell tool can run that CLI itself, so this protects against MCP and REST agents, not against agents that can run commands (see SECURITY.md). Details: [docs/memory-linter.md](./docs/memory-linter.md).
+- **Pinned notes (CLI-only).** `monomem pin <id>` / `monomem unpin <id>` (`monomem pin` lists them), or admin-only
   `GET`/`PUT /pinned` over REST; no MCP tool pins. Agents still read a pinned note (reads show `pinned: true`), but only the
   local `monomem` CLI can edit, forget, restore, hard-delete, replace (as the replaced note, and by supersede undo), restore an
   older version of, purge the history of, or merge it. Every other caller gets an error naming the note: MCP, every REST call
   (an admin token included, as for approve-first; an admin token can unpin and then change it), the server's own jobs. The
   expiry sweep and decay never archive a pinned note. Not carried by export, import or sync. Details:
-  [docs/replacing-memories.md](./docs/replacing-memories.md#pinned-notes-human-only).
+  [docs/replacing-memories.md](./docs/replacing-memories.md#pinned-notes-cli-only).
 - **Roll back one writer.** `monomem rollback --writer <name> --since <ISO|30m|2h|7d> [--include-conflicts] [--yes]`, admin
   `POST /rollback/preview` + `POST /rollback/confirm`, and the operator-only MCP tool `memory_rollback` (off over stdio unless
   `MONOMEM_STDIO_ADMIN_TOOLS=1`). Notes the writer created since then are archived; notes whose title or body it changed get the
@@ -52,8 +52,9 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   REST) until `monomem resume <label>` or admin `POST /flood/resume`. A pause writes an audit entry and a stderr
   warning, survives a restart, and shows in `monomem flood`, `monomem access` and `GET /flood`. Counted: every
   create/update call that reaches the guard (stored, held or refused). Never counted or paused: the `monomem` CLI, the
-  server's own jobs, quarantine approval, consolidation, backup restores. Every local stdio app shares the label
-  `stdio`, so pausing it pauses all of them.
+  server's own jobs, quarantine approval, consolidation, backup restores. A labelled stdio app (`stdio:<app>`) has its
+  own count; unlabelled ones share `stdio`. The label is self-declared, so the guard stops runaway loops, not a
+  hostile app.
 - **`state_search` `mode: "relevant"`** does what `state_relevant` does: `query` is read as a conversational message,
   its keywords are extracted, and notes matching any of them come back with the keywords (default limit 5).
 - **Two warn-only linter categories.** `pii`: email addresses, phone numbers, IPv4/IPv6 and

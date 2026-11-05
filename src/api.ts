@@ -713,7 +713,13 @@ export function createApiServer(
           return;
         }
         if (nsCtx.active && !denyUnwritable(nsCtx, res, note)) return;
-        const archived = store.archive(id);
+        let archived;
+        try {
+          archived = store.archive(id); // pinned / approve-first / paused refusals: a clear 4xx, not a 500
+        } catch (e) {
+          sendError(res, e);
+          return;
+        }
         sendJson(res, 200, { archived: id, note: annotateStaleness(archived!) });
         return;
       }
@@ -744,7 +750,13 @@ export function createApiServer(
             return;
           }
         }
-        const restored = store.restore(id, ttl === undefined ? {} : { forget_after: ttl });
+        let restored;
+        try {
+          restored = store.restore(id, ttl === undefined ? {} : { forget_after: ttl });
+        } catch (e) {
+          sendError(res, e);
+          return;
+        }
         await maybeEmbed(store, restored!); // archive dropped the vector
         sendJson(res, 200, { restored: id, note: annotateStaleness(restored!) });
         return;

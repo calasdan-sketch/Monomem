@@ -14,6 +14,7 @@ import { Store, QuarantinedError } from "../src/store.js";
 import { createMcpServer, DEFAULT_TOOLS } from "../src/mcp-server-core.js";
 import { createApiServer } from "../src/api.js";
 import { setProcessWriter } from "../src/actor.js";
+import { supersedePreview } from "../src/supersede.js";
 
 async function connect(store: Store, conn = {}) {
   const server = createMcpServer(store, "admin", {}, conn);
@@ -106,6 +107,24 @@ describe("approve-first namespaces", () => {
     store.close();
   });
 
+  test("an agent cannot undo an operator's replacement or set a forget date there", () => {
+    const store = new Store(":memory:");
+    setProcessWriter("cli");
+    const bad = store.create({ namespace: "team", title: "deploy rule", body: "poisoned" });
+    const good = store.create({ namespace: "team", title: "deploy rule v2", body: "fridays only" });
+    store.supersedeCommit({ oldIds: [bad.id], oldRevs: [bad.rev], newId: good.id, actor: "cli", nonce: "t", expiresMs: Date.now() + 60_000 });
+    store.setApproveFirst("team", true);
+    setProcessWriter("stdio");
+    assert.throws(() => store.supersedeUndo(bad.id, "stdio"), /approve-first/);
+    assert.ok(store.read(bad.id)?.superseded_by, "still replaced");
+    assert.throws(() => store.update(good.id, { forget_after: 0.000001 }), /approve-first/);
+    assert.equal(store.sweepExpired(Date.now() + 86_400_000), 0, "nothing to sweep");
+    assert.doesNotThrow(() => store.update(good.id, { forget_after: 0 }), "keep-forever stays allowed");
+    setProcessWriter("cli");
+    assert.ok(store.supersedeUndo(bad.id, "cli"), "operator undo works");
+    store.close();
+  });
+
   test("approve stores it with the real writer; reject drops it", async () => {
     const store = new Store(":memory:");
     store.setApproveFirst("team", true);
@@ -194,6 +213,39 @@ describe("approve-first namespaces", () => {
       await new Promise<void>((r) => server.close(() => r()));
       store.close();
     }
+  });
+
+  test("REST archive, restore and hard delete there are refused with a 400, not a 500", async () => {
+    const store = new Store(":memory:");
+    setProcessWriter("cli");
+    const n = store.create({ namespace: "team", title: "deploy rule", body: "fridays only" });
+    store.setApproveFirst("team", true);
+    setProcessWriter("");
+    const server = createApiServer(store, "tok-admin-1234567890");
+    await new Promise<void>((r) => server.listen(0, r));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const H = { Authorization: "Bearer tok-admin-1234567890", "Content-Type": "application/json" };
+    try {
+      for (const [method, path] of [["POST", `/notes/${n.id}/archive`], ["POST", `/notes/${n.id}/restore`], ["DELETE", `/notes/${n.id}`]]) {
+        const res = await fetch(`${base}${path}`, { method, headers: H });
+        assert.equal(res.status, 400, `${method} ${path}`);
+        assert.match(((await res.json()) as any).error, /approve-first/);
+      }
+      assert.ok(store.read(n.id), "note still there");
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+      store.close();
+    }
+  });
+
+  test("the operator (CLI) can still replace notes there", () => {
+    const store = new Store(":memory:");
+    setProcessWriter("cli");
+    const old = store.create({ namespace: "team", title: "deploy rule", body: "fridays only" });
+    const nw = store.create({ namespace: "team", title: "deploy rule v2", body: "any day" });
+    store.setApproveFirst("team", true);
+    assert.doesNotThrow(() => supersedePreview(store, { scope: "admin", writer: "cli" }, { old_ids: [old.id], new_id: nw.id }));
+    store.close();
   });
 
   test("the CLI sets, lists and clears it", () => {

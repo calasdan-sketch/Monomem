@@ -90,10 +90,10 @@ Every edit that changes a note's title or body keeps the text it replaces (and t
 - Carried by `export` (turn off with `?history=0` / `--no-history`) and `import` (every entry is a **claim**: names in the file are kept as
   `claimed_writer`, never as a verified writer; size and content checks apply).
 
-## Pinned notes (human-only)
+## Pinned notes (CLI-only)
 
 `monomem pin <id>` pins a note; `monomem unpin <id>` lifts it; `monomem pin` lists them. Over REST: admin-only `GET /pinned` and
-`PUT /pinned { id, pinned }` (a namespace-pinned admin token reaches its own namespace only). No MCP tool pins or unpins.
+`PUT /pinned { id, pinned }` (a namespace-pinned admin token reaches its own namespace only). No MCP tool pins or unpins. An agent with a shell tool can run the CLI itself, so a pin protects against MCP and REST agents, not against agents that can run commands.
 
 Agents can still read a pinned note (reads show `pinned: true`, so an agent can tell why a change is refused). Only the local
 `monomem` CLI (writer `cli`) can change it. Everyone else gets an error naming the note: MCP over stdio or HTTP, every REST call
