@@ -120,7 +120,7 @@ function usage(): void {
       "            Import what Claude Code already remembers: CLAUDE.md files (user, this folder or --project) and auto memory",
       "            (~/.claude/projects/*/memory). Cut into separate notes at headings, tagged with their source file and project; running",
       "            it again adds only what is new. Anything that looks like a secret is skipped and never shown. Local only.",
-      "  import --from claude-mem|mem0|basic-memory [--path p] [--dry-run] [--yes] [--namespace ns]",
+      "  import --from claude-mem|mem0|basic-memory|mcp-memory [--path p] [--dry-run] [--yes] [--namespace ns]",
       "            Import another memory tool's notes: claude-mem's database (~/.claude-mem/claude-mem.db, opened read only;",
       "            observations and session summaries keep their type, files, project and dates), a mem0 JSON export (--path),",
       "            or a basic-memory folder (~/basic-memory). Same rules as --claude: secrets skipped, re-runs add only what is new.",

@@ -49,8 +49,8 @@ back, runs `monomem doctor` and tells you how to check it inside Claude Code (ty
 are. Step by step, with troubleshooting: [docs/live-claude-code.md](./docs/live-claude-code.md).
 
 Already have notes in Claude Code? `monomem import --claude --dry-run` shows what could be brought in from your `CLAUDE.md` files and
-Claude Code's auto memory (secrets are skipped, nothing leaves your computer). Coming from claude-mem, mem0 or basic-memory?
-`monomem import --from claude-mem --dry-run` (or `mem0 --path export.json`, `basic-memory`); see [docs/switching.md](./docs/switching.md)
+Claude Code's auto memory (secrets are skipped, nothing leaves your computer). Coming from claude-mem, mem0, basic-memory or the official MCP memory server?
+`monomem import --from claude-mem --dry-run` (or `mem0 --path export.json`, `basic-memory`, `mcp-memory`); see [docs/switching.md](./docs/switching.md)
 for the import and a clean uninstall of the old tool.
 
 The manual way, if you prefer:
@@ -365,7 +365,7 @@ REST mirrors them (`/notes`, `/search`, `/relevant`, `/changes`, `/tasks`, `/han
 monomem start | mcp | doctor | init
 monomem setup [--dry-run] [--yes] [--only claude-code,claude-desktop,cursor,codex,gemini,muse,vscode,zed] [--hook] [--undo]   # connect your apps; safe, backed up, undoable
 monomem import --claude [--dry-run] [--update] [--project <folder>]   # bring in CLAUDE.md files and Claude Code auto memory
-monomem import --from claude-mem|mem0|basic-memory [--path p] [--dry-run]   # switch from another memory tool (docs/switching.md)
+monomem import --from claude-mem|mem0|basic-memory|mcp-memory [--path p] [--dry-run]   # switch from another memory tool (docs/switching.md)
 monomem sync --git ~/my-private-memory-repo [--encrypt]   # keep your computers in step through YOUR private git repository
 monomem changes --since last --consumer laptop
 monomem runner-status                           # is each PC's runner listening? commands waiting?
@@ -447,13 +447,17 @@ It has five suites, as plain JSON scenario files you can extend in [`bench/scena
 | E  Memory poisoning | 18 | injected or malicious memories never reach an agent as trusted content: prompt-injection (plain, forged tags, zero-width-obfuscated, a booking-policy override) is quarantined; a sleeper trigger or curl-pipe-to-shell note is stored with a warning; a reworded override that passes the gate leaves all four booking answers once its writer is distrusted; a distrusted/low-trust writer cannot outrank or silently overwrite a trusted fact; secrets are redacted (capture) or blocked (write); a forged writer/namespace is stamped with the real one; an unsigned import cannot pose as verified; a captured web fetch is not trusted memory; SessionStart injection carries the untrusted-data banner and leaves distrusted notes out; mass near-duplicate flooding cannot bury the answer | `poison-reach-count` (must be 0) |
 
 **Retrieval quality.** `monomem bench --longmemeval` and `--locomo` score retrieval on the public datasets, with no model
-and no judge (does the right conversation come back?). On one Windows PC, 2026-10-31:
+and no judge (does the right conversation come back?). On one Windows PC, 2026-11-04, keyword search (the default, no model):
 
-| Dataset | Search | Recall@5 | Recall@10 | Search time (p50) |
-|---|---|---|---|---|
-| LongMemEval-S, 470 questions | keyword (default) | 95.1 % | 97.2 % | 2.7 ms |
-| LongMemEval-S, 470 questions | hybrid (local embeddings) | 96.8 % | 98.5 % | 21 ms |
-| LoCoMo-10, 1,982 questions, by session | keyword (default) | 89.1 % | 95.0 % | 1.3 ms |
+| Dataset | Recall@5 | Recall@10 | Search time (p50) |
+|---|---|---|---|
+| LongMemEval-S, 470 of 500 questions (the 30 abstention questions have no right answer to find) | 97.0 % | 98.3 % | 2.9 ms |
+| LoCoMo-10, 1,982 questions, by session | 90.2 % | 95.6 % | 1.1 ms |
+| LoCoMo-10, 1,982 questions, by turn (the hard one: our weakest number) | 58.2 % | 65.8 % | 1.5 ms |
+
+Optional hybrid search (keywords plus a local embedding model, `nomic-embed-text` via Ollama) does better still: LoCoMo-10
+by session 91.3 % / 96.2 %, by turn 65.7 % / 74.8 %, LongMemEval-S 98.1 % / 99.1 % (recall@5 / @10, full runs,
+18 to 39 ms per search, measured just before the date-hint change).
 
 These are retrieval numbers, not the end-to-end QA accuracy memory vendors usually publish, so they are not comparable with
 those. Every number, the per-type breakdown, where hybrid is worse, and the caveats: [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo).
@@ -524,7 +528,7 @@ remove it: [docs/footprint.md](./docs/footprint.md).
 | [docs/token-namespaces.md](./docs/token-namespaces.md) | per-token namespace permissions — one shared bridge, isolated agents |
 | [docs/replacing-memories.md](./docs/replacing-memories.md) | replacing a note in two steps, undo, version history and restore, confidence, the trust guard |
 | [docs/BENCHMARK.md](./docs/BENCHMARK.md) | `monomem bench`: stale memory, contradiction recovery, permission isolation, provenance retention; scenario format; adapting it to another memory system |
-| [docs/footprint.md](./docs/footprint.md) | every file Monomem writes, where and when, how to remove it; `uninstall`; retry limits |
+| [docs/footprint.md](./docs/footprint.md) | every file Monomem writes, where and when, how to remove it; `uninstall`; retry limits; every outbound call (none by default) and the token cost of memory |
 | [docs/architecture.md](./docs/architecture.md) | modules, tools, REST API, schema |
 | [SKILL.md](./SKILL.md) | when and how an agent should use the memory |
 | [CHANGELOG.md](./CHANGELOG.md) | release notes |

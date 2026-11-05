@@ -1,11 +1,11 @@
-// `monomem import --from claude-mem|mem0|basic-memory`
+// `monomem import --from claude-mem|mem0|basic-memory|mcp-memory`
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { readBasicMemory, readClaudeMem, readMem0, runForeignImport, type ForeignImportOptions } from "../src/foreign-import.js";
+import { findMcpMemoryFiles, readBasicMemory, readClaudeMem, readMcpMemory, readMem0, runForeignImport, type ForeignImportOptions } from "../src/foreign-import.js";
 import type { SetupIO } from "../src/setup.js";
 import { Store } from "../src/store.js";
 
@@ -193,5 +193,66 @@ describe("import --from basic-memory", () => {
     const again = io();
     await runForeignImport(e, again, o(db, { from: "basic-memory", path: dir }));
     assert.match(again.all(), /0 new, 2 already imported/);
+  });
+});
+
+describe("import --from mcp-memory (official MCP memory server)", () => {
+  // The exact line shapes saveGraph() in @modelcontextprotocol/server-memory 2.0.1 writes, plus one damaged line it keeps.
+  const graph = [
+    JSON.stringify({ type: "entity", name: "Deploy pipeline", entityType: "project", observations: ["Deploys to ca-central-1", "Runs on Fridays"] }),
+    JSON.stringify({ type: "entity", name: "Dana", entityType: "person", observations: ["Owns the deploy pipeline"] }),
+    JSON.stringify({ type: "entity", name: "Leaky", entityType: "note", observations: [`token ${SECRET}`] }),
+    JSON.stringify({ type: "relation", from: "Dana", to: "Deploy pipeline", relationType: "owns" }),
+    "{not json",
+    "",
+  ].join("\n");
+
+  test("maps entities, observations and relations; skips damaged lines", () => {
+    const { root } = tmp();
+    const f = join(root, "memory.jsonl");
+    writeFileSync(f, graph);
+    const items = readMcpMemory(f);
+    assert.equal(items.length, 3);
+    const deploy = items.find((i) => i.title === "Deploy pipeline")!;
+    assert.match(deploy.body, /- Deploys to ca-central-1/);
+    assert.match(deploy.body, /Relations:\n- Dana owns \(this\)/);
+    assert.ok(deploy.tags.includes("entity-type:project"));
+    assert.equal(deploy.id, "entity:Deploy pipeline");
+    assert.match(items.find((i) => i.title === "Dana")!.body, /- owns Deploy pipeline/);
+  });
+
+  test("finds the file in the npx cache, imports, skips secrets and dedupes on re-run", async () => {
+    const { root, home, e, db } = tmp();
+    const dist = join(home, ".npm", "_npx", "abc123", "node_modules", "@modelcontextprotocol", "server-memory", "dist");
+    mkdirSync(dist, { recursive: true });
+    writeFileSync(join(dist, "memory.jsonl"), graph);
+    const env = { ...e, env: { LOCALAPPDATA: join(root, "none") } as NodeJS.ProcessEnv };
+    assert.deepEqual(findMcpMemoryFiles(env), [join(dist, "memory.jsonl")]);
+    const out = io();
+    assert.equal(await runForeignImport(env, out, o(db, { from: "mcp-memory" })), 0, out.all());
+    const s = new Store(db);
+    try {
+      const notes = s.list({ withTags: ["imported:mcp-memory"], limit: 50 }).notes;
+      assert.deepEqual(notes.map((n) => n.title).sort(), ["Dana", "Deploy pipeline"]);
+      assert.ok(notes.every((n) => n.written_by === "import:mcp-memory"));
+      assert.ok(!JSON.stringify(notes).includes(SECRET));
+    } finally {
+      s.close();
+    }
+    const again = io();
+    assert.equal(await runForeignImport(env, again, o(db, { from: "mcp-memory" })), 0);
+    assert.match(again.all(), /Nothing to import/);
+  });
+
+  test("an old { entities, relations } JSON file also reads; a non-memory file is refused", async () => {
+    const { root, e, db } = tmp();
+    const old = join(root, "memory.json");
+    writeFileSync(old, JSON.stringify({ entities: [{ name: "A", entityType: "t", observations: ["x"] }], relations: [] }));
+    assert.equal(readMcpMemory(old).length, 1);
+    const bad = join(root, "other.jsonl");
+    writeFileSync(bad, '{"hello":1}\n');
+    const out = io();
+    assert.equal(await runForeignImport(e, out, o(db, { from: "mcp-memory", path: bad })), 1);
+    assert.match(out.all(), /not an MCP memory file/);
   });
 });

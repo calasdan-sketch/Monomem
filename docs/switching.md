@@ -1,4 +1,4 @@
-# Switching to Monomem from claude-mem, mem0 or basic-memory
+# Switching to Monomem from claude-mem, mem0, basic-memory or the official MCP memory server
 
 `monomem import --from <tool>` copies another memory tool's notes into Monomem. It works the same way as
 `import --claude`:
@@ -8,7 +8,7 @@
 - Anything that looks like a password or token is skipped. It is counted, but it is never shown or stored.
 - Every note goes through the memory linter. Text that reads like an instruction to an AI is held in `monomem quarantine` for you to approve or reject.
 - Each note keeps the other tool's id in its `source` field (`import:claude-mem:obs:42`, `import:mem0:<id>`,
-  `import:basic-memory:<permalink>`). If you run the import again, it adds only what is new.
+  `import:basic-memory:<permalink>`, `import:mcp-memory:entity:<name>`). If you run the import again, it adds only what is new.
 - Notes are written by `import:<tool>` and tagged `imported:<tool>`. `--namespace ns` puts them in a namespace of your choice.
 
 ```sh
@@ -93,3 +93,27 @@ starting with `.` and symbolic links are skipped.
 To remove basic-memory, take its MCP server out of your client's configuration (for example `claude mcp remove basic-memory`)
 and uninstall it (`uv tool uninstall basic-memory`). Your Markdown files are yours to keep. basic-memory's index lives in
 `~/.basic-memory` and can be deleted.
+
+## From the official MCP memory server
+
+The official memory server (`@modelcontextprotocol/server-memory`) keeps a knowledge graph in one `memory.jsonl` file. Unless
+`MEMORY_FILE_PATH` is set, that file sits **inside the npx download cache**, next to the server's code, where it is easy to lose:
+cleaning or refreshing the npx cache deletes it. So the import looks there for you:
+
+```sh
+monomem import --from mcp-memory --dry-run                          # uses MEMORY_FILE_PATH, or finds the file in the npx cache
+monomem import --from mcp-memory --path ~/memory.jsonl --dry-run    # or name the file
+```
+
+If it finds more than one file (several cached server versions), it lists them and asks you to pick one with `--path`. Run the
+dry run first: it is also a quick way to check whether your graph is still there.
+
+Each entity becomes one note: the entity name is the title, its observations are a list in the body, and its relations are listed
+underneath ("owns Deploy pipeline", "Dana owns (this)"). Its `entityType` becomes an `entity-type:` tag. The graph is written by
+AI agents through MCP tools, so the notes also carry the model-written label. Damaged lines in the file are skipped. The entity
+name is the stable id, so running the import again adds only new entities; observations added later to an entity that was
+already imported are not merged in.
+
+To remove the old server, take it out of your client's MCP configuration (for example `claude mcp remove memory`). Keep the
+`memory.jsonl` file until you have checked the imported notes.
+

@@ -83,7 +83,8 @@ describe("REST", () => {
     const nw = await mk(TOK.write, "bravo lock now", "l2");
     const p = await call(TOK.write, "POST", "/supersede/preview", { old_ids: [old.id], new_id: nw.id });
     assert.equal((await call(TOK.write2, "POST", "/supersede/confirm", { token: p.json.token })).status, 400);
-    assert.equal((await call(TOK.write, "POST", "/supersede/confirm", { token: p.json.token.slice(0, -2) + "zz" })).status, 400);
+    const damaged = p.json.token.slice(0, -2) + (p.json.token.endsWith("zz") ? "yy" : "zz"); // always differs from the real code
+    assert.equal((await call(TOK.write, "POST", "/supersede/confirm", { token: damaged })).status, 400);
     assert.equal((await call(TOK.write, "POST", "/supersede/confirm", { token: p.json.token })).status, 200);
     assert.equal((await call(TOK.write, "POST", "/supersede/confirm", { token: p.json.token })).status, 410);
   });

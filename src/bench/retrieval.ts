@@ -37,6 +37,8 @@ interface Question {
   type: string;
   query: string;
   gold: Set<string>;
+  /** When the question is asked (relative dates in it resolve against this). */
+  asOf?: string;
 }
 interface Haystack {
   docs: Doc[];
@@ -82,7 +84,8 @@ export function longMemEvalHaystacks(data: unknown, g: Granularity): Haystack[] 
       if (g === "session") docs.push({ unit: sid, title: sid, body: turns.map(turnText).join("\n"), date });
       else turns.forEach((t, j) => docs.push({ unit: sid, title: `${sid}#${j}`, body: turnText(t), date }));
     });
-    out.push({ docs, questions: [{ id, type: str(q.question_type) || "unknown", query: str(q.question), gold }] });
+    const asOf = lmeDate(str(q.question_date));
+    out.push({ docs, questions: [{ id, type: str(q.question_type) || "unknown", query: str(q.question), gold, asOf }] });
   }
   return out;
 }
@@ -108,6 +111,8 @@ export function locomoHaystacks(data: unknown, g: Granularity): Haystack[] {
       else for (const l of lines) if (l.dia) docs.push({ unit: l.dia, title: l.dia, body: l.text, date });
     }
     const sid = str(sample.sample_id) || `conv${out.length}`;
+    // Questions are asked after the conversation: "now" is its last session date.
+    const asOf = docs.reduce<string | undefined>((a, d) => (d.date && (!a || d.date > a) ? d.date : a), undefined);
     const questions: Question[] = [];
     arr(sample.qa).forEach((raw2, i) => {
       const qa = rec(raw2);
@@ -115,7 +120,7 @@ export function locomoHaystacks(data: unknown, g: Granularity): Haystack[] {
       const ev = arr(qa.evidence).flatMap((e) => str(e).split(/[;,\s]+/)).filter((e) => /^D\d+:\d+$/.test(e));
       const gold = new Set(g === "session" ? ev.map((e) => e.split(":")[0]) : ev);
       if (gold.size === 0 || !str(qa.question)) return;
-      questions.push({ id: `${sid}#${i}`, type: `category ${String(qa.category ?? "?")}`, query: str(qa.question), gold });
+      questions.push({ id: `${sid}#${i}`, type: `category ${String(qa.category ?? "?")}`, query: str(qa.question), gold, asOf });
     });
     if (questions.length) out.push({ docs, questions });
   }
@@ -232,16 +237,17 @@ export async function runRetrieval(o: RetrievalOptions): Promise<RetrievalReport
       for (const q of h.questions) {
         nq++;
         let t = performance.now();
-        const hits = await runSearch(store, q.query, { mode: "keyword", limit: TOP });
+        const asOf = q.asOf ? new Date(q.asOf) : undefined;
+        const hits = await runSearch(store, q.query, { mode: "keyword", limit: TOP, asOf });
         kwLat.push(performance.now() - t);
         kw.push({ type: q.type, score: scoreQuestion(units(hits.map((n) => n.id)), q.gold) });
         t = performance.now();
-        const relHits = (await runRelevantSearch(store, q.query, { limit: TOP })).results;
+        const relHits = (await runRelevantSearch(store, q.query, { limit: TOP, asOf })).results;
         relLat.push(performance.now() - t);
         rel.push({ type: q.type, score: scoreQuestion(units(relHits.map((n) => n.id)), q.gold) });
         if (useHybrid) {
           t = performance.now();
-          const res = await runSearch(store, q.query, { mode: "hybrid", limit: TOP });
+          const res = await runSearch(store, q.query, { mode: "hybrid", limit: TOP, asOf });
           hyLat.push(performance.now() - t);
           hy.push({ type: q.type, score: scoreQuestion(units(res.map((n) => n.id)), q.gold) });
         }
@@ -286,10 +292,10 @@ export function renderRetrieval(r: RetrievalReport): string {
       lines.push(`${k.padEnd(28)}${String(x.n).padStart(5)} ${pct(x.r5)} ${pct(x.r10)}  ${pct(x.rAll10)}  ${pct(x.ndcg10)} ${pct(x.mrr)}`);
     }
   };
-  table("keyword (runSearch mode=keyword / state_search: BM25, all-terms first, any-keyword fallback)", r.keyword);
-  table("relevant (runRelevantSearch / state_relevant: stop-words dropped, any keyword matches, RRF)", r.relevant);
+  table("keyword (runSearch mode=keyword / state_search: BM25, all-terms first, then any-keyword BM25 x keyword coverage)", r.keyword);
+  table("relevant (runRelevantSearch / state_relevant: stop-words dropped, any keyword matches, BM25 x keyword coverage)", r.relevant);
   if ("skipped" in r.hybrid) lines.push("", `hybrid: skipped, ${r.hybrid.skipped}`);
-  else table("hybrid (runSearch mode=hybrid, BM25 + embeddings RRF)", r.hybrid);
+  else table("hybrid (runSearch mode=hybrid, BM25 + embeddings, 0.5/0.5 score blend)", r.hybrid);
   return lines.join("\n");
 }
 

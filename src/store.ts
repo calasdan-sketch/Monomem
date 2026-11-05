@@ -556,6 +556,9 @@ export interface QuarantineEntry {
 /** How long change-log rows (incl. deletes) are kept for the change feed. */
 export const CHANGE_LOG_RETENTION_DAYS = 90;
 
+/** FTS5 prefix index on 1-character prefixes (see Store.ensureFtsPrefixIndex). */
+const FTS_PREFIX_OPT = "prefix='1'";
+
 /** Current schema version (PRAGMA user_version). See Store.migrate. */
 export const SCHEMA_VERSION = 18;
 
@@ -859,14 +862,18 @@ function parseTags(raw: string): string[] {
   return raw.split(",").map((t) => t.trim()).filter(Boolean); // legacy rows
 }
 
-/** Build an FTS5 MATCH expression: AND of prefix-matched, quote-escaped tokens. */
-function buildMatchQuery(q: string): string {
+/**
+ * Build an FTS5 MATCH expression of prefix-matched, quote-escaped tokens: AND by
+ * default, OR when `any` (bm25 then weighs each matched term by its rarity, so a
+ * note hitting the rare words outranks one hitting only common ones).
+ */
+function buildMatchQuery(q: string, any = false): string {
   const tokens = q
     .trim()
     .split(/\s+/)
     .filter((t) => /[\p{L}\p{N}]/u.test(t)) // keep only tokens with a letter/number
     .map((t) => `"${t.replace(/"/g, '""')}"*`);
-  return tokens.join(" AND "); // "" when nothing usable; caller returns []
+  return tokens.join(any ? " OR " : " AND "); // "" when nothing usable; caller returns []
 }
 
 /**
@@ -1446,6 +1453,7 @@ export class Store {
       this.installActorStamp();
       this.serverIdValue = this.storeId();
       this.upgradeV1Envelopes();
+      this.ensureFtsPrefixIndex();
       this.enableFtsSecureDelete();
     } catch (e) {
       // A constructor that throws never hands the caller a Store to close();
@@ -1923,7 +1931,7 @@ export class Store {
         CREATE INDEX IF NOT EXISTS idx_notes_ns_created ON notes(namespace, created_at);
         CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
           title, body, tags,
-          content='notes', content_rowid='id'
+          content='notes', content_rowid='id', ${FTS_PREFIX_OPT}
         );
         CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
           INSERT INTO notes_fts(rowid, title, body, tags)
@@ -4018,6 +4026,26 @@ export class Store {
     return new Set(rows.map((r) => r.neighbor_id));
   }
 
+  /**
+   * For captured rows (observations, summaries) among `ids`: the live rows written just before and just after each one in
+   * the same capture session (by created_at, then id). Ordinary notes have no session and are left out.
+   */
+  sessionNeighbours(ids: number[]): Map<number, number[]> {
+    const out = new Map<number, number[]>();
+    if (ids.length === 0) return out;
+    const rows = this.db
+      .prepare(
+        `WITH s AS (SELECT DISTINCT session_id FROM notes WHERE id IN (SELECT value FROM json_each(?)) AND session_id != ''),
+              o AS (SELECT id, LAG(id) OVER w AS prev, LEAD(id) OVER w AS next FROM notes
+                    WHERE session_id IN (SELECT session_id FROM s) AND archived_at IS NULL
+                    WINDOW w AS (PARTITION BY session_id ORDER BY created_at, id))
+         SELECT id, prev, next FROM o WHERE id IN (SELECT value FROM json_each(?))`
+      )
+      .all(JSON.stringify(ids), JSON.stringify(ids)) as Array<{ id: number; prev: number | null; next: number | null }>;
+    for (const r of rows) out.set(r.id, [r.prev, r.next].filter((x): x is number => x !== null));
+    return out;
+  }
+
   /** How many other notes are close neighbours of this one in the similarity graph (a rough "what points at it"). */
   neighbourCount(id: number): number {
     return Number((this.db.prepare("SELECT COUNT(*) AS c FROM note_edges WHERE note_id = ?").get(id) as { c: number }).c);
@@ -4187,14 +4215,39 @@ export class Store {
   }
 
   /**
-   * Remove leftover plaintext after `encrypt enable`: the FTS index still
-   * holds the old body words in its segments (an external-content 'delete'
-   * only writes tombstones), and freed pages / the WAL hold old row images.
-   * Rebuilds the FTS index from the (now body-less) rows, truncates the WAL
-   * and, unless the database is large, VACUUMs. Best effort: a busy
-   * database skips a step instead of failing the enable. Returns whether the
-   * file was vacuumed.
+   * Add FTS5's 1-character prefix index to a search index made without it (older databases). A query word like "i" is
+   * matched as a prefix ("i"*), which without this index merges the posting list of every word starting with that letter;
+   * measured on LongMemEval-S it halves the all-words search step for about 8 % more index size. Older builds read and
+   * write the rebuilt index unchanged, so the schema version stays. One-time; a read-only or busy store skips it.
    */
+  private ensureFtsPrefixIndex(): void {
+    const hasPrefix = (): boolean => {
+      const row = this.db.prepare("SELECT sql FROM sqlite_master WHERE name = 'notes_fts'").get() as { sql: string } | undefined;
+      return !row || /prefix\s*=/i.test(row.sql);
+    };
+    if (hasPrefix()) return;
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      try {
+        if (!hasPrefix()) {
+          this.db.exec(`DROP TABLE notes_fts;
+            CREATE VIRTUAL TABLE notes_fts USING fts5(title, body, tags, content='notes', content_rowid='id', ${FTS_PREFIX_OPT});
+            INSERT INTO notes_fts(notes_fts) VALUES('rebuild');`);
+        }
+        this.db.exec("COMMIT");
+      } catch (e) {
+        this.db.exec("ROLLBACK");
+        throw e;
+      }
+    } catch (e) {
+      // Read-only or busy is expected (search still works without the prefix index until a writer opens the file);
+      // anything else (disk full, corruption) must be visible.
+      const msg = (e as Error).message ?? String(e);
+      if (!/readonly|read-only|busy|locked/i.test(msg)) process.stderr.write(`[monomem] could not add the search prefix index: ${msg}
+`);
+    }
+  }
+
   /**
    * An external-content FTS5 'delete' only writes a tombstone, so a deleted note's words stay in
    * the index segments (lower-cased) until a merge. FTS5 'secure-delete' removes them at delete
@@ -4211,6 +4264,15 @@ export class Store {
     }
   }
 
+  /**
+   * Remove leftover plaintext after `encrypt enable`: the FTS index still
+   * holds the old body words in its segments (an external-content 'delete'
+   * only writes tombstones), and freed pages / the WAL hold old row images.
+   * Rebuilds the FTS index from the (now body-less) rows, truncates the WAL
+   * and, unless the database is large, VACUUMs. Best effort: a busy
+   * database skips a step instead of failing the enable. Returns whether the
+   * file was vacuumed.
+   */
   scrubPlaintext(opts: { maxVacuumBytes?: number } = {}): { vacuumed: boolean } {
     const limit = opts.maxVacuumBytes ?? 512 * 1024 * 1024;
     this.db.exec("PRAGMA secure_delete = ON");
@@ -4519,11 +4581,11 @@ export class Store {
    */
   searchRanked(
     query: string,
-    opts: { namespace?: string; limit?: number } & RangeOpts = {}
+    opts: { namespace?: string; limit?: number; anyTerm?: boolean } & RangeOpts = {}
   ): RankedHit[] {
     if (!query || !query.trim()) return [];
     const limit = clampInt(opts.limit, 20, 1, 200);
-    const matchQuery = buildMatchQuery(query);
+    const matchQuery = buildMatchQuery(query, opts.anyTerm);
     if (!matchQuery) return []; // query was all punctuation/stopwords
     const range = this.rangeFor(opts, opts.namespace ? [opts.namespace] : undefined);
 

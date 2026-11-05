@@ -8,6 +8,12 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Import from the official MCP memory server.** `monomem import --from mcp-memory [--path memory.jsonl] [--dry-run]` turns
+  each entity of `@modelcontextprotocol/server-memory`'s knowledge graph into a note (observations as a list, relations
+  underneath). Without `--path` it uses `MEMORY_FILE_PATH` or finds the file in the npx cache, where that server keeps it by
+  default and where it is easily lost. Same rules as the other imports: local only, dry run first, secrets skipped, every
+  note through the memory linter. See docs/switching.md.
+
 - **Approve-first namespaces.** `monomem approve-first <namespace> on|off` (no arguments lists them), or admin-only
   `GET`/`PUT /approve-first` over REST. In such a namespace every write that is not from the local `monomem` CLI goes
   into the existing quarantine queue with the reason "namespace requires approval", and is approved or rejected there
@@ -77,6 +83,24 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Better search ranking when a question only partly matches.** `state_search` (after its all-words step) and
+  `state_relevant` now rank notes with one BM25 query over the question's keywords, so rare words count more than
+  common ones, scaled by how many of the keywords each note contains. Before, each keyword was searched separately and
+  every keyword counted the same. Measured back to back on the same PC: LongMemEval-S recall@5 95.1 % to 96.8 %,
+  LoCoMo-10 by turn 45.3 % to 57.4 %, LoCoMo-10 by session 89.2 % to 89.5 %; one number dropped (LoCoMo session
+  recall@10, 94.9 % to 94.8 %, one question). Full table: [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo).
+- **Hybrid search ranks better.** Hybrid mode (embeddings on) now blends the keyword and semantic scores 50/50 instead of
+  combining only their rank order (RRF), so it no longer drags a clear keyword match down. Old hybrid was worse than
+  keywords alone on LoCoMo whole sessions (recall@5 80 % vs 89 %); new hybrid is better than keywords on every dataset
+  measured: LoCoMo by session 91.3 %, by turn 65.7 %, LongMemEval-S 98.1 % recall@5 (see docs/BENCHMARK.md).
+- **Dates in a search help.** "What did we do in June?" or "last week" now ranks notes written in that window (or up to a
+  week after) higher, without hiding the others. An explicit time range still filters strictly.
+- **Faster keyword search.** The search index gains a 1-character prefix index (about 8 % more index space), so
+  short query words no longer scan every word that starts with the same letter. An existing database is re-indexed
+  once when it is first opened (this can take a moment on a large one); older versions still open it. Measured back to
+  back: keyword search p50 2.7 to 2.4 ms on LongMemEval-S, 1.8 to 1.2 ms on LoCoMo turns, 1.4 to 1.1 ms on LoCoMo
+  sessions. `state_relevant` is faster on LoCoMo but about 0.4 ms slower on LongMemEval-S's long sessions.
+
 - **Schema v18** (v17 and v18 land together in this release). The first open adds the `access_log` and `write_rate` tables
   (v17), the `notes.pinned` column and the `note_history_dropped` table (v18: per note and writer, when versions left the
   history; no text), after a verified copy of the database at `<database>.pre-v18-backup`. No note is rewritten. Older Monomem
@@ -89,6 +113,15 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `stdio` keeps hiding every local app after setup labels them.
 - A token label starting with `stdio:` is stored as `token:stdio:...`, so a token cannot pass as a
   local app.
+
+### Fixed
+
+- `memory_index` (and `GET /index`) with a whole question ("why did the login test fail?") returned nothing: it needed every
+  word in one row. It now uses the same keyword search as `state_search`, and a captured observation written just before or
+  after another hit in the same session ranks higher. Measured with LoCoMo-10 turns stored as captured observations, on
+  conversations not used to choose the weight: recall@5 0.2 % before, 61.7 % now.
+- `state_search` with only one meaningful word in a question ("where is the deploy?") returned nothing, because the
+  all-words search also needed "where" and "is". It now falls back to that one word.
 
 ### Benchmark
 

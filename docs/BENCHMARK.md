@@ -239,8 +239,10 @@ monomem bench --locomo      [--data file] [--limit N] [--mode keyword|hybrid] [-
 - **Three searches are scored.** `keyword` is `runSearch(mode: "keyword")`, the path behind `state_search` and
   `GET /search`: FTS5/BM25 with every word first, then (since 2.0.0) notes matching some of the words, always ranked
   below full matches. `relevant` is `runRelevantSearch` (the `state_relevant` tool and `POST /relevant`): stop words
-  dropped, any keyword qualifies, per-keyword BM25 rankings fused with RRF. `--mode hybrid` also scores
-  `runSearch(mode: "hybrid")` (BM25 + embeddings, RRF) when an embedding server answers; otherwise it is reported as skipped.
+  dropped, any keyword qualifies, one BM25 OR query scaled by the share of keywords each note contains (before 2026-11-04:
+  per-keyword BM25 rankings fused with RRF; the keyword fallback used the same). `--mode hybrid` also scores
+  `runSearch(mode: "hybrid")` (BM25 + embeddings; since 2026-11-04 a 0.5 / 0.5 blend of min-max-scaled scores, before
+  that RRF) when an embedding server answers; otherwise it is reported as skipped.
 - **Metrics.** `R@5`, `R@10`: any gold session (or turn) in the top k. `Rall@10`: every gold one in the top 10.
   `nDCG@10` with binary relevance. `MRR` over the top 50. Search latency p50/p95 per query; indexing time per
   haystack (single process, SQLite in a temp folder).
@@ -251,6 +253,129 @@ Machine: Windows 11 Home, RTX 5080 PC, Node v24.18.0, Monomem 2.0.0. Embeddings 
 through a local Ollama (`MONOMEM_EMBEDDINGS=on`, `MONOMEM_EMBED_URL=http://127.0.0.1:11499/v1/embeddings`).
 Commands exactly as above. Wall time with embeddings: LongMemEval session 15 min (embedding every session is the cost),
 LoCoMo a few minutes; keyword-only runs take seconds.
+
+**Search ranking change, 2026-11-04.** The any-keyword step (the fallback behind `state_search`, and all of
+`state_relevant`) used to run one FTS query per keyword and fuse the lists with RRF, so a common word ("weekend")
+counted as much as a rare one ("giraffe"). It now runs one BM25 `OR` query, where rare words weigh more, and scales
+each score by the share of the question's keywords the note contains. Old and new code were run back to back on the
+same PC (Node v24.18.0) with the same commands:
+
+| Dataset / search | R@5 | R@10 | Rall@10 | nDCG@10 | MRR | search p50 |
+|---|---|---|---|---|---|---|
+| LongMemEval-S session, keyword, before | 94.9–95.1 | 97.7 | 88.5 | 86.6 | 87.2 | 2.7 ms |
+| LongMemEval-S session, keyword, **now** | **96.8** | **98.1** | **90.0** | **89.5** | **90.7** | **2.4 ms** |
+| LongMemEval-S session, relevant, before | 95.1–95.3 | 97.9 | 88.7 | 86.7 | 87.2–87.3 | 1.5 ms |
+| LongMemEval-S session, relevant, **now** | **97.0** | **98.3** | **90.2** | **89.7** | **90.8** | 1.9 ms |
+| LoCoMo-10 turn, keyword, before | 45.3 | 51.8 | 45.7 | 38.0 | 37.2 | 1.8 ms |
+| LoCoMo-10 turn, keyword, **now** | **57.4** | **65.3** | **56.4** | **47.6** | **46.1** | **1.2 ms** |
+| LoCoMo-10 turn, relevant, before | 46.4 | 53.0 | 46.4 | 38.9 | 38.0 | 1.9 ms |
+| LoCoMo-10 turn, relevant, **now** | **57.6** | **65.4** | **56.6** | **47.7** | **46.2** | **1.3 ms** |
+| LoCoMo-10 session, keyword, before | 89.2 | 94.9 | 86.4 | 77.2 | 75.0 | 1.4 ms |
+| LoCoMo-10 session, keyword, **now** | **89.5** | 94.8 | **86.5** | **79.2** | **77.5** | **1.1 ms** |
+| LoCoMo-10 session, relevant, before | 89.3 | 94.9 | 86.5 | 77.2 | 74.9 | 1.0 ms |
+| LoCoMo-10 session, relevant, **now** | **89.6** | 94.8 | 86.5 | **79.4** | **77.8** | **0.8 ms** |
+
+Every quality number went up or stayed level except LoCoMo session R@10 (94.9 to 94.8, one question of 1,982).
+Search times are the mean p50 of two interleaved runs of each version (old, new, old, new). Two speed changes ship
+with the ranking change: the keyword-coverage check is plain `indexOf` scans, and the FTS index gains FTS5's
+1-character prefix index (`prefix='1'`, about 8 % more index size; a store made without it is rebuilt once on open, and
+older builds read it unchanged). Keyword search is now faster on all three runs; `state_relevant` is faster on LoCoMo
+and about 0.4 ms slower on LongMemEval's long sessions (it now reads its candidate notes for the coverage check). The
+old code scored LongMemEval-S keyword R@5 95.1 in one run and 94.9 in two others on the same day; ranking includes an
+age penalty measured against the current clock, so ties can move. Latency on this PC moves by a millisecond or more
+between runs with other programs open, so compare speeds only within one back-to-back run. With no embedding model,
+keyword search now equals the old hybrid row on LongMemEval-S R@5 (96.8) and beats it on LoCoMo turns (R@10 65.3
+vs 64.1). Hybrid itself was re-measured after its own change; see the next section.
+
+**Hybrid ranking change, 2026-11-04.** Hybrid used Reciprocal Rank Fusion with equal weights, which looks only at
+ranks: a confident keyword winner and a near-random semantic list counted the same, and on LoCoMo whole sessions hybrid
+was worse than keywords alone. It now scales each side's scores to 0..1 within the search and adds them 0.5 / 0.5
+(`blendHybrid` in `src/search-service.ts`; the idea is from Bruch et al. 2022, arXiv:2210.11934). Choosing the method
+and weight: fusion methods (RRF with keyword weights 1 to 4, score blends with keyword weight 0.3 to 0.9, and a
+keyword-confidence gate) were compared offline on cached `nomic-embed-text` vectors, tuning on every other question and
+checking on the rest. The 0.5 blend was best or within 0.5 points of best on the tuning half of all three runs:
+
+| Held-out half, R@5 / R@10 / nDCG@10 | keyword | RRF (old hybrid) | blend 0.5 (new hybrid) |
+|---|---|---|---|
+| LongMemEval-S session (235 questions) | 97.4 / 98.7 / 89.2 | 96.6 / 98.7 / 90.9 | **98.3** / 98.7 / **92.3** |
+| LoCoMo-10 session (991) | 90.8 / 95.5 / 80.5 | 87.0 / 95.2 / 74.1 | **91.8** / **96.4** / **80.9** |
+| LoCoMo-10 turn (991) | 57.9 / 65.7 / 47.5 | 59.4 / 68.6 / 47.1 | **66.4** / **75.5** / **53.0** |
+
+Full end-to-end runs of `--mode hybrid` (live embeddings through Ollama on the RTX 5080, all questions):
+
+| Dataset / search | R@5 | R@10 | Rall@10 | nDCG@10 | MRR | search p50 |
+|---|---|---|---|---|---|---|
+| LoCoMo-10 session, keyword | 89.5 | 94.8 | 86.5 | 79.2 | 77.5 | 1.4 ms |
+| LoCoMo-10 session, hybrid | **91.3** | **96.2** | **89.0** | **80.1** | **77.8** | 18 ms |
+| LoCoMo-10 turn, keyword | 57.6 | 65.1 | 56.3 | 47.6 | 46.1 | 1.7 ms |
+| LoCoMo-10 turn, hybrid | **65.7** | **74.8** | **64.6** | **52.7** | **50.0** | 31 ms |
+
+| LongMemEval-S session, keyword | 96.8 | 98.1 | 90.0 | 89.5 | 90.7 | 2.8 ms |
+| LongMemEval-S session, hybrid | **98.1** | **99.1** | **95.1** | **92.7** | **93.0** | 39 ms |
+
+On LongMemEval-S hybrid lifts preference questions most (R@5 86.7 to 93.3, nDCG@10 65.4 to 74.0) and multi-session
+Rall@10 (80.2 to 92.6). Hybrid search time is mostly the embedding call for the query. These hybrid runs predate the
+two keyword changes below (date hint, one-keyword questions), which add a little on top of the keyword side.
+
+**Date phrases and one-keyword questions, 2026-11-04 (later the same day).** (1) A date phrase inside the search
+("in June", "last week", "on May 3, 2023"; the existing `parseTimePhrase`) now softly boosts notes written in that
+window or up to 7 days after it (x2, `TIME_HINT_BOOST`); nothing is dropped, and an explicit time range still filters.
+The benchmark resolves the phrase against the question's own date (LongMemEval `question_date`; LoCoMo: the last session
+date). About 7 % of LoCoMo questions and 10 of LongMemEval-S's 127 temporal questions contain such a phrase; most
+LongMemEval-S temporal questions ask "how many days ago", where the date is the answer, so it barely moves there.
+(2) A question with one keyword after stop words ("where is the deploy?") returned nothing: the all-words search needs
+"where" and "is" too, and the any-keyword step only ran for two or more keywords. It now runs for one.
+
+| Keyword search | R@5 | R@10 | Rall@10 | nDCG@10 | MRR |
+|---|---|---|---|---|---|
+| LongMemEval-S, before / after | 96.8 / **97.0** | 98.1 / **98.3** | 90.0 / **90.2** | 89.5 / **89.8** | 90.7 / **91.0** |
+| LoCoMo-10 session, before / after | 89.5 / **90.2** | 94.8 / **95.6** | 86.5 / **87.5** | 79.2 / **80.3** | 77.5 / **78.6** |
+| LoCoMo-10 turn, before / after | 57.4 / **58.2** | 65.3 / **65.8** | 56.5 / **56.9** | 47.6 / **48.4** | 46.1 / **47.0** |
+
+The boost size and slack were swept (1.2 to 3 x, 0 to 30 days): every setting helped LoCoMo a little and none changed
+LongMemEval-S; 2 x / 7 days was best or tied.
+
+**Read these as tuned numbers.** The 2026-11-04 choices (keyword coverage weight, hybrid blend weight, date boost) were made
+by looking at these same two datasets, so the figures above are not clean held-out results. The "held-out half" table
+splits questions, and LoCoMo's halves share the same 10 conversations. A stricter check, choosing on LoCoMo conversations
+1-5 and testing on 6-10, gives the same choice: hybrid R@5 on conversations 6-10 is 65.3 (blend 0.5) vs 59.1 (old RRF) vs
+56.9 (keyword) by turn, and 90.8 vs 85.1 vs 89.0 by session. A dataset we have not looked at would be the real test; none
+has been run yet. Differences under about 1.5 points on LoCoMo turn R@5 are within noise.
+
+**`memory_index` and session neighbours, 2026-11-04.** `memory_index`, the search over captured observations, still used
+the all-words search, so a question found nothing. It now uses `keywordWithFallback` plus a session-neighbour boost: a
+captured row gains half the score of a hit written just before or after it in the same capture session
+(`SESSION_NEIGHBOUR_WEIGHT`, swept 0.1 to 1.0 offline; chosen on LoCoMo conversations 1-5). Measured through
+`memoryIndex()` itself, with every LoCoMo-10 turn stored as a captured observation in its session:
+
+| memory_index, LoCoMo-10 turns | conversations 1-5 R@5 / R@10 / nDCG@10 | conversations 6-10 (not used to choose) | p50 |
+|---|---|---|---|
+| before (all words) | 0.0 / 0.0 / 0.0 | 0.2 / 0.2 / 0.1 | 0.2 ms |
+| + any-keyword search | 59.7 / 66.3 / 48.7 | 56.9 / 65.2 / 47.0 | 1.0 ms |
+| + session neighbours | **65.1 / 70.8 / 51.2** | **61.7 / 68.4 / 49.6** | 1.6 ms |
+
+Offline, the same neighbour boost on top of hybrid gave 70.3 R@5 on conversations 6-10 (hybrid alone 65.3). It only applies
+to captured rows (observations, summaries): ordinary notes have no session, so `state_search` results are unchanged.
+Caveat: LoCoMo turns are a chat between two people; captured coding-session rows may benefit less or more, unmeasured.
+
+**Measured and not shipped: nomic-embed-text task prefixes** (`search_query:` / `search_document:`). Offline, same vectors:
+hybrid R@5 on LoCoMo turns 66.4 to 68.2 (held-out half), LoCoMo sessions 91.8 to 91.5, LongMemEval-S 98.3 to 98.3 with R@10
+98.7 to 98.3 and nDCG@10 92.3 to 91.8. Mixed results, and every existing user would have to re-embed, so not adopted. Known gap: "before today" reads as "today" (the parser has no
+before/after), so such a query boosts the wrong window; the boost reorders and never hides a note.
+The rows below headed 2026-10-31 are the old RRF hybrid.
+
+Per question type, LongMemEval-S, `relevant`, now:
+
+| Type | n | R@5 | R@10 | Rall@10 | nDCG@10 |
+|---|---|---|---|---|---|
+| knowledge-update | 72 | 100.0 | 100.0 | 98.6 | 98.4 |
+| multi-session | 121 | 98.3 | 98.3 | 80.2 | 87.2 |
+| single-session-assistant | 56 | 100.0 | 100.0 | 100.0 | 99.3 |
+| single-session-preference | 30 | 86.7 | 90.0 | 90.0 | 65.4 |
+| single-session-user | 64 | 96.9 | 100.0 | 100.0 | 96.4 |
+| temporal-reasoning | 127 | 95.3 | 97.6 | 85.8 | 85.3 |
+
+### Results before the ranking change, 2026-10-31
 
 **LongMemEval-S (cleaned), 470 questions, session granularity** (22,419 notes)
 
@@ -293,14 +418,14 @@ nDCG@10 87.5, MRR 88.6, search p50 1.7 ms.
 - **Natural-language questions to `state_search` used to fail.** Before 2.0.0 it needed every word ("what", "did",
   "I", ...) in one note and found the right session 12 % of the time on LongMemEval-S. The any-word fallback fixed it
   (95 %); full matches still rank first, so short exact queries behave as before.
-- **Hybrid is not always better.** It helps when notes are short (LoCoMo turns: R@10 52 to 64) and on LongMemEval-S
-  sessions (R@5 95 to 97), but on LoCoMo whole sessions it ranks worse than keywords alone (R@5 89 to 80): a long,
-  many-topic session embeds as one blurred vector, and RRF weights both lists equally. Weighting the two lists is open work.
-  Embeddings are off by default, so the default path is the keyword row.
+- **Hybrid (2026-10-31 rows) was not always better.** On LoCoMo whole sessions the old RRF hybrid ranked worse than
+  keywords alone (R@5 89 to 80). The 2026-11-04 score blend fixed that (91.3 vs 89.5, above); it is better than keyword
+  search on every dataset measured, at about 15 to 30 ms per search for the query embedding. Embeddings are off by
+  default, so the default path is the keyword row.
 - **LongMemEval-S is easy for retrieval.** Each haystack has about 50 sessions, most of them filler from
   unrelated chat datasets, so the evidence session is often the only one on its topic. High recall here does
   not mean high recall on a real single-topic memory. LoCoMo at turn level, where every turn is from the same
-  two people, is the harder test (52.5 % R@10).
+  two people, is the harder test (65.3 % R@10 now, 51.8 % before 2026-11-04).
 - **Published retrieval reference.** The LongMemEval paper (Wu et al., 2024, [arXiv:2410.10813](https://arxiv.org/abs/2410.10813),
   Appendix E.2, Table 9) reports flat BM25 with key = value at **session R@5 0.634 / R@10 0.710 (nDCG@10 0.540)**
   and **round (turn) R@5 0.472 / R@10 0.538**; Stella V5 1.5B (dense) reaches session R@5 0.720 / R@10 0.794.

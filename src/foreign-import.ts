@@ -1,4 +1,4 @@
-// `monomem import --from claude-mem|mem0|basic-memory`: bring another memory tool's notes into Monomem.
+// `monomem import --from claude-mem|mem0|basic-memory|mcp-memory`: bring another memory tool's notes into Monomem.
 //
 //   * claude-mem   (github.com/thedotmack/claude-mem): its SQLite database, ~/.claude-mem/claude-mem.db by default
 //                  ($CLAUDE_MEM_DATA_DIR/claude-mem.db when set). Opened READ-ONLY. `observations` become rows of kind
@@ -9,6 +9,11 @@
 //                  each with id, memory (or text), created_at, metadata (categories), user_id.
 //   * basic-memory (github.com/basicmachines-co/basic-memory): a folder of Markdown files with front matter (title, type,
 //                  permalink, tags) and Observations / Relations sections. One file = one note; the permalink is its id.
+//   * mcp-memory   the official MCP memory server (@modelcontextprotocol/server-memory): its memory.jsonl knowledge graph,
+//                  one JSON object per line, {"type":"entity","name","entityType","observations":[...]} or
+//                  {"type":"relation","from","to","relationType"}. One entity = one note (observations as a list, its
+//                  relations underneath); the entity name is its id. Its default file sits inside the npx cache (lost
+//                  when that cache is cleaned), so without MEMORY_FILE_PATH or --path the npx caches are searched.
 //
 // Same rules as `import --claude` (claude-import.ts): local only, a dry run first, anything that looks like a secret is
 // skipped and never shown, every write goes through Store.create (memory linter, quarantine), and the stable id of each item
@@ -25,7 +30,7 @@ import { lintContent } from "./lint.js";
 import { LIMITS } from "./security.js";
 import type { SetupEnv, SetupIO } from "./setup.js";
 
-export const FOREIGN_SOURCES = ["claude-mem", "mem0", "basic-memory"] as const;
+export const FOREIGN_SOURCES = ["claude-mem", "mem0", "basic-memory", "mcp-memory"] as const;
 export type ForeignSource = (typeof FOREIGN_SOURCES)[number];
 
 const MAX_JSON_BYTES = 256 * 1024 * 1024;
@@ -79,7 +84,33 @@ function jsonList(v: unknown): string[] {
 export function defaultPath(from: ForeignSource, e: Pick<SetupEnv, "home" | "env">): string {
   if (from === "claude-mem") return join(e.env.CLAUDE_MEM_DATA_DIR || join(e.home, ".claude-mem"), "claude-mem.db");
   if (from === "basic-memory") return join(e.home, "basic-memory");
+  if (from === "mcp-memory") {
+    if (e.env.MEMORY_FILE_PATH) return resolve(e.env.MEMORY_FILE_PATH.replace(/^~(?=$|[\\/])/, e.home));
+    const found = findMcpMemoryFiles(e);
+    return found.length === 1 ? found[0] : "";
+  }
   return "";
+}
+
+/** memory.jsonl (or the legacy memory.json) files of server-memory installs in the npx caches. */
+export function findMcpMemoryFiles(e: Pick<SetupEnv, "home" | "env">): string[] {
+  const roots = [join(e.env.LOCALAPPDATA || join(e.home, "AppData", "Local"), "npm-cache", "_npx"), join(e.home, ".npm", "_npx")];
+  const out: string[] = [];
+  for (const root of roots) {
+    let dirs: string[] = [];
+    try {
+      dirs = readdirSync(root);
+    } catch {
+      continue; // no npx cache here
+    }
+    for (const d of dirs.slice(0, 5000)) {
+      for (const f of ["memory.jsonl", "memory.json"]) {
+        const p = join(root, d, "node_modules", "@modelcontextprotocol", "server-memory", "dist", f);
+        if (existsSync(p) && statSync(p).size > 0) out.push(p);
+      }
+    }
+  }
+  return out;
 }
 
 export function readClaudeMem(path: string): Item[] {
@@ -215,6 +246,75 @@ export function readBasicMemory(root: string): Item[] {
   return items;
 }
 
+// ---- mcp-memory (official MCP memory server) -----------------------------------------------------------------------------
+
+const MAX_JSONL_LINES = 1_000_000;
+
+export function readMcpMemory(path: string): Item[] {
+  if (statSync(path).size > MAX_JSON_BYTES) throw new Error(`larger than ${MAX_JSON_BYTES / 1024 / 1024} MiB`);
+  const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
+  type Rec = Record<string, unknown>;
+  const entities: Rec[] = [];
+  const relations: Rec[] = [];
+  const take = (r: unknown): void => {
+    if (!r || typeof r !== "object") return;
+    const o = r as Rec;
+    if (o.type === "relation") relations.push(o);
+    else if (o.type === "entity") entities.push(o);
+  };
+  let whole: unknown = undefined;
+  try {
+    whole = JSON.parse(text); // an old export: { entities: [...], relations: [...] }
+  } catch {
+    /* JSONL: one object per line */
+  }
+  const w = whole as { entities?: unknown; relations?: unknown } | undefined;
+  if (w && typeof w === "object" && (Array.isArray(w.entities) || Array.isArray(w.relations))) {
+    for (const r of Array.isArray(w.entities) ? w.entities : []) take({ ...(r as Rec), type: "entity" });
+    for (const r of Array.isArray(w.relations) ? w.relations : []) take({ ...(r as Rec), type: "relation" });
+  } else {
+    const lines = text.split(/\r?\n/);
+    if (lines.length > MAX_JSONL_LINES) throw new Error(`more than ${MAX_JSONL_LINES} lines`);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        take(JSON.parse(line));
+      } catch {
+        /* a damaged line (the server keeps unreadable lines too): skip it */
+      }
+    }
+    if (!entities.length && !relations.length) throw new Error("this is not an MCP memory file (no entity or relation lines)");
+  }
+  const rels = new Map<string, string[]>();
+  for (const r of relations) {
+    const from = str(r.from).trim();
+    const to = str(r.to).trim();
+    const type = str(r.relationType).trim();
+    if (!from || !to || !type) continue;
+    rels.set(from, [...(rels.get(from) ?? []), `- ${type} ${to}`]);
+    rels.set(to, [...(rels.get(to) ?? []), `- ${from} ${type} (this)`]);
+  }
+  const items: Item[] = [];
+  for (const e of entities) {
+    const name = str(e.name).trim();
+    if (!name) continue;
+    const obs = jsonList(e.observations).map((o) => `- ${o.trim()}`);
+    const rl = rels.get(name) ?? [];
+    const body = [obs.join("\n"), rl.length ? `Relations:\n${rl.join("\n")}` : ""].filter(Boolean).join("\n\n");
+    if (!body) continue;
+    const type = str(e.entityType).trim();
+    items.push({
+      id: `entity:${name}`,
+      group: type || "entity",
+      title: name.slice(0, 200),
+      body,
+      // The graph is written by AI agents through MCP tools: label it like other model-written imports.
+      tags: [MODEL_WRITTEN_TAG, ...(type ? [`entity-type:${type}`] : [])],
+    });
+  }
+  return items;
+}
+
 // ---- the command ---------------------------------------------------------------------------------------------------------
 
 export interface ForeignImportOptions {
@@ -254,6 +354,15 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
   const { from } = opts;
   const path = opts.path ? resolve(e.cwd, opts.path) : defaultPath(from, e);
   if (!path) {
+    if (from === "mcp-memory") {
+      const found = findMcpMemoryFiles(e);
+      io.err(
+        found.length
+          ? `I found ${found.length} MCP memory files. Pick one with --path:\n${found.map((f) => `  ${f}`).join("\n")}`
+          : "I found no MCP memory file. Set MEMORY_FILE_PATH or point --path at your memory.jsonl."
+      );
+      return 1;
+    }
     io.err(`Name the mem0 export file: monomem import --from mem0 --path <export.json>`);
     return 1;
   }
@@ -264,7 +373,8 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
   io.out(`Reading ${from} data from ${path} (read only; nothing leaves this computer):`);
   let items: Item[];
   try {
-    items = from === "claude-mem" ? readClaudeMem(path) : from === "mem0" ? readMem0(path) : readBasicMemory(path);
+    items =
+      from === "claude-mem" ? readClaudeMem(path) : from === "mem0" ? readMem0(path) : from === "mcp-memory" ? readMcpMemory(path) : readBasicMemory(path);
   } catch (err) {
     io.err(`Could not read ${path}: ${(err as Error).message}`);
     return 1;
