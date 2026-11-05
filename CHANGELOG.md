@@ -8,6 +8,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`monomem approve-first --all on|off`** (admin `PUT /approve-first {all, on}`): every agent write in every
+  namespace, including ones created later, waits for approval. Turning it off needs a person at a terminal.
+- **`monomem facts --check [--namespace ns]`** exits 1 when any fact is disputed, for CI. `monomem facts` marks each
+  writer's current value and its older notes.
+
 - **`monomem facts [--namespace ns] [--json]`**: every fact key per namespace with its current value(s), who wrote them
   and since when; disputed keys are marked, and agreement shows as "N writers agree". `monomem fact remove <id> <key>`
   drops one fact from a note. A write whose title or body names a different value than one of its own facts gets a
@@ -140,6 +145,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log (`mcp.connect`) as a **claim** only; they are never used for `written_by` or any decision.
 
 ### Changed
+
+- Disputes are grouped per namespace (the same key in two projects is not a dispute); an unscoped session start names
+  the namespace. Synonym keys (`hosting`, `runs_on` for `deploy_target`) count as one setting in `conflicts`, `facts`,
+  the session start and the dashboard. `similar_keys` also catches plurals and one-letter slips.
+- The session start explains each writer's label once instead of on every line, and the `state_write` text shows a
+  `facts` example. The body/fact warning says the text "may" name another value.
+- README: a shorter first screen and a table of the check-and-explain commands with what each cannot catch.
+- The `--as-of` header says in plain words how far archive history reaches and skips a zero count.
 
 - **Dispute lines work in a default install** (no namespace setup needed). Each is a notice from Monomem with the
   quoted values, note numbers and writers, one value per writer, at most two lines plus "+N more"; notes marked
@@ -275,6 +288,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local app.
 
 ### Fixed
+
+- `monomem fact remove` on a pinned note now needs a person at a terminal, like every other change to a pinned note,
+  and it is recorded as a `cli` edit.
+- A store opened in memory no longer writes to the default audit log (set `MONOMEM_AUDIT_LOG` to keep one).
+- A correctly spelled `MONOMEM_LINT` value (`secrets=block` ...) no longer prints a false "did you mean" hint.
+- `fact:` tags with line breaks or control characters are refused. `monomem drill` restores its embeddings setting on
+  every error path.
 
 - MCP `state_search` with `as_of` is admin-only: a past view brings back earlier versions and forgotten notes, the
   same reason note history is admin-only. The conflict list is capped at 500 pairs, and a replaced note no longer counts
