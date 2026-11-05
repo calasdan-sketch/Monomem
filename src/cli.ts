@@ -2055,8 +2055,8 @@ async function approveFirstCmd(): Promise<void> {
   try {
     if (ns === undefined) {
       const list = store.approveFirstNamespaces();
-      console.log(list.length ? `Approve-first namespaces: ${list.join(", ")}` : "No namespace is approve-first.");
-      console.log(`All namespaces: ${store.approveFirstAll() ? "on" : "off"}`);
+      console.log(`All namespaces: ${store.approveFirstAll() ? "on (every namespace, including new ones)" : "off"}`);
+      console.log(list.length ? `Approve-first for these namespaces: ${list.join(", ")}` : "Approve-first for individual namespaces: none.");
       return;
     }
     if (ns === "--all") {

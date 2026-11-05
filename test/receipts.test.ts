@@ -106,7 +106,7 @@ describe("receipt wording", () => {
     assert.equal(whyText("{files,kw 1d}"), "files, kw; 1 day old");
     assert.equal(whyText("{12d}"), "12 days old");
     assert.equal(whyText("odd"), "odd");
-    assert.match(localTime("2026-11-05T12:03:00.000Z"), /^2026-11-0[456] \d\d:\d\d$/);
+    assert.match(localTime("2026-11-05T12:03:00.000Z"), /^2026-11-0[456] \d\d:\d\d:\d\d [+-]\d\d:\d\d$/);
     assert.equal(localTime("not a date"), "not a date");
   });
 });

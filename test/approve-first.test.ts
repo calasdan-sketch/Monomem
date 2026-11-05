@@ -299,17 +299,17 @@ describe("approve-first namespaces", () => {
       let r = cli("team", "on");
       assert.equal(r.status, 0, r.stderr);
       r = cli();
-      assert.match(r.stdout, /Approve-first namespaces: team/);
+      assert.match(r.stdout, /Approve-first for these namespaces: team/);
       assert.equal(cli("team", "maybe").status, 1);
       // Lowering protection needs a terminal and a typed yes: from a script it is refused and nothing changes.
       const off = cli("team", "off");
       assert.equal(off.status, 1);
       assert.match(off.stderr, /person must run it in a terminal/);
-      assert.match(cli().stdout, /Approve-first namespaces: team/);
+      assert.match(cli().stdout, /Approve-first for these namespaces: team/);
       const s2 = new Store(db);
       s2.setApproveFirst("team", false); // the store method itself is unchanged
       s2.close();
-      assert.match(cli().stdout, /No namespace is approve-first/);
+      assert.match(cli().stdout, /individual namespaces: none/);
       // The store-wide switch: on is scriptable, off needs the same terminal gate, and the list shows it.
       assert.match(cli().stdout, /All namespaces: off/);
       r = cli("--all", "on");

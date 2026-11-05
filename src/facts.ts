@@ -157,10 +157,19 @@ export function similarKeys(store: Store, note: NoteRecord): Record<string, Simi
   return out;
 }
 
-/** One sentence for the agent: "deploy_target is already 'render' (#1, stdio:claude). Use that key if it's the same setting." */
+/**
+ * One sentence for the agent. It always steers toward the common key: "deploy_target is already 'render' (#1, stdio:claude). Use that
+ * key if it's the same setting.", and never tells a writer that used the common key to switch to a synonym.
+ */
 export function similarHint(similar: Record<string, SimilarKey[]>): string {
-  const first = Object.values(similar)[0]?.[0];
-  return first ? `${printable(first.key, 40)} is already ${quote(first.value, 40)} (#${first.id}, ${printable(first.writer, 40)}). Use that key if it's the same setting.` : "";
+  const [key, list] = Object.entries(similar)[0] ?? ["", []];
+  const first = list[0];
+  if (!first) return "";
+  const seen = `${printable(first.key, 40)} is already ${quote(first.value, 40)} (#${first.id}, ${printable(first.writer, 40)})`;
+  const canon = canonKey(key);
+  if (canon === key && canonKey(first.key) !== first.key) return `${seen}, another spelling of ${printable(key, 40)}, the common key. Keep ${printable(key, 40)}.`;
+  if (canonKey(first.key) !== first.key && canon !== first.key) return `${seen}, another spelling of ${printable(canon, 40)}, the common key. Use ${printable(canon, 40)} if it's the same setting.`;
+  return `${seen}. Use that key if it's the same setting.`;
 }
 
 const MAX_DISPUTE_LINES = 2;
@@ -229,7 +238,9 @@ export interface FactValue { value: string; writers: string[]; ids: number[]; si
   older: number[];
   /** This writer-with-several-values has this value as the newest one. */
   current: boolean }
-export interface FactRow { key: string; disputed: boolean; agreed: boolean; values: FactValue[] }
+export interface FactRow { key: string; disputed: boolean; agreed: boolean; values: FactValue[];
+  /** Other spellings of the key that notes used ("db" under "database"), sorted. The row key is always the common key. */
+  spellings: string[] }
 
 const newestFirst = (a: NoteRecord, b: NoteRecord): number => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : b.id - a.id);
 
@@ -242,9 +253,12 @@ export function factsTable(notes: readonly NoteRecord[]): Record<string, FactRow
     const disputedKeys = new Set(disputes(list).map((d) => d.key));
     type Entry = { value: string; writers: Set<string>; ids: number[]; since: string; older: number[]; current: boolean };
     const keys = new Map<string, Map<string, Entry>>();
+    const spellings = new Map<string, Set<string>>();
     const stated = new Map<string, Array<{ n: NoteRecord; norm: string }>>(); // key + writer -> that writer's notes
     for (const n of list) {
-      for (const [k, v] of noteFacts(n.tags)) {
+      for (const [spelled, v] of noteFacts(n.tags)) {
+        const k = canonKey(spelled); // synonym spellings share one row, under the common key
+        (spellings.get(k) ?? spellings.set(k, new Set()).get(k)!).add(spelled);
         const vals = keys.get(k) ?? keys.set(k, new Map()).get(k)!;
         const e = vals.get(normFact(v)) ?? vals.set(normFact(v), { value: v, writers: new Set(), ids: [], since: n.updated_at, older: [], current: false }).get(normFact(v))!;
         e.writers.add(n.written_by);
@@ -266,7 +280,8 @@ export function factsTable(notes: readonly NoteRecord[]): Record<string, FactRow
     }
     out[ns] = [...keys].sort(([a], [b]) => a.localeCompare(b)).map(([key, vals]) => {
       const values = [...vals.values()].map((e) => ({ value: e.value, writers: [...e.writers].sort(), ids: e.ids.sort((a, b) => a - b), since: e.since, older: e.older.sort((a, b) => a - b), current: e.current }));
-      return { key, disputed: disputedKeys.has(canonKey(key)), agreed: values.length === 1 && writersOfKey.get(key)!.size >= 2, values };
+      const spelt = [...(spellings.get(key) ?? [])].filter((x) => x !== key).sort();
+      return { key, disputed: disputedKeys.has(key), agreed: values.length === 1 && writersOfKey.get(key)!.size >= 2, values, spellings: spelt };
     });
   }
   return out;
@@ -345,7 +360,8 @@ export async function factsCmd(args: string[]): Promise<void> {
       console.log(`\n[${printable(space)}]`);
       for (const r of table[space]) {
         const mark = r.disputed ? "  DISPUTED" : r.agreed ? `  (${r.values[0].writers.length > 1 ? r.values[0].writers.length : 2} writers agree)` : "";
-        console.log(`  ${printable(r.key, 40)}${mark}`);
+        const also = r.spellings.length ? `  (also written as ${r.spellings.map((x) => printable(x, 40)).join(", ")})` : "";
+        console.log(`  ${printable(r.key, 40)}${also}${mark}`);
         for (const v of r.values) {
           const cur = v.ids.filter((i) => !v.older.includes(i)).map((i) => `#${i}`);
           const old = v.older.map((i) => `older note #${i}`);

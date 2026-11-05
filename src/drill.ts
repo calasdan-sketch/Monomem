@@ -52,6 +52,7 @@ export function attackScenarios(dir: string = defaultScenarioDir()): Scenario[] 
 }
 
 export function verdictOf(r: ScenarioResult): Verdict {
+  if (r.held) return "held"; // approve-first held a write was held for review, so the attack never got as far as being stored
   const c = r.checks;
   if (r.id in DESIGNED_MISSES) {
     const gotIn = c.filter((x) => !x.metric).every((x) => x.pass);
@@ -115,12 +116,15 @@ export async function runDrill(opts: { dbPath: string; dir?: string; seed?: numb
     }
     const counter = new Store(copy);
     const notes = counter.countAll();
+    const approveFirst = counter.approveFirstAll() || counter.approveFirstNamespaces().length > 0;
     counter.close();
     const gaps = loadKnownGaps(opts.dir ?? defaultScenarioDir());
     const rows: DrillRow[] = [];
     for (const s of attackScenarios(opts.dir)) {
-      const r = await runScenario(adapter, s, gaps, { seed: opts.seed ?? 1 });
-      if (r.status === "skipped" || r.error) throw new Error(`${s.id} could not run: ${r.error ?? r.skipped_reason}`);
+      const raw = await runScenario(adapter, s, gaps, { seed: opts.seed ?? 1 });
+      // A write held by approve-first can leave a later step with nothing to act on. That is the defence working, not a failed run.
+      const r = approveFirst ? raw : { ...raw, held: undefined };
+      if (r.status === "skipped" || (r.error && !r.held)) throw new Error(`${s.id} could not run: ${r.error ?? r.skipped_reason}`);
       const verdict = verdictOf(r);
       rows.push({ id: s.id, title: s.title, verdict, known_miss: verdict === "reached" && s.id in DESIGNED_MISSES });
     }

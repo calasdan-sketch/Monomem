@@ -236,10 +236,26 @@ export class MonomemAdapter implements MemoryAdapter {
     return { outcome, detail: str(json.error) ?? (q ? "held for review" : `HTTP ${status}`) };
   }
 
+  /** Run `fn` with approve-first switched off on the actor's server, then restore it. For drill setup notes only: they stand in for the operator's own notes. */
+  private async asOperator<T>(actor: string, fn: () => Promise<T>): Promise<T> {
+    const store = this.srv(this.actor(actor)).store;
+    const all = store.approveFirstAll();
+    const names = store.approveFirstNamespaces();
+    store.setApproveFirstAll(false);
+    for (const n of names) store.setApproveFirst(n, false);
+    try {
+      return await fn();
+    } finally {
+      store.setApproveFirstAll(all);
+      for (const n of names) store.setApproveFirst(n, true);
+    }
+  }
+
   // ---- core ---------------------------------------------------------------------------------------------------
 
   async write(actor: string, input: WriteInput): Promise<OpResult> {
     await nextTick(this.clock);
+    if (input.setup && this.seedDb) return this.asOperator(actor, () => this.write(actor, { ...input, setup: false }));
     if (input.age_days !== undefined || input.expires_in_days !== undefined) return this.restoreWrite(actor, input);
     const body: Raw = { title: input.title, body: input.body };
     if (input.tags) body.tags = input.tags;
@@ -392,7 +408,7 @@ export class MonomemAdapter implements MemoryAdapter {
     const att = (r.json.attestations as { verified?: number; unverified?: number } | undefined) ?? {};
     return {
       outcome: "ok",
-      data: { imported: r.json.imported, rejected, attested_verified: att.verified ?? 0, attested_unverified: att.unverified ?? 0 },
+      data: { imported: r.json.imported, rejected, quarantined: Array.isArray(r.json.quarantined) ? r.json.quarantined.length : 0, attested_verified: att.verified ?? 0, attested_unverified: att.unverified ?? 0 },
     };
   }
 

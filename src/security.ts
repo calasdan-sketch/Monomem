@@ -679,3 +679,12 @@ export function printable(s: unknown, max = 120): string {
   const t = String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "?");
   return t.length > max ? t.slice(0, max) + "..." : t;
 }
+
+/** printable(), but a cut falls on a word boundary ("deploy the lau..." becomes "deploy the..."), unless there is no space in the back half. */
+export function printableWords(s: unknown, max = 120): string {
+  const t = printable(s, Number.MAX_SAFE_INTEGER);
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > max / 2 ? cut.slice(0, sp).trimEnd() : cut) + "...";
+}

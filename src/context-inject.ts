@@ -303,11 +303,13 @@ export async function injectContext(store: Store, opts: InjectOptions = {}): Pro
   const ids = shown.slice(0, 20).map((n) => n.id);
   const shownTok = Math.ceil(body.length / CHARS_PER_TOKEN);
   const rawTok = Math.ceil(fullChars / CHARS_PER_TOKEN);
-  // Estimates, ~4 characters a token. The block can be bigger than the raw text (it adds headers and index lines): say so, not "standing in for".
-  const rel = shownTok <= rawTok ? "condensed from" : "about the same text as";
+  // Estimates, ~4 characters a token. The block adds headers and index lines, so it can be longer than the notes it summarises: say that plainly.
+  const open = `Open any with ${openToolName()} ids=[${ids.join(",")}]`;
+  const lead = `Showing ${shown.length} of ${Math.max(total, shown.length)} memories in ~${shownTok} tokens (estimate)`;
   const footer =
-    `Showing ${shown.length} of ${Math.max(total, shown.length)} memories in ~${shownTok} tokens (estimate), ${rel} ~${rawTok} tokens of notes and captured events; ` +
-    `the block also holds headers and index lines. Open any with ${openToolName()} ids=[${ids.join(",")}]`;
+    shownTok <= rawTok
+      ? `${lead}, condensed from ~${rawTok} tokens of notes and captured events. ${open}`
+      : `${lead}. The notes themselves are only ~${rawTok} tokens; the rest is headers and index lines. ${open}`;
   const out = `${body}\n\n${footer}`;
   // Read access log: the recall hook handed these to the agent (no query: it ranks by recency and git signals).
   store.logAccess({ tool: "hook:recall", namespaces: ns !== undefined ? [ns] : [], results: shown.length });

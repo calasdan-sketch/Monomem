@@ -4,6 +4,7 @@
 // Same pattern as meter.ts: CREATE TABLE IF NOT EXISTS in the capture database, so no schema version bump; writes are
 // best-effort (a receipt that cannot be written never costs a session its context).
 // Also here: the shareable savings card (`monomem meter --card`) and the CLI commands that use both.
+import { localTimeOffset } from "./asof.js";
 import { writeFileSync } from "node:fs";
 import { accessLogDays, type Store } from "./store.js";
 import { printable } from "./security.js";
@@ -148,12 +149,8 @@ export async function meterCmd(args: string[]): Promise<void> {
   }
 }
 
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-/** "2026-11-05 14:03" in the reader's local time; the stored ISO string if it does not parse. */
-export function localTime(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
+/** "2026-11-05 14:03:00 -06:00": the reader's local time with its UTC offset (the same format `as-of` prints); the stored string if it does not parse. */
+export const localTime = (iso: string): string => localTimeOffset(iso);
 /** `{files,kw 3d}` -> "files, kw; 3 days old"; `{recent 0d}` -> "recent; today". Anything else is shown as stored. */
 export function whyText(why: string): string {
   const m = /^\{(?:(.*?) )?(\d+)d\}$/.exec(why);
