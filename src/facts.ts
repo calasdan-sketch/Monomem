@@ -28,7 +28,13 @@ export function flaggedFactValue(v: string): string | null {
     scanForInjection(v) ??
     scanForDirective(v) ??
     (/\b(?:user|admin|owner|operator|human)\s+(?:has\s+|already\s+)?(?:approved|authori[sz]ed|confirmed|allowed|said|asked)\b/i.test(v) ? "approval claim" : null) ??
-    (/\b(?:run|runs|execute|exec|invoke|source|sudo)\s+\S|(?:^|[\s;|&])\.{0,2}\/\S*\.(?:sh|ps1|bat|cmd|py)\b|[|;&]\s*(?:sh|bash|zsh|iex)\b/i.test(v) ? "command or script" : null)
+    // A plain command is a legitimate fact value ("npm run build", "./scripts/deploy.sh"). Flag only the instruction shapes:
+    // piping into a shell, a command chained after another value, or a command with urgency ("now", "without asking").
+    (/[|;&]\s*(?:sh|bash|zsh|iex|pwsh|powershell)\b/i.test(v) ||
+    (/[;]|&&/.test(v) && /\b(?:run|execute|exec|invoke|source|sudo|curl|wget)\b|\.(?:sh|ps1|bat|cmd|py)\b/i.test(v)) ||
+    (/\b(?:now|immediately|right away|without asking|before anything|first thing)\b/i.test(v) && /\b(?:run|execute|exec|invoke|source|sudo|delete|send|upload)\b|\.(?:sh|ps1|bat|cmd|py)\b/i.test(v))
+      ? "command or script"
+      : null)
   );
 }
 export const WITHHELD = "[value withheld: flagged, see monomem conflicts]";
