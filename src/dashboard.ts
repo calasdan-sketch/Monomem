@@ -10,6 +10,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>monomem</title>
+<link rel="icon" href="/favicon.ico" type="image/png">
 <style>
   /* Brand: navy #0B2E45 + gold #F0C171. Every colour is a token; the light theme only redefines tokens. */
   :root{color-scheme:dark;--gold:#F0C171;
@@ -25,7 +26,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
     font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  header{display:flex;gap:10px;align-items:center;padding:12px 16px;
+  header{display:flex;gap:10px;align-items:center;padding:12px max(16px,calc((100% - 900px)/2 + 16px));
     border-bottom:3px solid var(--gold);background:var(--bg);flex-wrap:wrap}
   @media (min-width:700px){header{position:sticky;top:0;z-index:2}}
   h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.2px}
@@ -40,6 +41,17 @@ export const DASHBOARD_HTML = `<!doctype html>
     padding:4px 2px;font-weight:400}
   nav{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0;max-width:900px;margin:0 auto}
   nav button{background:transparent;color:var(--ink);border-color:var(--line);font-weight:500}
+  [hidden]{display:none!important}
+  nav button.lit{border-color:var(--danger)}
+  .pill{display:inline-block;background:var(--danger-bg);color:var(--danger-fg);border-radius:999px;
+    padding:0 7px;font-size:11px;font-weight:700;margin-left:6px;line-height:17px}
+  .strip{display:block;width:100%;text-align:left;margin-bottom:12px;background:transparent;color:var(--danger);
+    border:1px solid var(--danger);border-left:5px solid var(--danger-bg);border-radius:9px;font-weight:600}
+  .card.held{border-left:5px solid var(--danger-bg)}
+  .stamp{display:inline-block;border:2px solid var(--danger);color:var(--danger);border-radius:4px;
+    padding:0 7px;font-size:11px;font-weight:800;letter-spacing:.08em;margin-bottom:6px}
+  .heldbody{font:13px/1.45 ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;white-space:pre-wrap;
+    overflow-wrap:anywhere;color:var(--body);border:1px dashed var(--danger);border-radius:6px;padding:8px 10px;margin-top:8px}
   nav button[aria-current=page]{background:var(--panel2);border-color:var(--accent);
     box-shadow:inset 0 -3px 0 var(--accent);font-weight:700}
   .grow{flex:1 1 140px;min-width:0}
@@ -75,6 +87,14 @@ export const DASHBOARD_HTML = `<!doctype html>
   #runner div+div{margin-top:4px}
   label.chk{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
   .scroll{overflow-x:auto}
+  /* Phones: the note text comes before its action buttons. */
+  @media (max-width:600px){
+    .card{display:flex;flex-direction:column}
+    .cardhead{display:contents}
+    .cardhead>div:first-child{order:1;flex:none}
+    .card>.body,.card>.heldbody{order:2}
+    .card .acts{order:3;margin-top:10px}
+  }
   code{background:var(--panel2);border-radius:4px;padding:0 4px}
 </style>
 </head>
@@ -90,7 +110,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 </header>
 <nav aria-label="Views">
   <button id="tab_list" onclick="load()" title="All notes, newest first">Notes</button>
-  <button id="tab_held" onclick="loadHeld()" title="Writes the linter held for your approval (admin token)">Held<span id="held_n"></span></button>
+  <button id="tab_held" onclick="loadHeld()" title="Writes held out of shared memory until you approve or reject them: ones the linter flagged (secrets, injected instructions) and ones written to an approve-first namespace (admin token)">Held<span id="held_n"></span></button>
   <button id="tab_review" onclick="loadReview()" title="Notes written by agents that you have not looked at yet">Review</button>
   <button id="tab_changes" onclick="loadChanges()" title="What changed in the last 24 hours">Changes</button>
   <button id="tab_sessions" onclick="loadSessions()" title="Agent sessions Monomem recorded, each with its timeline">Sessions</button>
@@ -112,6 +132,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   </div>
   <div id="msg" class="msg" role="status" aria-live="polite"></div>
   <div id="runner" class="card err" style="display:none"></div>
+  <button id="heldstrip" class="strip" onclick="loadHeld()" hidden></button>
   <div id="list"></div>
 </main>
 <footer>
@@ -146,7 +167,9 @@ function $(id){ return document.getElementById(id); }
 
 // A small coloured chip per writer: a stable hash of the label picks the hue (the label itself is escaped text).
 function hue(s){ var h = 0; s = String(s); for(var i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; } return 30 + (h % 300); } // skip red hues: red reads as danger next to delete
-function chip(label){ return "<span class='chip' style='--h:"+hue(label)+"'>"+esc(label)+"</span>"; }
+function shownWriter(w){ return w === "primary" ? "admin (setup)" : w; } // display only: the stored label stays "primary"
+function chip(label){ return "<span class='chip' style='--h:"+hue(label)+"'>"+esc(shownWriter(label))+"</span>"; }
+function acts(html){ return "<div class='acts'>"+html+"</div>"; }
 function byLine(w){ return w ? " &middot; by "+chip(w) : ""; }
 
 // Messages (errors, results) go to the status line, never a popup dialog; say() replaces whatever was there.
@@ -184,6 +207,7 @@ function setView(v){
   ["list","held","review","changes","sessions","quality","meter"].forEach(function(t){
     $("tab_" + t).ariaCurrent = TABS[v] === t ? "page" : null;
   });
+  showStrip();
 }
 
 function show(app){
@@ -215,6 +239,8 @@ function api(path, opts){
 
 function render(notes){
   var list = $("list");
+  // Pinned notes first (stable sort), but a search keeps its relevance order.
+  if(!$("q").value.trim()){ notes = notes.slice().sort(function(a, b){ return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0); }); }
   $("count").textContent = notes.length + " note" + (notes.length===1?"":"s");
   if(!notes.length){
     list.innerHTML = $("q").value.trim() ? empty("No notes match that search. Try fewer words, or clear the namespace box.")
@@ -228,10 +254,10 @@ function render(notes){
       (n.distrusted ? "<span class='badge-bad' title='An admin distrusts the writer of this note: treat its content as hostile'>DISTRUSTED</span>" : "")+"</h3>"+
       "<div class='meta'>#"+n.id+" &middot; "+esc(n.namespace)+" &middot; "+esc((n.updated_at||"").slice(0,16).replace("T"," "))+byLine(n.written_by)+"</div>"+
       tags+"</div>"+
-      "<div>"+((n.tags||[]).indexOf("never-show") >= 0
+      acts(((n.tags||[]).indexOf("never-show") >= 0
         ? "<button class='ghost' title='Let it be shown at session start again' onclick='neverShow("+n.id+",false)'>show again</button>"
         : "<button class='ghost' title='Never inject this note at session start (it stays searchable)' onclick='neverShow("+n.id+",true)'>never show</button>")+
-      " <button class='danger' onclick='arm(this,function(){del("+n.id+")})'>delete</button></div></div>"+
+      " <button class='danger' onclick='arm(this,function(){del("+n.id+")})'>delete</button>")+"</div>"+
       (n.body ? "<div class='body'>"+esc(n.body)+"</div>" : "")+"</div>";
   }).join("");
 }
@@ -327,14 +353,14 @@ function loadReview(){
     var writers = {};
     all.forEach(function(n){ writers[n.written_by] = (writers[n.written_by] || 0) + 1; });
     var opts = "<option value=''>all writers (" + all.length + ")</option>" + Object.keys(writers).sort().map(function(w){
-      return "<option value='" + esc(w) + "'" + (w === writer ? " selected" : "") + ">" + esc(w) + " (" + writers[w] + ")</option>"; }).join("");
+      return "<option value='" + esc(w) + "'" + (w === writer ? " selected" : "") + ">" + esc(shownWriter(w)) + " (" + writers[w] + ")</option>"; }).join("");
     var shown = reviewQueue(j.notes || [], writer);
     $("count").textContent = shown.length + " to review";
     var rows = shown.map(function(n){
       var tags = (n.tags||[]).map(function(t){ return "<span class='tag'>"+esc(t)+"</span>"; }).join("");
       return "<div class='card'><div class='cardhead'><div><h3>"+esc(n.title)+(n.pinned ? "<span class='badge-pin'>Pinned</span>" : "")+"</h3><div class='meta'>#"+n.id+" &middot; "+esc(n.namespace)+
         " &middot; written by "+chip(n.written_by)+" &middot; "+esc((n.updated_at||"").slice(0,16).replace("T"," "))+"</div>"+tags+"</div>"+
-        "<div><button onclick='acceptNote("+n.id+")'>Accept</button> <button class='danger' onclick='arm(this,function(){del("+n.id+")})'>delete</button></div></div>"+
+        acts("<button onclick='acceptNote("+n.id+")'>Accept</button> <button class='danger' onclick='arm(this,function(){del("+n.id+")})'>delete</button>")+"</div>"+
         (n.body ? "<div class='body'>"+esc(n.body)+"</div>" : "")+"</div>";
     }).join("");
     $("list").innerHTML = "<div class='row'><select id='rv_writer' aria-label='Filter by writer' onchange='loadReview()'>"+opts+"</select>"+
@@ -353,28 +379,39 @@ function acceptNote(id){
 
 // ---- Held: writes the linter or a namespace policy kept out of the store until an admin decides (admin token) ----
 // Everything shown is stored text from an untrusted writer, so all of it goes through esc().
+var HELDN = 0;
+function setHeldCount(n){
+  HELDN = n;
+  $("held_n").innerHTML = n ? "<span class='pill'>" + Number(n) + "</span>" : "";
+  $("tab_held").className = n ? "lit" : "";
+  showStrip();
+}
+// One line above the Notes list when something is held, so it is not missed.
+function showStrip(){
+  var s = $("heldstrip");
+  s.hidden = !(HELDN > 0 && VIEW === "list");
+  s.textContent = HELDN + (HELDN === 1 ? " write" : " writes") + " held for review \\u2192";
+}
 function loadHeldCount(){
-  api("/quarantine" + nsQs("?", true)).then(function(j){
-    var n = (j.quarantine || []).length;
-    $("held_n").textContent = n ? " (" + n + ")" : "";
-  }).catch(function(){ $("held_n").textContent = ""; });
+  api("/quarantine" + nsQs("?", true)).then(function(j){ setHeldCount((j.quarantine || []).length); })
+    .catch(function(){ setHeldCount(0); });
 }
 function refreshHeld(){ if(VIEW === "quality"){ loadQuality(); } else { loadHeld(); } }
 function loadHeld(){
   setView("held");
   api("/quarantine" + nsQs("?", true)).then(function(j){
     var held = j.quarantine || [];
-    $("held_n").textContent = held.length ? " (" + held.length + ")" : "";
+    setHeldCount(held.length);
     $("count").textContent = held.length + " held";
     $("list").innerHTML = held.length ? held.map(function(q){
       var why = (q.reasons || []).map(function(r){ return "<span class='tag why'>"+esc(r.label)+(r.field ? " in "+esc(r.field) : "")+"</span>"; }).join("");
       var who = q.written_by ? byLine(q.written_by) : (q.source ? " &middot; claims "+esc(q.source) : "");
-      return "<div class='card'><div class='cardhead'><div><h3>"+esc(q.title || "(title unchanged)")+"</h3>"+
+      return "<div class='card held'><div class='cardhead'><div><span class='stamp'>HELD &middot; NOT IN SHARED MEMORY</span><h3>"+esc(q.title || "(title unchanged)")+"</h3>"+
         "<div class='meta'>held #"+Number(q.id)+" &middot; "+(q.op === "update" ? "update of #"+Number(q.target_id) : "new note")+
         " &middot; "+esc(q.namespace)+" &middot; "+when(q.created_at)+who+"</div>"+(why || "<span class='tag why'>held by policy</span>")+"</div>"+
-        "<div><button onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;reject&quot;)})'>Reject</button> "+
-        "<button class='ghost' onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;approve&quot;)})'>Approve</button></div></div>"+
-        (q.body ? "<div class='body'>"+esc(q.body)+"</div>" : "")+"</div>";
+        acts("<button onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;reject&quot;)})'>Reject</button> "+
+        "<button class='ghost' onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;approve&quot;)})'>Approve</button>")+"</div>"+
+        (q.body ? "<div class='heldbody'>"+esc(q.body)+"</div>" : "")+"</div>";
     }).join("") : empty("Nothing is held. Writes that look like secrets or injected instructions wait here for your approval.");
   }).catch(failList);
 }
@@ -397,7 +434,7 @@ function loadSessions(){
       return "<div class='card'><div class='cardhead'><div><h3>"+esc(s.summary || "(no summary yet)")+"</h3>"+
         "<div class='meta'>"+when(s.started_at)+(s.ended_at ? " to "+when(s.ended_at) : " &middot; open")+" &middot; "+esc(s.namespace)+
         " &middot; "+esc(s.cwd)+" &middot; "+Number(s.prompt_count||0)+" prompts, "+Number(s.event_count||0)+" events</div></div>"+
-        "<button class='ghost' data-sid='"+esc(s.id)+"' onclick='loadSession(this.getAttribute(&quot;data-sid&quot;))'>Timeline</button></div></div>";
+        acts("<button class='ghost' data-sid='"+esc(s.id)+"' onclick='loadSession(this.getAttribute(&quot;data-sid&quot;))'>Timeline</button>")+"</div></div>";
     }).join("") : empty("No sessions recorded yet. Run <code>monomem setup --capture</code> to install the hooks.");
   }).catch(function(e){ incRefused(e); failList(e); });
 }
@@ -436,7 +473,7 @@ function loadQuality(){
       else if(i.type === "quarantined"){ btn = "<button onclick='arm(this,function(){qQuarantine("+q+",&quot;reject&quot;)})'>Reject</button> <button class='ghost' onclick='arm(this,function(){qQuarantine("+q+",&quot;approve&quot;)})'>Approve</button>"; }
       else { btn = "<button class='ghost' onclick='arm(this,function(){qArchive("+a+")})'>Archive</button>"; }
       return "<div class='card'><div class='cardhead'><div><h3><span class='tag'>"+esc(i.type)+"</span>"+esc(i.detail)+"</h3>"+
-        "<div class='meta'>"+esc(i.namespace)+" &middot; "+esc(i.fix)+(i.alt ? " &middot; or "+esc(i.alt) : "")+"</div></div><div>"+btn+"</div></div></div>";
+        "<div class='meta'>"+esc(i.namespace)+" &middot; "+esc(i.fix)+(i.alt ? " &middot; or "+esc(i.alt) : "")+"</div></div>"+acts(btn)+"</div></div>";
     }).join("");
     $("list").innerHTML = rows || empty("No quality issues found. Duplicates, stale notes and held writes will be listed here.");
   }).catch(failList);
@@ -545,3 +582,9 @@ $("ns").addEventListener("input", function(){ clearTimeout(t); t = setTimeout(lo
 
 if(tok()){ show(true); load(); } else { show(false); $("tok").focus(); }
 `;
+
+// The brand mark (docs/brand/mark-gold-48.png), served at GET /favicon.ico without a token.
+export const FAVICON_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAACMAAAAwCAYAAACbm8NsAAAEuklEQVR4nK2YeahnYxjHP+ec37VkZ6KYv4QphGyhRJYoSymKzFBKZIjJNslW1GTJ8geiyJKlDP/YSoMGfxhrRpOSRGPJJAaF6/r9jp7b95meOfds77n3qdN7znve87zf8+zPm21eu4JEKoBxeD4WOBU4HTgSeB1YBvwJZEDZl/EoAUQu5mPdXwgsB47W/AxwPfCg1icBSQEzAv7T/ZnAHcBh4f1LgIl4o0CQCqQvmJGALAIekESMJpKSgXioBjQLCSaTOoz5ycCTwGI92/w0cB7wmp6ZDxACkzog6M+vBtYIyIwM2MazBWRKUrKLhQYTdb5KqimD4WbyljUCYsAWhJrAlMBdwMqK6AsZ74tS8YIBqQMzkrivA24QkEJzNr4H3BpcvA9lQ8C4J5wG3KPNirBuWnHFn8sOAIWu5KDnXrM78ERg6BIwpo8CX3S4b77rCfdPgo0lUV4R5X3A3sFYSwH5Q9KiwWvyoM7B5Exs8+OAi8Qw13v/uxeA74NNEX7C52ztks1rV9w9HzCu05uDJ2Wac5t5SmNZ862pbD/gcWC98tNgMPZXR8hwXS1o3kBtANZVJBUldBPwKXCJ4s6yAZXAFqYoiLkR+5yr622BcMP10SLyM8CJ+gmLORcDzwPbyvuSwWwHnFXj6pnGDzSWAcjBwBsCNK3NVwrI1NAclUtF+2qzCKbQ+FVYa5ssAd6qAFktTyy0ZjxEVbmKIypxodT4N/Cz7k0NOwGvAHvqeRtgUwiGZfh2NATM4S1h+x9dTg8D+4cyIlMy3RSyt1OydIzhgS1gpmRTyNuWhoBoKvkOeEzvq3biNpYEZnELmB2A3XR/W5ifhPjzlzaty0GTFOkYmF1qwGQhzphdHKIuwN3dvWp1BdwcMMEReoFpEmWp8RTg0jDn8xuUONvAzFJf6XiBVIe+0LiqMufGu66hj6rSuG/bYkx/G9harE8onnqpKlc2TgGTa9yY8F0vN8+l+xQwmcYUifZy81wZNwWMU2ol1ykdA/NhpXToS9snru/cw8B8BnwdYksX+RrLT0nVvwFqk46B+Rd4tbJRG7k6LUelgokl7RzyF88mRMtM41FhgxTK2sDY9QnwZs/mLNd4DLBHSBt9qTFfeRkQI20XYwe8SJmcRONvdPM8NGnvqof2uT50+UBV1bp5XjHKaxXM8o4NvGE7HjhD96P5SsfBODML8dckuDk6rfAEOi/biW7mJw5Pq7zsOvJwdR6kM5xU25njvVWfd2ksV+Hd1XZ4+XAlcJnWTiVIaKsgWAUT25Vz1Bt5VdeUu9y+HlGvPhPOA7toq7CQNfh8EYqi54Dzg9TqNnGgtv5GwJt/l2xXEp7t25vQj0NjfwFwSwiQdcz97yYy6Jd1tDITPKdNUrNnOl0Lcm10J3AS8KUYZzWgXDVjqfhzhYodtTYW80Ul4G4RTxtNNBqDd9Tw3Q78GkCNdZUVFVuEvldFu50DHiB+s+2vSyOCarKZOoqF9z7AVTq9MHU4+XlwVhPcrDp4X07xEfAt8EPw1iwFDOHg0BlYg2eH0+fq5MvOBKvk53t1EfoXAbwC+Cm1OfeTKjdmSx3WVdq1l040TJWHSi0mwZ2DV/0O/KjLov03wMcCxf/CRWltnLlVZgAAAABJRU5ErkJggg==",
+  "base64",
+);

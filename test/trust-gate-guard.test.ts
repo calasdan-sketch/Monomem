@@ -152,7 +152,7 @@ describe("B: one gate for reading a note", () => {
     if (/req\.method === "GET" && sessMatch/.test(api)) routes.add("/sessions/:id");
     const NOTE_ROUTES = ["/notes", "/notes/:id", "/search", "/stats", "/changes", "/tasks", "/tasks/:id", "/handoffs", "/catch-up", "/export", "/index", "/timeline", "/sessions", "/sessions/:id", "/files/timeline", "/quality", "/quarantine"];
     // /access: the read access log holds writer labels and redacted query previews, never note text.
-    const NO_NOTE_CONTENT = ["/health", "/ready", "/", "/dashboard.js", "(sign pages)", "/runner/status", "/trust", "/access"];
+    const NO_NOTE_CONTENT = ["/health", "/ready", "/", "/dashboard.js", "/favicon.ico", "(sign pages)", "/runner/status", "/trust", "/access"];
     assert.deepEqual([...routes].sort(), [...NOTE_ROUTES, ...NO_NOTE_CONTENT].sort(), "a GET route was added: add it to NOTE_ROUTES (and to the canary test below) or NO_NOTE_CONTENT");
 
     const mcp = read("mcp-server-core.ts");

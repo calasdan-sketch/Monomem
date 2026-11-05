@@ -45,7 +45,7 @@ hash: "9b1f0c2a7d3e4f51"
 Ship weekly on Thursdays.
 ```
 
-`origin_writer` (1.4.0) is who wrote the note on the exporting store (its writer id when known). It is
+`origin_writer` is who wrote the note on the exporting store (its writer id when known). It is
 shown for information only: a file is stamped with whoever imports it, and the value arrives as the
 unverified `imported_written_by`; it never counts for distrust rules or `written_by` filters. Files are not signed.
 
@@ -162,7 +162,7 @@ Import before export, so your store absorbs remote edits before it rewrites
 the files. Add `.conflicts/` to `.gitignore` if you would rather review
 conflicts locally only. Use a **private** repository: notes are plaintext.
 
-### Git, in one command (`sync --git`, 1.7.0)
+### Git, in one command (`sync --git`)
 
 ```bash
 git clone git@github.com:you/my-private-memory.git ~/my-private-memory     # a PRIVATE repository you own
@@ -212,12 +212,12 @@ merge them by hand.
 
 **Tasks and handoffs.** Import is a local admin command (no token can reach it), so
 notes carrying the reserved `task` / `handoff` / `task.*` tags are restored as
-written: an export/import round trip keeps your tasks, handoffs and any 1.2.x notes
+written: an export/import round trip keeps your tasks, handoffs and any older notes
 you tagged `task`. The `task.approval:` tag is never imported (approvals are bound
 to the store's own key). If any file is `rejected`, the command prints a loud count
 on stderr and exits with status 1.
 
-**Distrusted writers (1.4.1).** An export leaves out notes touched by a writer on the distrust list
+**Distrusted writers.** An export leaves out notes touched by a writer on the distrust list
 ([trust.md](./trust.md)) and removes their earlier files (pruning is the default; `--no-prune` keeps them), so a vault synced to another
 machine or an editor plugin does not carry the content an agent is told not to trust. `--include-distrusted`
 writes them anyway, with `distrusted: true` in the front matter. A file's `origin_writer` is a claim, not a
