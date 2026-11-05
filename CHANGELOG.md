@@ -136,6 +136,26 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Facts are easier to get right.** `state_write` tells agents to attach `facts` when they record a decision, and to
+  use a common key when one fits (deploy_target, package_manager, test_runner, database, node_version, base_url,
+  ci_provider, formatter). A key that is new to the namespace gets `similar_keys` hints over MCP, so two agents settle
+  on one name. SKILL.md and the docs give the same advice.
+- **Disputes show up where agents act.** When writers disagree on a fact in the namespace being recalled, the start of
+  a session adds up to two "Disputed: ... Ask the user before acting." lines (nothing when there is no dispute).
+- **Conflicts are grouped one block per key** in the CLI, `monomem quality` and the dashboard; a capped list says
+  "showing N of at least M". In the dashboard, Keep on a fact dispute removes only that fact from the other notes
+  (through the normal edit path, so the linter, approve-first and pins still apply); replacing a whole note is a
+  separate choice. The confirmation is a few plain lines inside the card you clicked.
+- **Time travel shows who wrote the old text** (from note history), or "writer then: not recorded", never today's
+  writer. Archive, restore and supersede undo are now part of the picture from a new `archive_log` (no schema change),
+  which covers the time since this version first opened the database; the header says from when.
+- `--as-of` output adds a text snippet, an "edited since" marker, local time with the UTC offset, and `--json`.
+- `health` and `doctor` also warn on a remote `MONOMEM_EMBED_URL` with embeddings on (note text leaves the machine),
+  custom `MONOMEM_ALLOWED_ORIGINS`, `MONOMEM_NO_CHMOD=1`, proxy trust beyond loopback,
+  `MONOMEM_RUNNER_ACCEPT_LEGACY`, and a `MONOMEM_LINT` value they do not recognise.
+- REST `POST` and `PUT /notes` reject unknown fields with a 400 naming them (a misspelt `content` used to save an
+  empty note). The short help lists `why`, `receipts` and `conflicts`.
+
 - **`monomem health` grades fairly.** Writes held for review, distrusted writers and redacted notes are shown as info
   and never lower the grade; a new store grades A. Each weakening setting is its own line (the linter off and agent
   admin tools over stdio are failures). A missing audit log, or one that shrank or changed since the last run, warns.
@@ -233,6 +253,10 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local app.
 
 ### Fixed
+
+- MCP `state_search` with `as_of` is admin-only: a past view brings back earlier versions and forgotten notes, the
+  same reason note history is admin-only. The conflict list is capped at 500 pairs, and a replaced note no longer counts
+  as a conflict at write time.
 
 - `import --claude` wrote without a terminal and without `--yes`; it now refuses, as `import --from` does.
 
