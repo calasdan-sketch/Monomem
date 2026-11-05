@@ -193,7 +193,8 @@ export function classifyEntry(name: string, entry: unknown): EntryKind {
   const line = [typeof o.command === "string" ? o.command : "", ...args].join(" ").toLowerCase().replace(/\\/g, "/");
   const envKeys = o.env && typeof o.env === "object" ? Object.keys(o.env as object) : [];
   const legacy = name === "claude-bridge" || /claude-bridge/.test(line) || envKeys.some((k) => k.startsWith("CLAUDE_BRIDGE_"));
-  if (legacy) return "legacy";
+  // The package's previous name: an `onememory` entry is renamed to `monomem` (data kept), not left beside a second one.
+  if (legacy || name === "onememory" || /onememory/.test(line)) return "legacy";
   if (/monomem/.test(line)) return "monomem";
   return "other";
 }
@@ -540,6 +541,11 @@ const TOOL_NAMES = "(?:monomem|onememory|claude-bridge)";
 // or ~/Projects/OneMemory is the same tool. Matching case-sensitively made
 // setup miss its own hook and plan a duplicate -- found by CI, whose checkout
 // directory is capitalised, on a machine where the local one is not.
+const OLD_NPX_HOOK = /npx -y onememory-mcp@[^\s"]+ (?:recall|hook session-start)/;
+const startRange = (doc: ReturnType<typeof parseDoc>, on: string): [number, number] => {
+  const n = getPath(doc, ["hooks", on]);
+  return n ? [n.start, n.end] : [0, 0];
+};
 const HOOK_DETECT = new RegExp(`recall --budget-ms|${TOOL_NAMES}[^\\n]{0,120}\\b(?:recall|hook session-start)\\b`, "i");
 
 /**
@@ -658,7 +664,25 @@ export function planHooks(e: SetupEnv, opts: SetupOptions, dbForHook: string | u
   const ops: Op[] = [];
   const inverse: Op[] = [];
   const lines: string[] = [];
-  if (want.recall && !has(host.start.on, HOOK_DETECT)) {
+  // The old package's start-of-session hook (`npx -y onememory-mcp@<v> recall|hook session-start`) is rewritten to the current command.
+  const oldNpx = want.recall && doc ? OLD_NPX_HOOK.exec(text!.slice(...startRange(doc, host.start.on))) : null;
+  const oldEntry = oldNpx ? getPath(doc!, ["hooks", host.start.on])?.items?.find((i) => text!.slice(i.start, i.end).includes(oldNpx[0])) : undefined;
+  if (oldNpx && oldEntry) {
+    let old: { hooks?: Array<{ command?: unknown }> } | null = null;
+    try {
+      old = JSON.parse(text!.slice(oldEntry.start, oldEntry.end));
+    } catch {
+      /* comments inside the entry: leave the old hook alone */
+    }
+    const command = want.capture ? buildCaptureCommand(e, opts, "session-start", dbForHook) : buildHookCommand(e, opts, dbForHook);
+    const nu = old && Array.isArray(old.hooks) ? { ...old, hooks: old.hooks.map((x) => (typeof x?.command === "string" && x.command.includes(oldNpx[0]) ? { ...x, command } : x)) } : null;
+    if (old && nu) {
+      ops.push({ op: "unappend", path: ["hooks"], key: host.start.on, marker: oldNpx[0] }, { op: "append", path: ["hooks"], key: host.start.on, value: nu });
+      inverse.unshift({ op: "append", path: ["hooks"], key: host.start.on, value: old });
+      inverse.unshift({ op: "unappend", path: ["hooks"], key: host.start.on, marker: want.capture ? "hook session-start" : HOOK_MARKER });
+      lines.push(`replace the start-of-session hook from the old onememory-mcp package with the current Monomem one (same place, same settings)`);
+    }
+  } else if (want.recall && !has(host.start.on, HOOK_DETECT)) {
     const command = want.capture ? buildCaptureCommand(e, opts, "session-start", dbForHook) : buildHookCommand(e, opts, dbForHook);
     const hooks = [{ type: "command", command }];
     ops.push({ op: "append", path: ["hooks"], key: host.start.on, value: host.start.matcher ? { matcher: host.start.matcher, hooks } : { hooks } });
@@ -690,7 +714,8 @@ export function planHooks(e: SetupEnv, opts: SetupOptions, dbForHook: string | u
 // ---- diff (shown to the person) ------------------------------------------------------------------------------------------
 
 const SECRET_LINE = /("[^"\n]*(?:TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[^"\n]*"\s*:\s*)"[^"\n]*"/gi;
-const PLAIN_ENV_KEY = /_(PATH|HOME|DIR|FILE|PORT|HOST|BIND|TIMEZONE)$/;
+// Paths, ports and Monomem's own non-secret switches and labels print as they are; every other ALL_CAPS value is masked.
+const PLAIN_ENV_KEY = /_(PATH|HOME|DIR|FILE|PORT|HOST|BIND|TIMEZONE)$|^MONOMEM_(CLIENT|TOOLS|CAPTURE|LINT|EMBEDDINGS|SPACES?|PROFILE)$/;
 const ENV_STYLE_LINE = /("([A-Z][A-Z0-9_]{2,})"\s*:\s*)"[^"\n]*"/g;
 const URL_CREDS = /(\b\w{1,20}:\/\/[^\s:@/"]{1,100}:)[^\s@/"]{1,200}@/g;
 
@@ -702,7 +727,27 @@ export function redact(s: string): string {
     .replace(URL_CREDS, "$1***@");
 }
 
-/** A small, exact line diff: the unchanged head and tail are trimmed, the middle is shown with 2 lines of context. */
+type DiffOp = readonly [" " | "-" | "+", string];
+/** Longest-common-subsequence edit script; past the size cap the whole middle is one `-` block then one `+` block. */
+function middleOps(a: string[], b: string[]): DiffOp[] {
+  const n = a.length;
+  const m = b.length;
+  if (n * m > 4_000_000) return [...a.map((l): DiffOp => ["-", l]), ...b.map((l): DiffOp => ["+", l])]; // ponytail: cap, upgrade to Myers if configs ever get this big
+  const w = m + 1;
+  const t = new Uint32Array((n + 1) * w);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) t[i * w + j] = a[i] === b[j] ? t[(i + 1) * w + j + 1] + 1 : Math.max(t[(i + 1) * w + j], t[i * w + j + 1]);
+  const out: DiffOp[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && a[i] === b[j]) out.push([" ", a[i++]]), j++;
+    else if (j < m && (i === n || t[i * w + j + 1] >= t[(i + 1) * w + j])) out.push(["+", b[j++]]);
+    else out.push(["-", a[i++]]);
+  }
+  return out;
+}
+
+/** A small, exact line diff: only lines that really change get - or +; unchanged runs keep 2 lines of context and long ones are cut with "...". */
 export function lineDiff(before: string, after: string, file: string): string[] {
   const a = before.replace(/\r\n/g, "\n").split("\n");
   const b = after.replace(/\r\n/g, "\n").split("\n");
@@ -710,13 +755,33 @@ export function lineDiff(before: string, after: string, file: string): string[] 
   while (head < a.length && head < b.length && a[head] === b[head]) head++;
   let tail = 0;
   while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  const ops: DiffOp[] = [
+    ...a.slice(0, head).map((l): DiffOp => [" ", l]),
+    ...middleOps(a.slice(head, a.length - tail), b.slice(head, b.length - tail)),
+    ...a.slice(a.length - tail).map((l): DiffOp => [" ", l]),
+  ];
   const ctx = 2;
-  const from = Math.max(0, head - ctx);
+  const first = ops.findIndex((o) => o[0] !== " ");
+  const last = ops.length - 1 - [...ops].reverse().findIndex((o) => o[0] !== " ");
+  const from = Math.max(0, first - ctx);
   const out = [`--- ${file}${before === "" ? " (new file)" : ""}`, `+++ ${file}`, `@@ line ${from + 1} @@`];
-  for (let i = from; i < head; i++) out.push("  " + redact(a[i]));
-  if (before !== "") for (let i = head; i < a.length - tail; i++) out.push("- " + redact(a[i]));
-  for (let i = head; i < b.length - tail; i++) out.push("+ " + redact(b[i]));
-  for (let i = a.length - tail; i < Math.min(a.length, a.length - tail + ctx); i++) out.push("  " + redact(a[i]));
+  for (let k = from; k <= Math.min(ops.length - 1, last + ctx); k++) {
+    const [c, l] = ops[k];
+    if (c === "-" && before === "") continue;
+    if (c === " ") {
+      let run = k;
+      while (run < ops.length && run <= last && ops[run][0] === " ") run++;
+      // An unchanged stretch between two changes: its first and last 2 lines, the rest elided.
+      if (k > first && run <= last && run - k > 2 * ctx + 1) {
+        for (let x = k; x < k + ctx; x++) out.push("  " + redact(ops[x][1]));
+        out.push("  ...");
+        for (let x = run - ctx; x < run; x++) out.push("  " + redact(ops[x][1]));
+        k = run - 1;
+        continue;
+      }
+    }
+    out.push(`${c} ` + redact(l));
+  }
   return out;
 }
 
@@ -1304,8 +1369,23 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
     io.out("  2. Start a brand-new chat and ask:   What port is my staging server on?");
     io.out("\n  The new chat was never told. It answers 8443. Wire up a second assistant with `monomem setup` and the same memory follows you there.");
   }
+  await offerClaudeMemPreview(e, io, opts, primaryDb);
   io.out("\nIf monomem is missing or red: docs/live-claude-code.md has the fixes. To go back: monomem setup --undo");
   return 0;
+}
+
+/** If a claude-mem database is here, offer a DRY RUN import (never the real one). The importer opens it read-only, so nothing leaves this computer. */
+async function offerClaudeMemPreview(e: SetupEnv, io: SetupIO, opts: SetupOptions, db: string): Promise<void> {
+  const { defaultPath, runForeignImport } = await import("./foreign-import.js");
+  const file = defaultPath("claude-mem", e);
+  if (!existsSync(file)) return;
+  if (!io.interactive || opts.yes) {
+    io.out(`\nI found a claude-mem database (${file}). To preview bringing it over (nothing is written): monomem import --from claude-mem --dry-run`);
+    return;
+  }
+  const a = (await io.ask(`\nI found a claude-mem database (${file}). Preview what importing it would do? Nothing leaves this computer and nothing is written. Type y, or press Enter to skip: `)).trim().toLowerCase();
+  if (a !== "y" && a !== "yes") return;
+  await runForeignImport(e, io, { from: "claude-mem", dryRun: true, yes: false, dbPath: db });
 }
 
 /**

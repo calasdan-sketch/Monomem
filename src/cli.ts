@@ -499,7 +499,7 @@ async function doctor(): Promise<void> {
     const entries = parsed?.hooks?.SessionStart;
     const wired =
       Array.isArray(entries) &&
-      /(monomem|cli\.js)[\s\S]{0,60}\b(recall|hook session-start)\b/.test(JSON.stringify(entries));
+      /(monomem|onememory|cli\.js)[\s\S]{0,60}\b(recall|hook session-start)\b/.test(JSON.stringify(entries));
     if (wired) {
       ok("SessionStart hook wired in ~/.claude/settings.json");
     } else {
@@ -508,7 +508,7 @@ async function doctor(): Promise<void> {
           "see https://github.com/calasdan-sketch/monomem/blob/main/docs/sessionstart-hook.md"
       );
     }
-    const captureWired = /(monomem|cli\.js)[\s\S]{0,60}\bhook post-tool\b/.test(JSON.stringify(parsed?.hooks ?? {}));
+    const captureWired = /(monomem|onememory|cli\.js)[\s\S]{0,60}\bhook post-tool\b/.test(JSON.stringify(parsed?.hooks ?? {}));
     console.log(`  [info] ${captureWired ? "automatic memory hooks wired" : "automatic memory hooks not installed (monomem setup --capture)"}`);
   } catch {
     warn(

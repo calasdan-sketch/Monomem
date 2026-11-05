@@ -98,7 +98,7 @@ and uninstall it (`uv tool uninstall basic-memory`). Your Markdown files are you
 
 The official memory server (`@modelcontextprotocol/server-memory`) keeps a knowledge graph in one `memory.jsonl` file. Unless
 `MEMORY_FILE_PATH` is set, that file sits **inside the npx download cache**, next to the server's code, where it is easy to lose:
-cleaning or refreshing the npx cache deletes it. So the import looks there for you:
+cleaning or refreshing the npx cache deletes it (the server writes `memory.jsonl` next to its own code, in `dist/`). So the import looks in the npx folder of npm's cache for you: `npm_config_cache` if set, else `%LOCALAPPDATA%\npm-cache` on Windows or `~/.npm` on macOS and Linux. A global or local install keeps the file next to that install instead, so name it with `--path`.
 
 ```sh
 monomem import --from mcp-memory --dry-run                          # uses MEMORY_FILE_PATH, or finds the file in the npx cache
@@ -106,7 +106,7 @@ monomem import --from mcp-memory --path ~/memory.jsonl --dry-run    # or name th
 ```
 
 If it finds more than one file (several cached server versions), it lists them and asks you to pick one with `--path`. Run the
-dry run first: it is also a quick way to check whether your graph is still there.
+dry run first: it is also a quick way to check whether your graph is still there. The dry run lists the first 10 entities (name and first observation), how many relation lines it read and how many unreadable lines it dropped, and which notes the memory linter would probably hold (for example an observation that says "Ignore previous instructions").
 
 Each entity becomes one note: the entity name is the title, its observations are a list in the body, and its relations are listed
 underneath ("owns Deploy pipeline", "Dana owns (this)"). Its `entityType` becomes an `entity-type:` tag. The graph is written by
