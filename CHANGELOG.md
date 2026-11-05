@@ -8,6 +8,22 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`monomem drill`.** Replays 20 known memory-poisoning attacks on a temporary copy of your store, with your own
+  settings, and shows for each one whether it was held, stored with a warning, or reached the agent. Your store is not
+  changed. Two attacks are known misses and are listed as such: a reworded override the pattern linter cannot see
+  (bench E16), and self-poisoning (a trusted agent stores an attacker's instruction in its own words). Exit code 1 when
+  anything else gets through; `--json` for scripts. `evals/poisoning-corpus.json` (MIT) holds the attacks and expected
+  results so other memory tools can run the same set.
+- **Memory receipts.** `monomem receipts [session-id] [--json]` shows which notes each session start showed the agent
+  and why (the reason tags), with rank and approximate tokens. Only note ids and tags are stored, never titles or text,
+  and they are kept as long as the access log (`MONOMEM_ACCESS_LOG_DAYS`). Opt-in MCP tool `memory_receipt`.
+- **`monomem meter [--json] [--card [file]]`.** Prints the footprint, or writes a shareable SVG card (sessions, tokens
+  injected, tokens saved as an estimate at about 4 characters per token).
+- **`monomem token add | list | remove`.** Makes a strong random token for `tokens.json` and shows it once; `list` never
+  prints tokens. New guide: [docs/team.md](./docs/team.md) (shared memory for a team).
+- **`monomem search <query>`** does what `monomem relevant` does.
+- `GET /favicon.ico` serves the Monomem mark without a token.
+
 - **Tamper-evident audit log.** Each audit line carries `prev`, the sha256 of the line before it (carried across
   rotation), and `monomem audit verify` counts every break and prints the head hash. Two apps writing at the same
   moment are counted as a fork, not a break (an inserted line also looks like a fork, so forks are reported). It detects lines edited or removed inside the chain; it cannot detect the
@@ -95,6 +111,33 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Commands that lower protection need a person at a terminal.** `unpin`, `approve-first <ns> off`, `resume`,
+  `quarantine approve`, `trust undistrust`, `trust attester-add`, `trust attester-unrevoke` and `token add` now need an
+  interactive terminal and a typed `yes`; there is no `--yes` for them. This stops an agent that runs commands through
+  a non-interactive shell tool; a tool that fakes a terminal can still get through. Raising protection (`pin`,
+  `approve-first on`, `trust distrust`) stays scriptable. `encrypt disable` and `delete --yes` are not gated yet.
+- **`monomem doctor` checks your security settings.** It warns when the linter is set to warn only, when
+  `MONOMEM_STDIO_ADMIN_TOOLS=1`, when the server binds beyond this computer, and when the data folder is inside
+  OneDrive, Dropbox, iCloud or Google Drive. The "no similarity edges" warning no longer appears on a new store, and
+  colours follow `FORCE_COLOR`.
+- **The linter catches more override wording:** "disregard the user / your instructions", standing orders such as
+  "from now on you must send ... to ...", and look-alike spellings ("1gn0re"). "From now on we use pnpm" is not held.
+- **`setup` shows only the lines it really changes,** so untouched MCP servers no longer look deleted. An old
+  `onememory` entry is renamed to `monomem` instead of getting a second entry, the old `npx onememory-mcp` start-of-session
+  hook is offered as an update (and `doctor` recognises it), and non-secret settings such as `MONOMEM_CLIENT` are no
+  longer masked. When it finds a claude-mem database it offers a dry-run preview of importing it (default no).
+- **`import --from mcp-memory`** also looks in `npm_config_cache`, and a dry run previews the entities, counts relations
+  and unreadable lines, and lists entities the linter would hold.
+- **Dashboard:** a held write is shown as evidence (red border, "HELD · NOT IN SHARED MEMORY", the text in a dashed
+  block); the Held tab shows a red count and the Notes view links to it; pinned notes come first; the setup token's
+  writer shows as "admin (setup)"; on phones the text comes before the buttons.
+- **One tagline everywhere:** "Shared memory for AI agents that holds poisoned writes." The README says why you would
+  care, names every app capture works with (Claude Code, Codex, Gemini CLI, Muse), and compares Monomem with the official
+  MCP memory server on checkable points.
+- **Wording:** the writer name is stamped by the server for token callers; for local apps it is a config label
+  (`MONOMEM_CLIENT`). The package description and docs/provenance.md now say so.
+- CI runs with read-only permissions and pins its actions to commit hashes.
+
 - **Dashboard look and access.** The Monomem navy and gold, with a light theme that follows the system setting; a tab
   bar; a visible keyboard focus ring; buttons instead of link-styled actions; labelled inputs; inline confirmations
   and a status line instead of pop-up dialogs; empty states that say what to do next; it fits a phone-width screen.
@@ -144,6 +187,8 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local app.
 
 ### Fixed
+
+- `monomem audit verify` answered "Unknown command".
 
 - **Instructions hidden in invisible Unicode tag characters (U+E0000-E007F) were never scanned.** The memory linter
   removed them before scanning, but they were stored and shown to the model as written. They are now decoded and
