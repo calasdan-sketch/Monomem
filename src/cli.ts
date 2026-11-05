@@ -16,7 +16,7 @@ const COMMANDS = [
   "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
   "consolidate", "rebuild-edges", "relevant", "search", "token", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
   "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality",
-  "encrypt", "meter", "receipts", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "drill", "audit",
+  "encrypt", "meter", "receipts", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "drill", "health", "audit",
   "help", "--help", "-h", "--version", "-v", "version",
 ];
 
@@ -71,6 +71,7 @@ function shortUsage(): void {
       "  rollback --writer w --since 2h   Undo what one writer did (shows a plan first)",
       "  access                  Who read memory, and when",
       "  drill [--json]          Replay known memory-poisoning attacks on a copy of your store and your settings",
+      "  health [--json] [--card [file.svg]]   One grade A-F: setup, settings, drill, audit chain, held writes (rule: health --help)",
       "",
       "Maintenance",
       "  backup [--out <dir>]    Copy the database safely, even while the server runs",
@@ -2693,6 +2694,11 @@ async function main(): Promise<void> {
     case "drill": {
       const { drillMain } = await import("./drill.js");
       process.exitCode = await drillMain(process.argv.slice(3));
+      break;
+    }
+    case "health": {
+      const { healthMain } = await import("./health.js");
+      process.exitCode = await healthMain(process.argv.slice(3));
       break;
     }
     case "bench": {

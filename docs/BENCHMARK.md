@@ -496,3 +496,17 @@ writer removes it afterwards) and self-poisoning (a trusted writer stores an att
 Both are expected to reach the agent and are reported as such, not as passes.
 
 The same attacks, with their expected outcomes, are exported to `evals/poisoning-corpus.json` (see `evals/README.md`).
+
+## `monomem health`: one grade over the checks you already have
+
+`monomem health [--json] [--card [file.svg]]` prints one line per check, then a grade from A to F: Node and SQLite, the database,
+the SessionStart hook, the settings `doctor` warns about, `drill`, the audit chain, held writes, distrusted writers, notes carrying a
+`[REDACTED:...]` marker, and the memory size and token savings from `monomem meter`. Your store is only read; `drill` runs on a copy.
+
+Grade rule: start at A. Each warn lowers it one step (A to F). Any fail caps it at D. Unexpected drill reach (an attack other than
+the two known misses got through) is F. A to C exits 0, D to F exits 1. Fails are: Node or FTS5 unusable, no openable database, a broken
+audit chain, unexpected drill reach. Warns are: no SessionStart hook, any security-settings warning, held writes waiting, drill or audit
+log could not run or be read. Distrust rules, redaction markers and size are shown but never lower the grade.
+
+What it does not cover: the injection check is a pattern linter; reworded attacks and self-poisoning still get through. `--card` writes
+the result as a shareable SVG (grade, one word per check, date).

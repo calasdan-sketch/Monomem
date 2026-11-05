@@ -67,6 +67,7 @@ const EXPECTED_SITES: Record<string, string[]> = {
     "import merge-base lookup: compares hashes, returns nothing to a caller",
   ],
   "extract.ts": ["the capture writer re-reads its own summary note"],
+  "health.ts": ["operator CLI, counts redaction markers only; no note content is returned or printed"],
   "llm.ts": ["the capture writer re-reads its own summary note"],
   "progressive.ts": ["access probe: readVisible decides before anything is returned"],
   "rollback.ts": [

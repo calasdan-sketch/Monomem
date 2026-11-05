@@ -101,7 +101,7 @@ export function receiptGet(store: Store, sessionId: string, namespaces?: string[
 
 // ---- Savings card ----------------------------------------------------------------------------------------------
 
-const esc = (v: unknown): string =>
+export const esc = (v: unknown): string =>
   (typeof v === "number" ? v.toLocaleString("en-US") : String(v)).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`).replace(/&#60;/g, "&lt;").replace(/&#62;/g, "&gt;");
 
 /** A 640x360 SVG with the meter's real totals. Estimates at ~4 chars/token, exactly as meter.ts computes them. */
