@@ -9,7 +9,7 @@ import { ValidationError } from "./store.js";
 import { printable } from "./security.js";
 import { actorStore } from "./actor.js";
 import { gatePinned } from "./operator-gate.js";
-import { factMismatchWarnings } from "./lint.js";
+import { factMismatchWarnings, scanForInjection, scanForDirective } from "./lint.js";
 
 export const FACT_PREFIX = "fact:";
 export const MAX_FACTS = 10;
@@ -17,6 +17,21 @@ export const MAX_FACT_VALUE = 80;
 const KEY_RE = /^[a-z0-9_.-]{1,40}$/;
 const TAG_RE = /^fact:([a-z0-9_.-]{1,40})=(.{1,80})$/;
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/; // same set the tag path refuses
+
+/**
+ * A fact value is a setting ("render", "pnpm"), not a sentence. Besides the injection and directive scans it refuses what the
+ * scans do not know about but a setting never needs: a claim that the user approved something, a command to run, a script path.
+ * Returns the reason, or null. Deterministic regexes: a reworded attack can pass (see SECURITY.md).
+ */
+export function flaggedFactValue(v: string): string | null {
+  return (
+    scanForInjection(v) ??
+    scanForDirective(v) ??
+    (/\b(?:user|admin|owner|operator|human)\s+(?:has\s+|already\s+)?(?:approved|authori[sz]ed|confirmed|allowed|said|asked)\b/i.test(v) ? "approval claim" : null) ??
+    (/\b(?:run|runs|execute|exec|invoke|source|sudo)\s+\S|(?:^|[\s;|&])\.{0,2}\/\S*\.(?:sh|ps1|bat|cmd|py)\b|[|;&]\s*(?:sh|bash|zsh|iex)\b/i.test(v) ? "command or script" : null)
+  );
+}
+export const WITHHELD = "[value withheld: flagged, see monomem conflicts]";
 
 /** The keys agents are told to reuse, so two writers state one decision under one key. One list: the tool text, SKILL.md and the docs repeat it. */
 export const COMMON_FACT_KEYS = ["deploy_target", "package_manager", "test_runner", "database", "node_version", "base_url", "ci_provider", "formatter"] as const;
@@ -47,6 +62,8 @@ export function factTags(facts: unknown): string[] {
     if (typeof v !== "string" || !v.trim()) throw new ValidationError(`fact "${k}": the value must be a non-empty string`);
     if (v.trim().length > MAX_FACT_VALUE) throw new ValidationError(`fact "${k}": the value is longer than ${MAX_FACT_VALUE} characters`);
     if (CONTROL.test(v)) throw new ValidationError(`fact "${k}": the value must be one line of plain text`);
+    const why = flaggedFactValue(v);
+    if (why) throw new ValidationError(`fact "${k}": the value was refused (${why}). A fact is a setting like "render", not an instruction.`);
     return `${FACT_PREFIX}${k}=${v.trim()}`;
   });
 }
@@ -77,7 +94,7 @@ const MAX_REPORTED = 5;
 const lastSegment = (k: string): string => k.slice(k.lastIndexOf(".") + 1);
 const prefixOf = (k: string): string => k.slice(0, k.lastIndexOf(".") + 1);
 const groupOf = (seg: string): readonly string[] | undefined => KEY_SYNONYMS.find((g) => g.includes(seg));
-const quote = (v: string, max: number): string => `'${printable(v, max).replace(/'/g, "’")}'`;
+const quote = (v: string, max: number): string => flaggedFactValue(v) ? WITHHELD : `'${printable(v, max).replace(/'/g, "’")}'`;
 /** "deploy_target" and "api.deploy_target" are one setting with a deliberate scope: never a drift pair. */
 const scopedForm = (a: string, b: string): boolean => a.endsWith("." + b) || b.endsWith("." + a);
 

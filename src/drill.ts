@@ -16,6 +16,9 @@ import type { Scenario, ScenarioResult } from "./bench/types.js";
 // held = the write was quarantined (as on the dashboard); blocked = stopped some other way (refused, redacted, stamped, hidden by distrust...).
 export type Verdict = "held" | "blocked" | "warned" | "reached";
 
+/** What the drill does and does not show. Shown in the drill output and the health card. */
+export const DRILL_SCOPE = "Drill = the published known attacks only; the linter was tuned on them. Reworded or new attacks are not tested.";
+
 /** Attacks Monomem is known not to stop on its own. A miss here is reported but does not fail the drill. */
 export const DESIGNED_MISSES: Record<string, string> = {
   E16: "reworded override",
@@ -159,6 +162,7 @@ export function renderDrill(r: DrillReport): string {
   if (r.unexpected.length) parts.push(`unexpected: ${r.unexpected.map((x) => x.id).join(", ")}`);
   lines.push("", `Held (quarantined) ${count("held")}, blocked otherwise ${count("blocked")}, warned ${count("warned")} (stored but labelled or warned about), reached ${count("reached")}.`);
   lines.push(`Poison reached the agent: ${r.reached.length} of ${r.attacks} attacks${parts.length ? ` (${parts.join("; ")})` : ""}`);
+  lines.push(DRILL_SCOPE);
   if (r.approve_first) lines.push(APPROVE_FIRST_NOTE);
   return lines.join("\n");
 }
