@@ -2832,11 +2832,26 @@ export class Store {
     return notes.filter((n) => !matchesDistrust(rules, n, id));
   }
 
-  /** Live notes of a namespace that carry any `fact:` tag (up to 500), minus distrusted writers'. A cheap lookup for session start and key-drift hints. */
-  liveFactNotesIn(namespace: string): NoteRecord[] {
-    const rows = this.db
-      .prepare("SELECT * FROM notes WHERE archived_at IS NULL AND superseded_at IS NULL AND namespace = ? AND tags LIKE '%\"fact:%' LIMIT 500")
-      .all(namespace) as unknown as NoteRow[];
+  /**
+   * Live notes that carry any `fact:` tag (up to 500 per namespace), minus distrusted writers' and minus never-show notes (a note
+   * the user hid must not leak through a dispute line; `includeNeverShow` for the `facts` table). `namespace` undefined = every
+   * namespace. `writtenBy` / `notWrittenBy` are the session's own filters. A cheap lookup for session start and key-drift hints.
+   */
+  liveFactNotesIn(namespace: string | undefined, opts: { writtenBy?: string; notWrittenBy?: string; includeNeverShow?: boolean } = {}): NoteRecord[] {
+    const where = ["archived_at IS NULL", "superseded_at IS NULL", "tags LIKE '%\"fact:%'"];
+    const params: string[] = [];
+    if (namespace !== undefined) {
+      where.push("namespace = ?");
+      params.push(namespace);
+    }
+    if (!opts.includeNeverShow) where.push("tags NOT LIKE '%\"never-show\"%'");
+    for (const [v, mode] of [[opts.writtenBy, "is"], [opts.notWrittenBy, "not"]] as const) {
+      if (v === undefined) continue;
+      const f = writerFilterSql(NOTE_COLUMNS, v, mode, this.serverId());
+      where.push(f.sql);
+      params.push(...f.params);
+    }
+    const rows = this.db.prepare(`SELECT * FROM notes WHERE ${where.join(" AND ")} ORDER BY id LIMIT ${namespace === undefined ? 5000 : 500}`).all(...params) as unknown as NoteRow[];
     return this.filterVisible(rows.map((r) => this.rec(r)));
   }
 

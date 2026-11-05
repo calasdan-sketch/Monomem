@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Store, ValidationError } from "../src/store.js";
 import { findConflicts, conflictLines, groupConflicts, conflictReport, reportHeader, MAX_CONFLICTS } from "../src/conflicts.js";
-import { factTags, withFacts, noteFacts, writeConflicts, similarKeys, disputedLines, COMMON_FACT_KEYS } from "../src/facts.js";
+import { factTags, withFacts, noteFacts, writeConflicts, similarKeys, disputedLines, factsTable, COMMON_FACT_KEYS } from "../src/facts.js";
 import { createMcpServer } from "../src/mcp-server-core.js";
 import { createApiServer } from "../src/api.js";
 import { DASHBOARD_JS } from "../src/dashboard.js";
@@ -338,7 +338,7 @@ describe("dashboard conflicts UI", () => {
     ctx.cfAct(0, 0);
     await settle();
     const put = calls.find((c) => c.method === "PUT" && c.path === "/notes/2")!;
-    assert.deepEqual(put.body, { tags: ["fact:node_version=22", "plain"], if_rev: 3 });
+    assert.deepEqual(put.body, { tags: ["fact:node_version=22", "plain", "fact-removed:deploy_target"], if_rev: 3 });
     assert.ok(!calls.some((c) => c.path.startsWith("/supersede")));
   });
   test("Replace whole note: a preview first, plain bullets that say its other facts go too, then confirm with the code", async () => {
@@ -415,9 +415,9 @@ describe("adoption wording, key drift, session start", () => {
     const client = new Client({ name: "t", version: "1.0.0" });
     await Promise.all([client.connect(c), server.connect(sv)]);
     const tool = (await client.listTools()).tools.find((t) => t.name === "state_write")!;
-    assert.match(tool.description!, /Recording a decision \(deploy target, package manager, test runner, database, a version or URL\)\? Also pass `facts`, so a teammate's different value is caught exactly\./);
+    assert.ok(tool.description!.includes("Record decisions as `facts` (deploy_target, package_manager, test_runner …): a different value from another agent is then flagged to the user."));
     const desc = (tool.inputSchema.properties as any).facts.description as string;
-    assert.ok(desc.startsWith(`Use a common key when one fits: ${COMMON_FACT_KEYS.join(", ")}. Prefix a subject only when the project has several (api.deploy_target).`), desc);
+    assert.ok(desc.startsWith(`Pass whenever the note states a decision or setting. Reuse a key from similar_keys or this list: ${COMMON_FACT_KEYS.join(", ")}. Prefix a subject only when the project has several (api.deploy_target).`), desc);
     client.close(); s.close();
   });
   test("SKILL.md and the docs repeat the same advice (common keys, subject prefix only when needed; no 'always scope')", async () => {
@@ -433,7 +433,9 @@ describe("adoption wording, key drift, session start", () => {
     const s = new Store(":memory:");
     mk(s, "alice", "a", "x", { hosting: "fly.io", "api.package_manager": "pnpm", database: "postgres" });
     const hit = s.create({ title: "b", body: "x", tags: withFacts(undefined, { deploy_target: "render", pkg_manager: "npm", "web.package_manager": "yarn", database: "mysql", colour: "red" }) }, { writtenBy: "bob" });
-    assert.deepEqual(similarKeys(s, hit), { deploy_target: ["hosting"], pkg_manager: ["api.package_manager"], "web.package_manager": ["api.package_manager"] });
+    const flat = Object.fromEntries(Object.entries(similarKeys(s, hit)).map(([k, v]) => [k, v.map((e) => e.key)]));
+    assert.deepEqual(flat, { deploy_target: ["hosting"], pkg_manager: ["api.package_manager"], "web.package_manager": ["api.package_manager"] });
+    assert.deepEqual(similarKeys(s, hit).deploy_target[0], { key: "hosting", value: "fly.io", id: 1, writer: "alice" });
     s.close();
   });
   test("similar_keys comes back over state_write only when the key is new and something looks alike", async () => {
@@ -448,36 +450,180 @@ describe("adoption wording, key drift, session start", () => {
       return JSON.parse(t.slice(t.indexOf("{")));
     };
     mk(s, "alice", "a", "x", { hosting: "fly.io" });
-    assert.deepEqual((await call({ title: "b", body: "y", facts: { deploy_target: "render" } })).similar_keys, { deploy_target: ["hosting"] });
+    const hit = await call({ title: "b", body: "y", facts: { deploy_target: "render" } });
+    assert.equal(hit.similar_keys.deploy_target[0].key, "hosting");
+    assert.equal(hit.hint, "hosting is already 'fly.io' (#1, alice). Use that key if it's the same setting.");
     assert.equal((await call({ title: "c", body: "y", facts: { hosting: "render" } })).similar_keys, undefined, "hosting is already known");
     assert.equal((await call({ title: "d", body: "y", facts: { unrelated_thing: "1" } })).similar_keys, undefined);
     client.close(); s.close();
   });
-  test("session start: a dispute is at most 2 short lines; none = no text at all; same writer or same value is no dispute", () => {
+  test("session start: a dispute is a framed Monomem notice with quoted values, note ids and writers; at most 2 lines; none = no text", () => {
     const s = new Store(":memory:");
-    mk(s, "alice", "a", "x", { deploy_target: "fly.io" });
-    mk(s, "alice", "a2", "x", { deploy_target: "render" }); // one writer changing their mind
-    assert.equal(disputedLines(s, "default"), "");
-    mk(s, "bob", "b", "x", { deploy_target: "Render" });
-    assert.match(disputedLines(s, "default"), /^Disputed: deploy_target = fly\.io \(alice\) vs render \(alice\/bob\)\. Ask the user before acting\.$/);
+    const a = mk(s, "alice", "a", "x", { deploy_target: "fly.io" });
+    assert.equal(disputedLines(s, { namespace: "default" }), "");
+    const b = mk(s, "bob", "b", "x", { deploy_target: "Render" });
+    assert.equal(disputedLines(s, "default"), `Monomem: writers disagree on deploy_target: 'fly.io' (#${a} alice) vs 'Render' (#${b} bob). Check with the user.`);
     for (const [k, v1, v2] of [["database", "pg", "mysql"], ["test_runner", "jest", "vitest"]] as const) { mk(s, "alice", `x${k}`, "y", { [k]: v1 }); mk(s, "bob", `y${k}`, "y", { [k]: v2 }); }
-    assert.equal(disputedLines(s, "default").split("\n").length, 2);
-    assert.equal(disputedLines(s, "elsewhere"), "");
+    const out = disputedLines(s, "default");
+    assert.equal(out.split("\n").length, 2);
+    assert.match(out, /\(\+1 more: monomem conflicts\)$/);
+    assert.equal(disputedLines(s, { namespace: "elsewhere" }), "");
+    // honest size: the worst case (2 lines, "+N more") in the 4-chars-a-token estimate the rest of the context uses
+    assert.ok(Math.ceil(out.length / 4) <= 90, `${Math.ceil(out.length / 4)} tokens`);
+    console.log(`# disputed lines: 1 dispute = ${Math.ceil(disputedLines(s, { namespace: "default", writtenBy: "alice" }).length / 4)} tok (filtered), one line = ${Math.ceil(out.split("\n")[0].length / 4)} tok, 2 lines + "+N more" = ${Math.ceil(out.length / 4)} tok`);
     s.close();
   });
-  test("injectContext: the Disputed line rides inside the context; absent when nothing is disputed; distrusted writers do not count", async () => {
+  test("a writer who changed their mind is one side, not two; one writer with 3 values cannot crowd out the other side", () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "a", "x", { deploy_target: "fly.io" });
+    mk(s, "alice", "a2", "x", { deploy_target: "render" });
+    mk(s, "bob", "b", "x", { deploy_target: "Render" });
+    assert.equal(disputedLines(s, "default"), "");
+    const crowd = new Store(":memory:");
+    for (const v of ["a", "b", "c", "d"]) mk(crowd, "alice", `t${v}`, "x", { database: v });
+    const bob = mk(crowd, "bob", "tb", "x", { database: "z" });
+    const line = disputedLines(crowd, "default");
+    assert.match(line, new RegExp(`'z' \\(#${bob} bob\\)`), line);
+    assert.equal((line.match(/ vs /g) ?? []).length, 1, "alice appears once");
+    s.close(); crowd.close();
+  });
+  test("disputes show in a default install (no namespace), across namespaces, and respect the session writer filters", () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "a", "x", { deploy_target: "fly.io" }, "proj");
+    mk(s, "bob", "b", "x", { deploy_target: "render" }, "proj");
+    assert.match(disputedLines(s, {}), /disagree on deploy_target/);
+    assert.equal(disputedLines(s, { writtenBy: "alice" }), "");
+    assert.equal(disputedLines(s, { notWrittenBy: "bob" }), "");
+    assert.match(disputedLines(s, { notWrittenBy: "carol" }), /disagree/);
+    s.close();
+  });
+  test("never-show notes and distrusted writers never reach a dispute line", () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "a", "x", { deploy_target: "fly.io" });
+    const hidden = s.create({ title: "b", body: "x", tags: withFacts(["never-show"], { deploy_target: "render" }) }, { writtenBy: "bob" });
+    assert.equal(disputedLines(s, "default"), "");
+    assert.equal(s.liveFactNotesIn("default").some((n) => n.id === hidden.id), false);
+    assert.equal(s.liveFactNotesIn("default", { includeNeverShow: true }).some((n) => n.id === hidden.id), true);
+    s.close();
+  });
+  test("injectContext: the notice rides inside the context with NO namespace configured; absent when quiet; distrusted writers do not count", async () => {
     const { injectContext } = await import("../src/context-inject.js");
     const s = new Store(":memory:");
     mk(s, "alice", "Deploy", "we deploy", { deploy_target: "fly.io" });
-    const quiet = await injectContext(s, { namespace: "default", signals: {} });
-    assert.ok(!quiet.includes("Disputed:"));
+    assert.ok(!(await injectContext(s, { signals: {} })).includes("Monomem: writers disagree"));
     mk(s, "bob", "Hosting", "we host", { deploy_target: "render" });
-    const loud = await injectContext(s, { namespace: "default", signals: {} });
-    assert.match(loud, /Disputed: deploy_target = fly\.io \(alice\) vs render \(bob\)\. Ask the user before acting\./);
+    for (const ns of [undefined, "default"]) assert.match(await injectContext(s, { namespace: ns, signals: {} }), /Monomem: writers disagree on deploy_target: 'fly\.io' \(#1 alice\) vs 'render' \(#2 bob\)\. Check with the user\./);
     s.distrustAdd("default", "bob");
-    assert.ok(!(await injectContext(s, { namespace: "default", signals: {} })).includes("Disputed:"));
+    assert.ok(!(await injectContext(s, { signals: {} })).includes("writers disagree"));
     s.close();
   });
+  test("similar_keys: a prefixed key against its own base key is deliberate scoping, not drift", () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "a", "x", { deploy_target: "fly.io" });
+    const n = s.create({ title: "b", body: "x", tags: withFacts(undefined, { "api.deploy_target": "render" }) }, { writtenBy: "bob" });
+    assert.deepEqual(similarKeys(s, n), {});
+    s.close();
+  });
+  test("cross-key dispute: hosting=fly.io vs deploy_target=render is reported as a conflict on write", () => {
+    const s = new Store(":memory:");
+    const a = mk(s, "alice", "a", "x", { hosting: "fly.io" });
+    const n = s.create({ title: "b", body: "x", tags: withFacts(undefined, { deploy_target: "render" }) }, { writtenBy: "bob" });
+    const c = writeConflicts(s, n);
+    assert.equal(c.length, 1);
+    assert.match(c[0], new RegExp(`^conflicts with #${a} by alice: hosting fly\\.io \\(theirs\\) vs deploy_target render \\(yours\\), the same setting under another key`));
+    const same = s.create({ title: "c", body: "x", tags: withFacts(undefined, { deploy_target: "Fly.io" }) }, { writtenBy: "carol" });
+    assert.deepEqual(writeConflicts(s, same).filter((x) => x.includes("hosting")), []);
+    s.close();
+  });
+  test("REST PUT /notes/:id accepts facts: they replace the fact tags, keep other tags, and the reply carries conflicts", async () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "Deploy", "x", { deploy_target: "fly.io" });
+    const mine = s.create({ title: "Mine", body: "y", tags: ["keep", "fact:deploy_target=old"] }, { writtenBy: "bob" });
+    const server = createApiServer(s, [{ token: "t", scope: "write", label: "bob" }]);
+    await new Promise<void>((ok) => server.listen(0, ok));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const put = (b: unknown) => fetch(`${base}/notes/${mine.id}`, { method: "PUT", headers: { Authorization: "Bearer t", "Content-Type": "application/json" }, body: JSON.stringify(b) });
+    try {
+      const r = await put({ facts: { deploy_target: "render" } });
+      assert.equal(r.status, 200);
+      const j = (await r.json()) as { note: { tags: string[] }; conflicts: string[] };
+      assert.deepEqual(j.note.tags, ["keep", "fact:deploy_target=render"]);
+      assert.equal(j.conflicts.length, 1);
+      assert.equal((await put({ facts: { Bad: "v" } })).status, 400);
+      assert.equal((await put({ facts: {} })).status, 200);
+      assert.deepEqual(s.read(mine.id)!.tags, ["keep"]);
+    } finally {
+      server.close();
+      s.close();
+    }
+  });
+  test("body/fact mismatch lint (warn only): the text says another value than the fact; quiet for agreement, migration stories and no facts", async () => {
+    const { factMismatchWarnings } = await import("../src/lint.js");
+    const tags = ["fact:deploy_target=render"];
+    assert.equal(factMismatchWarnings("Hosting", "The deploy target is vercel.", tags).length, 1);
+    assert.equal(factMismatchWarnings("Hosting", "deploy_target: vercel", tags).length, 1);
+    assert.equal(factMismatchWarnings("Hosting", "The deploy target is Render.", tags).length, 0);
+    assert.equal(factMismatchWarnings("Hosting", "deploy target is vercel today; we move to render", tags).length, 0);
+    assert.equal(factMismatchWarnings("Hosting", "We deploy somewhere.", tags).length, 0);
+    assert.equal(factMismatchWarnings("Hosting", "deploy target is vercel", []).length, 0);
+    assert.equal(factMismatchWarnings("CI", "ci provider is github actions", ["fact:ci_provider=github actions"]).length, 0);
+    // over MCP the write still succeeds and the warning rides along
+    const s = new Store(":memory:");
+    const server = createMcpServer(s, "admin", {}, { label: "bob", authed: true });
+    const [c, sv] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "t", version: "1.0.0" });
+    await Promise.all([client.connect(c), server.connect(sv)]);
+    const r: any = await client.callTool({ name: "state_write", arguments: { title: "Hosting", body: "The deploy target is vercel.", facts: { deploy_target: "render" } } });
+    const t = r.content[0].text as string;
+    const j = JSON.parse(t.slice(t.indexOf("{")));
+    assert.equal(j.fact_warnings.length, 1);
+    assert.ok(s.read(j.note.id));
+    client.close(); s.close();
+  });
+  test("factsTable: per namespace, key -> values with writers and since; disputed and agreed keys marked", () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "a", "x", { deploy_target: "fly.io", test_runner: "vitest" });
+    mk(s, "bob", "b", "x", { deploy_target: "render", test_runner: "Vitest" });
+    mk(s, "alice", "c", "x", { database: "pg" });
+    const t = factsTable(s.liveFactNotesIn(undefined)).default;
+    const by = Object.fromEntries(t.map((r) => [r.key, r]));
+    assert.equal(by.deploy_target.disputed, true);
+    assert.equal(by.deploy_target.values.length, 2);
+    assert.equal(by.test_runner.disputed, false);
+    assert.equal(by.test_runner.agreed, true);
+    assert.deepEqual(by.test_runner.values[0].writers, ["alice", "bob"]);
+    assert.equal(by.database.agreed, false);
+    s.close();
+  });
+  test("monomem fact remove <id> <key>: drops only that fact, tags the note, refuses a missing fact; conflicts prints the command", async () => {
+    const { DB_PATH } = await import("../src/config.js");
+    const { factRemoveCmd } = await import("../src/facts.js");
+    const s = new Store(DB_PATH);
+    const a = mk(s, "alice", "Deploy", "x", { deploy_target: "fly.io", node_version: "22" });
+    const b = mk(s, "bob", "Hosting", "y", { deploy_target: "render" });
+    const text = conflictLines(groupConflicts(findConflicts(s))).join("\n");
+    assert.ok(text.includes(`monomem fact remove ${a} deploy_target`) && text.includes(`monomem fact remove ${b} deploy_target`), text);
+    const log = console.log;
+    const said: string[] = [];
+    console.log = (m: unknown) => said.push(String(m));
+    try {
+      await factRemoveCmd(["remove", String(a), "deploy_target"]);
+    } finally {
+      console.log = log;
+    }
+    assert.match(said[0], /Removed fact deploy_target from #/);
+    assert.deepEqual(s.read(a)!.tags, ["fact:node_version=22", "fact-removed:deploy_target"]);
+    assert.deepEqual(findConflicts(s), []);
+    s.close();
+  });
+  test("dashboard Keep a fact: held-for-review wording, a fact-removed marker, Pin/Distrust under More, Replace whole note secondary, namespace labelled", () => {
+    assert.match(DASHBOARD_JS, /held for review/);
+    assert.match(DASHBOARD_JS, /fact-removed:/);
+    assert.match(DASHBOARD_JS, /<summary class='muted'>More<\/summary>/);
+    assert.match(DASHBOARD_JS, /Replace whole note instead/);
+    assert.match(DASHBOARD_JS, /Namespace: <b>/);
+  });
+
 });
 
 // ---- honest numbers ----

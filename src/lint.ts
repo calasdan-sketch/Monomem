@@ -395,3 +395,28 @@ export function lintContent(input: {
 export function describeFindings(findings: LintFinding[]): string {
   return findings.map((f) => (f.category === "approval" ? f.label : `${f.label} in ${f.field}`)).join("; ");
 }
+
+// Body/fact mismatch (warn only). A note that carries `facts` but whose own text states another value for one of those keys
+// ("deploy target is vercel" with fact deploy_target=render) leaves two answers in one note. Deterministic: the key's words, a
+// connector (is, are, =, :, ->, to, now), then one token. Quiet when the fact's value appears anywhere in the text (a migration story).
+// Cannot catch: paraphrases ("we ship on vercel"), values with more than one word compared on the first word only.
+const FILLER_WORDS = new Set(["the", "a", "an", "not", "no", "still", "currently", "now", "set", "changed", "moved"]);
+export function factMismatchWarnings(title: string, body: string, tags: readonly string[]): string[] {
+  const text = `${title}\n${body}`;
+  const lower = text.toLowerCase().replace(/\s+/g, " ");
+  const out: string[] = [];
+  for (const t of tags) {
+    const m = /^fact:([a-z0-9_.-]{1,40})=(.{1,80})$/.exec(t.trim());
+    if (!m) continue;
+    const [, key, rawValue] = m;
+    const value = rawValue.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!value || lower.includes(value)) continue;
+    const words = key.split(/[_.-]+/).filter(Boolean).map((w) => w.replace(/[^a-z0-9]/g, ""));
+    if (!words.length) continue;
+    const re = new RegExp(String.raw`\b${words.join("[\\s_.-]+")}\b\s*(?:is|are|=|:|->|now|to)\s*(?:now\s+|to\s+)?["'\x60]?([a-z0-9][\w.\-/@:]*)`, "i");
+    const hit = re.exec(text)?.[1]?.replace(/[.,;:]+$/, "").toLowerCase();
+    if (!hit || FILLER_WORDS.has(hit) || value.startsWith(hit)) continue;
+    out.push(`the text says ${key} is "${hit}" but the fact says "${rawValue.trim()}". Fix whichever is wrong.`);
+  }
+  return out;
+}

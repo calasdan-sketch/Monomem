@@ -15,7 +15,7 @@ import { setProcessWriter } from "./actor.js";
 const COMMANDS = [
   "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
   "consolidate", "rebuild-edges", "relevant", "search", "token", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
-  "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality", "conflicts",
+  "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality", "conflicts", "facts", "fact",
   "encrypt", "meter", "receipts", "why", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "drill", "health", "audit",
   "help", "--help", "-h", "--version", "-v", "version",
 ];
@@ -238,7 +238,12 @@ function usage(all = false): void {
       "            the linter flags, and captured rows about to decay. Each comes with the command that fixes it.",
       "  conflicts [--json] [--namespace ns]",
       "            Live notes from different writers that give different values for the same key (deploy target, package",
-      "            manager, a version, a URL). Flag only: you choose supersede, pin or distrust.",
+      "            manager, a version, a URL). Flag only: you choose supersede, pin, distrust, or remove just the fact.",
+      "  facts [--namespace ns] [--json] [--as-of <ISO|7d|2h>]",
+      "            The decisions agents recorded as facts: key, current value(s), writers, since. Marks disputed keys and keys",
+      "            two or more writers agree on.",
+      "  fact remove <note id> <key>",
+      "            Drop one fact from a note. The note stays and gets a fact-removed:<key> tag; its text may still mention the old value.",
       "  decay [--dry-run] [--namespace ns]",
       "            Archive (never delete) captured observations idle MONOMEM_DECAY_DAYS (30) and summaries idle",
       "            MONOMEM_DECAY_SUMMARY_DAYS (180). Never: your own notes, decisions, anything tagged \"pinned\".",
@@ -2717,6 +2722,12 @@ async function main(): Promise<void> {
       break;
     case "conflicts":
       await (await import("./conflicts.js")).conflictsCmd(process.argv.slice(3));
+      break;
+    case "facts":
+      await (await import("./facts.js")).factsCmd(process.argv.slice(3));
+      break;
+    case "fact":
+      await (await import("./facts.js")).factRemoveCmd(process.argv.slice(3));
       break;
     case "encrypt":
       await encryptCmd();

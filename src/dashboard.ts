@@ -91,6 +91,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   .cf{border-top:1px solid var(--line);padding:10px 0 2px}
   .cf h3{margin:0 0 6px}
   .cfval{margin:6px 0}
+  .cfmore{margin-top:6px}
   .cfdlg:empty{display:none}
   .cfdlg{margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:6px}
   .cfdlg ul{margin:0 0 6px;padding-left:18px}
@@ -506,7 +507,7 @@ function cfNote(n){
 }
 function cfRow(g, gi){
   gi = Number(gi) || 0;
-  var btns = [], all = [], seen = {};
+  var btns = [], more = [], all = [], seen = {};
   g.values.forEach(function(v, vi){
     v.notes.forEach(function(n){ all.push(n); });
     // Keeping one value changes the other values' notes, and a pinned note can only be changed from the CLI.
@@ -514,23 +515,24 @@ function cfRow(g, gi){
     if(!blocked){ btns.push("<button class='ghost' onclick='cfKeep("+gi+","+vi+")'>Keep "+esc(v.value)+"</button>"); }
   });
   all.forEach(function(n){
-    if(!n.pinned){ btns.push("<button class='ghost' onclick='var x=this;arm(x,function(){qPin("+Number(n.id)+")})'>Pin #"+Number(n.id)+"</button>"); }
+    if(!n.pinned){ more.push("<button class='ghost' onclick='var x=this;arm(x,function(){qPin("+Number(n.id)+")})'>Pin #"+Number(n.id)+"</button>"); }
     if(!seen[n.writer]){
       seen[n.writer] = 1;
-      btns.push("<button class='ghost' data-ns='"+esc(g.namespace)+"' data-w='"+esc(n.writer)+"' onclick='var x=this;arm(x,function(){qDistrust(x)})'>Distrust "+esc(n.writer)+"</button>");
+      more.push("<button class='ghost' data-ns='"+esc(g.namespace)+"' data-w='"+esc(n.writer)+"' onclick='var x=this;arm(x,function(){qDistrust(x)})'>Distrust "+esc(n.writer)+"</button>");
     }
   });
   var pins = all.filter(function(n){ return n.pinned; }).map(function(n){ return "#"+Number(n.id); });
   return "<div class='cf'><h3><span class='tag'>"+esc(g.confidence)+"</span>"+esc(g.key)+"</h3>"+
     g.values.map(function(v){ return "<div class='cfval'><b>"+esc(v.value)+"</b>"+v.notes.map(cfNote).join("")+"</div>"; }).join("")+
-    "<div class='meta'>"+esc(g.namespace)+(pins.length ? " &middot; "+pins.join(", ")+" pinned: change it from the CLI" : "")+"</div>"+acts(btns.join(" "))+
+    "<div class='meta'>Namespace: <b>"+esc(g.namespace)+"</b>"+(pins.length ? " &middot; "+pins.join(", ")+" pinned: change it from the CLI" : "")+"</div>"+acts(btns.join(" "))+
+    (more.length ? "<details class='cfmore'><summary class='muted'>More</summary>"+acts(more.join(" "))+"</details>" : "")+
     "<div class='cfdlg' id='cfdlg"+gi+"'></div></div>";
 }
 // The confirmation sits inside the clicked card: short bullets, then the buttons. Bullets are built from escaped pieces.
 function cfDialog(gi, bullets, actions){
   CFACT[gi] = actions.map(function(a){ return a[1]; });
   $("cfdlg"+gi).innerHTML = "<ul>"+bullets.map(function(b){ return "<li>"+b+"</li>"; }).join("")+"</ul><div class='acts'>"+
-    actions.map(function(a, i){ return "<button onclick='cfAct("+gi+","+i+")'>"+esc(a[0])+"</button>"; }).join(" ")+
+    actions.map(function(a, i){ return "<button"+(a[2] ? " class='ghost'" : "")+" onclick='cfAct("+gi+","+i+")'>"+esc(a[0])+"</button>"; }).join(" ")+
     " <button class='ghost' onclick='cfClose("+gi+")'>Cancel</button></div>";
 }
 function cfAct(gi, i){ var f = CFACT[gi] && CFACT[gi][i]; if(f){ f(); } }
@@ -547,24 +549,28 @@ function cfKeep(gi, vi){
     var o = Number(l.n.otherFacts) || 0;
     bullets.push(cfNoteText(l.n)+" says "+esc(g.key)+" = "+esc(l.value)+". That one fact is removed. The note stays"+(o ? ", with its "+cfFacts(o)+"." : "."));
   });
+  bullets.push("The note's text may still mention the old value. The note gets a <b>fact-removed:"+esc(g.key)+"</b> tag so you can find it and edit the text.");
   bullets.push("No note is deleted or hidden. To bring a fact back, write it on the note again.");
-  bullets.push("To retire a whole note instead, choose Replace whole note.");
-  cfDialog(gi, bullets, [["Remove the disputed fact", function(){ cfRemoveFacts(gi, g, losers); }], ["Replace whole note", function(){ cfReplace(gi, g, keep, losers); }]]);
+  cfDialog(gi, bullets, [["Remove the disputed fact", function(){ cfRemoveFacts(gi, g, losers); }], ["Replace whole note instead", function(){ cfReplace(gi, g, keep, losers); }, 1]]);
 }
 // Removes only the disputed fact tag, through the ordinary note edit (lint, approve-first and the pin gate still apply).
 function cfRemoveFacts(gi, g, losers){
-  var p = Promise.resolve(), done = 0, pre = "fact:"+g.key+"=";
+  var p = Promise.resolve(), done = 0, held = 0, pre = "fact:"+g.key+"=", mark = "fact-removed:"+g.key;
   losers.forEach(function(l){
     p = p.then(function(){
       return api("/notes/"+Number(l.n.id)).then(function(j){
         var n = j.note || j;
-        var tags = (n.tags || []).filter(function(t){ return String(t).trim().indexOf(pre) !== 0; });
+        var tags = (n.tags || []).filter(function(t){ return String(t).trim().indexOf(pre) !== 0 && t !== mark; }).concat([mark]);
         return api("/notes/"+Number(l.n.id), { method:"PUT", body: JSON.stringify({ tags: tags, if_rev: n.rev }) });
-      }).then(function(){ done++; });
+      }).then(function(r){ if(r && r.quarantined){ held++; } else { done++; } });
     });
   });
-  p.then(function(){ loadQuality(); say("Removed "+g.key+" from "+done+(done === 1 ? " note." : " notes.")); })
-   .catch(function(e){ loadQuality(); say("Removed "+g.key+" from "+done+" of "+losers.length+" notes, then: "+(e && e.message ? e.message : String(e)), true); });
+  p.then(function(){
+    loadQuality();
+    var m = held ? (done ? "Removed "+g.key+" from "+done+(done === 1 ? " note" : " notes")+"; " : "")+held+(held === 1 ? " change is" : " changes are")+" held for review (approve-first), so nothing was removed there yet." : "Removed "+g.key+" from "+done+(done === 1 ? " note." : " notes.");
+    say(m+(done ? " The note text may still mention the old value: search for the tag fact-removed:"+g.key+"." : ""));
+  })
+   .catch(function(e){ loadQuality(); say("Removed "+g.key+" from "+done+" of "+losers.length+" notes ("+held+" held for review), then: "+(e && e.message ? e.message : String(e)), true); });
 }
 // Replace whole note: the server's preview issues the one-time code; the bullets are ours.
 function cfReplace(gi, g, keep, losers){

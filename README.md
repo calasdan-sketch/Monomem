@@ -170,10 +170,11 @@ monomem drill       # replay known poisoning attacks on a copy of your store; sa
 monomem health      # one grade A-F with the reason: setup, settings, drill, audit chain, held writes
 monomem why 42      # the story of note #42: who wrote each version, what replaced it, which sessions were shown it
 monomem conflicts   # possible disagreements between writers
+monomem facts       # the decisions agents recorded as facts, with who wrote them; disputed keys marked
 monomem receipts    # which notes the last session start showed, and why
 ```
 
-`conflicts` only flags: it matches exact facts and keys, so a disagreement that is reworded is missed, and it never changes a note. `health` opens your store (an older database file is upgraded once) and writes one small row noting how long the audit log was, so the next run can see lines removed. These are local commands: `drill` and `health` run the drill with embeddings forced off, so they make no embedding call (and no call to any other machine; the drill talks only to a temporary server on 127.0.0.1) even when `MONOMEM_EMBEDDINGS` and a remote `MONOMEM_EMBED_URL` are set (`health` only reports that such a URL is configured).
+`conflicts` only flags: it matches exact facts and keys, so a disagreement that is reworded is missed, and it never changes a note. Agents that record decisions as `facts` (deploy_target, package_manager ...) get an exact match: a different value from another writer is flagged on write and, at session start, shown as a short "writers disagree" line. `health` opens your store (an older database file is upgraded once) and writes one small row noting how long the audit log was, so the next run can see lines removed. These are local commands: `drill` and `health` run the drill with embeddings forced off, so they make no embedding call (and no call to any other machine; the drill talks only to a temporary server on 127.0.0.1) even when `MONOMEM_EMBEDDINGS` and a remote `MONOMEM_EMBED_URL` are set (`health` only reports that such a URL is configured).
 
 In Claude Code you can also install Monomem as a plugin instead of running `setup` ([what the plugin does and does not do](./docs/plugin.md)):
 
