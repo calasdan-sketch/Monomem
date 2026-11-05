@@ -94,7 +94,8 @@ export function defaultPath(from: ForeignSource, e: Pick<SetupEnv, "home" | "env
 
 /** memory.jsonl (or the legacy memory.json) files of server-memory installs in the npx caches. */
 export function findMcpMemoryFiles(e: Pick<SetupEnv, "home" | "env">): string[] {
-  const roots = [join(e.env.LOCALAPPDATA || join(e.home, "AppData", "Local"), "npm-cache", "_npx"), join(e.home, ".npm", "_npx")];
+  // npm's cache folder: npm_config_cache when set, else LOCALAPPDATA/npm-cache (Windows) or ~/.npm (macOS, Linux).
+  const roots = [...(e.env.npm_config_cache ? [join(e.env.npm_config_cache, "_npx")] : []), join(e.env.LOCALAPPDATA || join(e.home, "AppData", "Local"), "npm-cache", "_npx"), join(e.home, ".npm", "_npx")];
   const out: string[] = [];
   for (const root of roots) {
     let dirs: string[] = [];
@@ -250,7 +251,13 @@ export function readBasicMemory(root: string): Item[] {
 
 const MAX_JSONL_LINES = 1_000_000;
 
-export function readMcpMemory(path: string): Item[] {
+/** Counts a dry run reports: relation lines read, and lines that could not be read (skipped). */
+export interface McpStats {
+  relations: number;
+  badLines: number;
+}
+
+export function readMcpMemory(path: string, stats?: McpStats): Item[] {
   if (statSync(path).size > MAX_JSON_BYTES) throw new Error(`larger than ${MAX_JSON_BYTES / 1024 / 1024} MiB`);
   const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
   type Rec = Record<string, unknown>;
@@ -281,10 +288,12 @@ export function readMcpMemory(path: string): Item[] {
         take(JSON.parse(line));
       } catch {
         /* a damaged line (the server keeps unreadable lines too): skip it */
+        if (stats) stats.badLines++;
       }
     }
     if (!entities.length && !relations.length) throw new Error("this is not an MCP memory file (no entity or relation lines)");
   }
+  if (stats) stats.relations = relations.length;
   const rels = new Map<string, string[]>();
   for (const r of relations) {
     const from = str(r.from).trim();
@@ -333,6 +342,8 @@ interface Candidate {
   tags: string[];
   source: string;
   secret: boolean;
+  /** Lint categories other than secrets (injection, pii, ...): the linter may hold this note. */
+  flags: string[];
 }
 
 function candidates(from: ForeignSource, items: Item[]): Candidate[] {
@@ -344,7 +355,7 @@ function candidates(from: ForeignSource, items: Item[]): Candidate[] {
       const tags = [...new Set([tagFor(from), ...it.tags.map(tag).filter(Boolean)])].slice(0, LIMITS.tagCount);
       const finds = lintContent({ title, body: part, tags });
       const secret = finds.some((f) => f.category === "secret" || f.category === "entropy") || looksLikeCredential(title + "\n" + part);
-      out.push({ item: it, title, body: part, tags, source: sourceFor(from, parts.length > 1 ? `${it.id}#${i + 1}` : it.id), secret });
+      out.push({ item: it, title, body: part, tags, source: sourceFor(from, parts.length > 1 ? `${it.id}#${i + 1}` : it.id), secret, flags: [...new Set(finds.filter((f) => f.category !== "secret" && f.category !== "entropy").map((f) => f.category))] });
     });
   }
   return out;
@@ -359,7 +370,7 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
       io.err(
         found.length
           ? `I found ${found.length} MCP memory files. Pick one with --path:\n${found.map((f) => `  ${f}`).join("\n")}`
-          : "I found no MCP memory file. Set MEMORY_FILE_PATH or point --path at your memory.jsonl."
+          : "I found no MCP memory file in the npm cache folders (npm_config_cache, LOCALAPPDATA/npm-cache, ~/.npm). Set MEMORY_FILE_PATH or point --path at your memory.jsonl."
       );
       return 1;
     }
@@ -372,9 +383,10 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
   }
   io.out(`Reading ${from} data from ${path} (read only; nothing leaves this computer):`);
   let items: Item[];
+  const mcpStats: McpStats = { relations: 0, badLines: 0 };
   try {
     items =
-      from === "claude-mem" ? readClaudeMem(path) : from === "mem0" ? readMem0(path) : from === "mcp-memory" ? readMcpMemory(path) : readBasicMemory(path);
+      from === "claude-mem" ? readClaudeMem(path) : from === "mem0" ? readMem0(path) : from === "mcp-memory" ? readMcpMemory(path, mcpStats) : readBasicMemory(path);
   } catch (err) {
     io.err(`Could not read ${path}: ${(err as Error).message}`);
     return 1;
@@ -413,6 +425,7 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
     io.out(`\n${t.n} item(s): ${t.c} new, ${t.s} already imported, ${t.x} skipped because they look like a secret.`);
     if (t.x) io.out("  Skipped items are not stored and not shown. Take the secret out at the source (or keep it in a password manager) and run again.");
     if (heldSkipped) io.out(`  ${heldSkipped} item(s) were held by the memory linter on an earlier run and are not queued again (see \`monomem quarantine\`).`);
+    if (opts.dryRun && from === "mcp-memory") previewMcp(io, todo, mcpStats);
     if (opts.dryRun) {
       io.out("\nDry run: nothing was written.");
       return 0;
@@ -460,5 +473,23 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
   } finally {
     writer?.close();
     if (store && store !== writer) store.close();
+  }
+}
+
+const clip = (t: string, n: number): string => (t.length > n ? t.slice(0, n - 1) + "..." : t);
+const PREVIEW_ENTITIES = 10;
+
+/** Dry run of an MCP memory file: what each entity would become (name and first observation), what was dropped, what the linter may hold. */
+function previewMcp(io: SetupIO, todo: Candidate[], stats: McpStats): void {
+  io.out(`\nPreview (first ${Math.min(PREVIEW_ENTITIES, todo.length)} of ${todo.length} new note(s)):`);
+  for (const c of todo.slice(0, PREVIEW_ENTITIES)) {
+    const first = c.body.split("\n").find((l) => l.startsWith("- "))?.slice(2) ?? "";
+    io.out(`  ${clip(c.title, 40)}: ${clip(first, 60)}`);
+  }
+  io.out(`\n${stats.relations} relation line(s) read; ${stats.badLines} line(s) could not be read and are dropped.`);
+  const flagged = todo.filter((c) => c.flags.length);
+  if (flagged.length) {
+    io.out(`${flagged.length} new note(s) would probably be held by the memory linter for your review:`);
+    for (const c of flagged.slice(0, PREVIEW_ENTITIES)) io.out(`  ${clip(c.title, 40)}: ${c.flags.join(", ")}`);
   }
 }
