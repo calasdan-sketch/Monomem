@@ -1,5 +1,5 @@
 <!-- Image URLs are absolute on purpose: GitHub resolves relative paths, npm does not. -->
-![Monomem — one memory, every assistant](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/brand/monomem-banner.png)
+![Monomem: Shared memory for AI agents that holds poisoned writes.](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/brand/monomem-banner.png)
 
 **Shared memory for your AI coding agents that records who wrote each note and holds suspicious writes for your review.**
 
@@ -9,7 +9,7 @@ npx monomem setup
 
 Needs Node 22.16 or newer (check with `node -v`). On an older Node, use [Docker](#docker).
 
-Tell Claude Code something once, and your other assistants can read it too. It's one SQLite file on your own machine. No cloud, no API keys, no hidden model calls.
+Stop explaining your project to every assistant again. Tell Claude Code something once, and Cursor, Codex and Gemini CLI can read it too, because they all share one memory. Each note says which assistant wrote it, and a note that looks like a planted instruction is held for you to approve instead of being handed to your other assistants. It's one SQLite file on your own machine. No cloud, no API keys, no hidden model calls.
 
 [![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)
@@ -171,13 +171,13 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 
 ## Automatic memory
 
-Monomem can also remember what Claude Code *does*, without anyone writing a note:
+Monomem can also remember what your coding agent *does*, without anyone writing a note. Setup can wire this for Claude Code, Codex, Gemini CLI and Muse (whichever it finds on this computer). The Codex and Gemini CLI hooks follow those tools' published hook documentation (Codex asks you to approve them once with `/hooks`); Muse does not publish its hook fields, so capture there is the least certain:
 
 ```bash
-monomem setup --capture        # or answer y to "Also record what Claude does in this project ...?"
+monomem setup --capture        # or answer y to "Also record what <agent> does in this project ...?"
 ```
 
-- **What is recorded:** prompts, tool calls, file edits, commands and their errors, through Claude Code's hooks
+- **What is recorded:** prompts, tool calls, file edits, commands and their errors, through each tool's hooks
   (`monomem hook <event>`). Only on this machine, in the same SQLite file; raw events are deleted after 7 days
   (`MONOMEM_CAPTURE_RETENTION_DAYS`).
 - **What is kept:** a free, deterministic distiller (no model call) turns each session into a few **observations**
@@ -196,7 +196,7 @@ monomem setup --capture        # or answer y to "Also record what Claude does in
   `memory_get` (full text, cite as `om:#id`), plus `session_list`. REST: `GET /index`, `GET /timeline`, `POST /get`,
   `GET /sessions`, `GET /files/timeline?path=`. The [monomem-mem skill](./skills/monomem-mem/SKILL.md) teaches
   an agent this order.
-- **Before a file is read:** a `PreToolUse` hook on `Read` (`monomem hook file-context`, installed with
+- **Before a file is read (Claude Code only):** a `PreToolUse` hook on `Read` (`monomem hook file-context`, installed with
   `--capture`) tells the agent which memories are linked to that file, once per session per file. It is advisory
   only: it never blocks, allows or changes the Read. Same namespace, trust and UNTRUSTED-banner rules as the
   start-of-session context.
@@ -323,15 +323,24 @@ the same store.
 
 ## How it compares
 
-Other good projects solve overlapping problems, and we have not verified a
-feature-by-feature comparison against their current releases, so we do not
-publish one. Read their own docs and pick on your needs:
+The closest well-known alternative is the official
+[MCP memory server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory)
+(`@modelcontextprotocol/server-memory`), a small knowledge graph kept in one file.
+It is a good fit if you want that and nothing more. This table only lists things you can check:
+the left column against [its README](https://github.com/modelcontextprotocol/servers/blob/main/src/memory/README.md)
+(read on 5 November 2026; check it again, it changes), the right against this repository.
 
-- [mcp-memory-service](https://github.com/doobidoo/mcp-memory-service),
-  [Basic Memory](https://github.com/basicmachines-co/basic-memory),
-  [OpenMemory (mem0)](https://docs.mem0.ai/openmemory) and the
-  [official MCP memory server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory)
-  are all worth a look.
+| | Official MCP memory server | Monomem |
+|---|---|---|
+| Who wrote each note | Its README documents no author on a stored observation | Every note has a `written_by` the server stamps ([Who wrote this?](#who-wrote-this)) |
+| History and undo | Its README documents delete tools and no undo or version history | Earlier versions kept (20 per note by default) and restorable; a permanent delete is deliberate and cannot be undone |
+| Quarantine | Its README documents none | Suspicious writes wait for your approval, and a namespace can be approve-first ([docs/memory-linter.md](./docs/memory-linter.md)) |
+| REST API | Its README documents MCP tools and one MCP resource, no REST | REST API and dashboard next to MCP over stdio and HTTP |
+| Several apps on one memory | Yes: its README describes several clients sharing one file, with a lock so writes take turns | Yes, and each app or token gets its own writer name; `setup` wires eight clients |
+| Import | Not documented | `monomem import --from mcp-memory` reads its file ([docs/switching.md](./docs/switching.md)) |
+
+Its data model is also different: entities, relations and observations, where Monomem keeps titled notes with tags.
+Neither is better in general; pick the one whose model fits how you work.
 
 What Monomem itself provides (all of it checkable in this repo): MIT
 license, Node 22.16+ with 2 direct runtime dependencies, one SQLite file,
@@ -542,6 +551,7 @@ remove it: [docs/footprint.md](./docs/footprint.md).
 | [docs/encryption-retention.md](./docs/encryption-retention.md) | at-rest encryption, retention (TTL + archive), retrieval visibility |
 | [docs/provenance.md](./docs/provenance.md) | who wrote a note: server-stamped `written_by`, filters, what is and is not trusted |
 | [docs/trust.md](./docs/trust.md) | distrust list, writer ids, signed attestations: what each does and does not prove, upgrade and rollback |
+| [docs/team.md](./docs/team.md) | shared memory for a team: one server, one token per person, namespaces, approve-first, sync, backups |
 | [docs/token-namespaces.md](./docs/token-namespaces.md) | per-token namespace permissions — one shared bridge, isolated agents |
 | [docs/replacing-memories.md](./docs/replacing-memories.md) | replacing a note in two steps, undo, version history and restore, confidence, the trust guard |
 | [docs/BENCHMARK.md](./docs/BENCHMARK.md) | `monomem bench`: stale memory, contradiction recovery, permission isolation, provenance retention; scenario format; adapting it to another memory system |

@@ -72,7 +72,7 @@ import { PayloadTooLargeError, readBody, normalizeTokens, IMPORT_BODY_BYTES } fr
  * import than the saved milliseconds.
  */
 const IMPORT_EDGE_DEFER_THRESHOLD = 200;
-import { DASHBOARD_HTML, DASHBOARD_JS } from "./dashboard.js";
+import { DASHBOARD_HTML, DASHBOARD_JS, FAVICON_PNG } from "./dashboard.js";
 import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, type ExplainedHit } from "./search-service.js";
 import {
   type ServerNamespaceOpts,
@@ -439,6 +439,17 @@ export function createApiServer(
             "img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'",
         });
         res.end(DASHBOARD_HTML);
+        return;
+      }
+      // The tab icon: the brand mark, no token (browsers ask for it without credentials).
+      if (req.method === "GET" && path === "/favicon.ico") {
+        if (anonLimited()) return;
+        res.writeHead(200, {
+          "Content-Type": "image/png",
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "public, max-age=86400",
+        });
+        res.end(FAVICON_PNG);
         return;
       }
       if (req.method === "GET" && path === "/dashboard.js") {

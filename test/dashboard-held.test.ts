@@ -50,7 +50,11 @@ describe("dashboard: Held view", () => {
     assert.match(html, /work/);
     assert.ok(!html.includes("<img"), "no live markup");
     assert.match(html, /arm\(this,function\(\)\{qQuarantine\(4,&quot;reject&quot;\)\}\)/);
-    assert.equal(p.el("held_n").textContent, " (1)");
+    assert.match(p.el("held_n").innerHTML, /<span class='pill'>1<\/span>/);
+    assert.equal(p.el("tab_held").className, "lit");
+    assert.match(html, /class='card held'/);
+    assert.match(html, /HELD &middot; NOT IN SHARED MEMORY/);
+    assert.match(html, /class='heldbody'/);
     assert.equal(p.el("tab_held").ariaCurrent, "page");
     assert.equal(p.el("tab_list").ariaCurrent, null);
   });
@@ -87,6 +91,40 @@ describe("dashboard: cards", () => {
   });
 });
 
+describe("dashboard: held strip, pinned first, writer label", () => {
+  test("Notes view shows a strip linking to Held only when something is held", async () => {
+    const p = page(() => ({}));
+    p.ctx.setHeldCount(1);
+    p.ctx.setView("list");
+    assert.equal(p.el("heldstrip").hidden, false);
+    assert.match(p.el("heldstrip").textContent, /^1 write held for review →$/);
+    assert.match(DASHBOARD_HTML, /id="heldstrip"[^>]*onclick="loadHeld\(\)"/);
+    p.ctx.setView("held");
+    assert.equal(p.el("heldstrip").hidden, true);
+    p.ctx.setHeldCount(0);
+    p.ctx.setView("list");
+    assert.equal(p.el("heldstrip").hidden, true);
+    assert.equal(p.el("tab_held").className, "");
+  });
+  test("pinned notes sort first (not while searching)", () => {
+    const p = page(() => ({}));
+    const notes = [{ id: 1, title: "a", namespace: "d", tags: [] }, { id: 2, title: "b", namespace: "d", tags: [], pinned: true }];
+    p.ctx.render(notes);
+    const html = p.el("list").innerHTML as string;
+    assert.ok(html.indexOf("<h3>b") < html.indexOf("<h3>a"));
+  });
+  test("writer label primary shows as admin (setup); other labels unchanged and escaped", () => {
+    const p = page(() => ({}));
+    assert.match(p.ctx.chip("primary"), />admin \(setup\)</);
+    assert.match(p.ctx.chip("<b>"), /&lt;b&gt;/);
+  });
+  test("header matches the content width; phone order puts text before buttons; favicon is linked", () => {
+    assert.match(DASHBOARD_HTML, /padding:12px max\(16px,calc\(\(100% - 900px\)\/2 \+ 16px\)\)/);
+    assert.match(DASHBOARD_HTML, /\.card \.acts\{order:3/);
+    assert.match(DASHBOARD_HTML, /rel="icon" href="\/favicon\.ico"/);
+  });
+});
+
 describe("dashboard: inline confirm", () => {
   test("first click arms, second runs; no alert or confirm anywhere", () => {
     assert.ok(!/\b(alert|confirm)\(/.test(DASHBOARD_JS));
@@ -98,5 +136,25 @@ describe("dashboard: inline confirm", () => {
     assert.equal(ran, 0);
     p.ctx.arm(b, () => ran++);
     assert.equal(ran, 1);
+  });
+});
+
+describe("GET /favicon.ico", () => {
+  test("serves the brand mark as a PNG without a token", async () => {
+    const { createApiServer } = await import("../src/api.js");
+    const { Store } = await import("../src/store.js");
+    const store = new Store(":memory:");
+    const server = createApiServer(store, [{ token: "a".repeat(40), scope: "admin", label: "owner" }]);
+    await new Promise<void>((r) => server.listen(0, r));
+    const base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+    try {
+      const r = await fetch(`${base}/favicon.ico`);
+      assert.equal(r.status, 200);
+      assert.equal(r.headers.get("content-type"), "image/png");
+      assert.deepEqual([...new Uint8Array(await r.arrayBuffer()).slice(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+      store.close();
+    }
   });
 });
