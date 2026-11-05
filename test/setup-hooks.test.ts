@@ -112,7 +112,7 @@ describe("setup: automatic memory hooks", () => {
     const after = read(s.settings);
     assert.ok(after.hooks.SessionStart && after.hooks.UserPromptSubmit && after.hooks.SessionEnd);
     assert.equal(after.hooks.PostToolUse.length, 2);
-    assert.match(out.all(), /record what Claude does in this project/);
+    assert.match(out.all(), /record what Claude does in every project/);
     // Running again changes nothing.
     const again = io();
     assert.equal(await runSetup(s.e, again, opts({ yes: true, db: s.db, hook: "yes", capture: "yes" })), 0);
@@ -133,7 +133,7 @@ describe("setup: automatic memory hooks", () => {
     writeFileSync(s.settings, USER_HOOKS);
     const t = io(["y", "y", "n"], true);
     assert.equal(await runSetup(s.e, t, opts({ db: s.db })), 0, t.all());
-    assert.ok(t.asked.some((q) => q.startsWith("Also record what Claude does in this project (files, commands, errors), stored only on this machine?")));
+    assert.ok(t.asked.some((q) => q.startsWith("Also record what your assistant does in every project (files, commands, errors), stored only on this machine?")));
     const after = read(s.settings);
     assert.ok(after.hooks.SessionStart, "the start-of-session hook was accepted");
     assert.equal(after.hooks.UserPromptSubmit, undefined, "capture was declined");

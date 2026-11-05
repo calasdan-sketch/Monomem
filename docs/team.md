@@ -57,8 +57,8 @@ The alternative is to write the file yourself. It looks like this:
 
 Make each token with `openssl rand -hex 32` (in PowerShell, the one-liner above, run once per token); Monomem ignores tokens shorter than 32 characters.
 The server reads this file once at startup, so restart it after a change. Each person then points their assistant at
-`https://<your host>/mcp` and sends their token as `Authorization: Bearer <token>`. Details for each client are in
-[INSTALL.md](../INSTALL.md); n8n and other HTTP callers are in [INFRA.md](../INFRA.md).
+`https://<your host>/mcp` and sends their token as `Authorization: Bearer <token>`. Copy-paste commands for Claude Code, Cursor and Codex are in
+[INSTALL.md](../INSTALL.md#connect-to-a-shared-server-a-teammates-setup); n8n and other HTTP callers are in [INFRA.md](../INFRA.md).
 
 `read` can only read, `write` can read and write, `admin` can also approve held writes and change policy. The
 label becomes the note's `written_by`. The server stamps it from the token, so a caller with your token is you and a request body cannot

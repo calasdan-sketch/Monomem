@@ -287,6 +287,11 @@ function usage(all = false): void {
       "            Your own data is never touched. See docs/BENCHMARK.md.",
       "  bench --longmemeval | --locomo [--data file] [--limit n] [--mode keyword|hybrid] [--granularity session|turn] [--json]",
       "            Retrieval benchmark (recall@k, nDCG, MRR) on a public dataset, in a temp folder. No LLM.",
+      "  drill [--json]",
+      "            Replay known memory-poisoning attacks on a copy of your store and your settings; your data is not changed.",
+      "            With no store yet it says so (run setup first).",
+      "  health [--json] [--card [file.svg]]",
+      "            One grade A-F with the reason: setup, settings, drill, audit chain, held writes. Rule: monomem health --help",
       "  help      Show this help",
       "",
     ].join("\n")
@@ -1973,6 +1978,7 @@ async function tokenCmd(): Promise<void> {
       console.log("A running server reads tokens.json at start-up: restart it for the new token to work.");
       const { MCP_HTTP_PORT } = await import("./config.js");
       console.log(`\nFor the app that will use it (change the host if it is not on this computer):\n  MCP URL: http://127.0.0.1:${MCP_HTTP_PORT}/mcp\n  Header:  Authorization: Bearer ${row.token}`);
+      console.log("Client setup (Claude Code, Cursor, Codex): INSTALL.md, section 'Connect to a shared server'.");
     } else if (action === "list" && rest.length === 1) {
       const rows = listTokens(DATA_DIR);
       const fromEnv = envTokenLabels();
@@ -2014,6 +2020,7 @@ async function quarantineCmd(): Promise<void> {
           console.log(`    body: ${preview.replace(/\n/g, "\n          ")}`);
         }
       }
+      console.log("\nTo decide: monomem quarantine approve <id> | reject <id>  (in a terminal)");
       return;
     }
     const id = Number(idRaw);
