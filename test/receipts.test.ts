@@ -95,7 +95,7 @@ describe("receipts", () => {
   test("footnote is two lines, 1 session is singular", () => {
     const svg = renderCard({ sessions: 1, injections: 1, injected_tokens: 10, saved_tokens: 0, llm_tokens: 0 });
     assert.ok(svg.includes(">session<") && !svg.includes(">sessions<"));
-    assert.equal((svg.match(/<tspan /g) ?? []).length, 2);
+    assert.equal((svg.match(/<tspan x=/g) ?? []).length, 2);
     assert.ok(!/<text[^>]*>[^<]{90,}<\/text>/.test(svg), "no single long text line");
   });
 });

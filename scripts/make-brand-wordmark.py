@@ -18,8 +18,10 @@ whose rendered ink box is the same height as the wordmark it replaces.
 
 Run with a Python that has Pillow:
     ~/tools/motion-venv/Scripts/python.exe scripts/make-brand-wordmark.py
+    ~/tools/motion-venv/Scripts/python.exe scripts/make-brand-wordmark.py --favicon   (only the tab icon)
 """
 
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -201,8 +203,41 @@ def add_tip(path: Path, origin: tuple[int, int], scale: float, fill) -> None:
     print(f"{path}: inner tip tapered")
 
 
+# The tab icon: square, a navy rounded square with the gold crescent, so it reads on light and dark tabs and at 16 px.
+# Drawn at 8x and shrunk. Writes docs/brand/favicon-64.png and puts the same bytes into FAVICON_PNG in src/dashboard.ts.
+def make_favicon(root: Path) -> None:
+    import base64
+    import re
+
+    size, k = 64, 8
+    big = Image.new("RGBA", (size * k, size * k), (0, 0, 0, 0))
+    d = ImageDraw.Draw(big)
+    d.rounded_rectangle((0, 0, size * k - 1, size * k - 1), radius=14 * k, fill=NAVY + (255,))
+    # crescent: a gold disc minus a disc nudged up and to the right
+    disc = Image.new("L", big.size, 0)
+    ImageDraw.Draw(disc).ellipse((14 * k, 12 * k, 52 * k, 50 * k), fill=255)
+    bite = Image.new("L", big.size, 0)
+    ImageDraw.Draw(bite).ellipse((24 * k, 6 * k, 58 * k, 44 * k), fill=255)
+    mask = Image.composite(Image.new("L", big.size, 0), disc, bite)
+    big.paste(Image.new("RGBA", big.size, GOLD + (255,)), (0, 0), mask)
+    icon = big.resize((size, size), Image.LANCZOS)
+    out = root / "docs/brand/favicon-64.png"
+    icon.save(out, optimize=True)
+    b64 = base64.b64encode(out.read_bytes()).decode()
+    dash = root / "src/dashboard.ts"
+    with open(dash, encoding="utf8", newline="") as f:
+        text = f.read()
+    text, n = re.subn(r'(export const FAVICON_PNG = Buffer\.from\(\s*")[A-Za-z0-9+/=]+(")', lambda m: m.group(1) + b64 + m.group(2), text)
+    assert n == 1, "FAVICON_PNG not found"
+    with open(dash, "w", encoding="utf8", newline="") as f:
+        f.write(text)
+    print(f"{out}: favicon written and embedded in src/dashboard.ts")
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
+    if "--favicon" in sys.argv:
+        return make_favicon(root)
     for target in TARGETS:
         redraw(root / target["path"], target["size"], target["ink_xy"], target["clear"])
     for claim in CLAIMS:
@@ -212,6 +247,7 @@ def main() -> None:
     for path, origin, scale, fill in MARKS:
         remove_stroke(root / path, origin, scale, fill)
         add_tip(root / path, origin, scale, fill)
+    make_favicon(root)
 
 
 if __name__ == "__main__":

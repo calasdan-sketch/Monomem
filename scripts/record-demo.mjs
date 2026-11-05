@@ -9,7 +9,7 @@
 //   5. composes the terminal panes + captions with ffmpeg drawtext, GIF via palettegen/paletteuse.
 // Needs: npm run build first, ffmpeg, Chrome or Edge. Playwright is installed into build/pw
 // (not package.json). Run: npm run demo-gif
-// Env: DEMO_TMP (temp parent dir), DEMO_PORT (default 18877), DEMO_BROWSER (chrome|msedge).
+// Env: DEMO_TMP (temp parent dir), DEMO_PORT (default 18877), DEMO_BROWSER (chrome|msedge), DEMO_EXE (path to a Chromium to use instead).
 
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, existsSync, copyFileSync, statSync, writeFileSync, rmSync, readFileSync } from "node:fs";
@@ -123,13 +123,13 @@ try {
     execFileSync("npm", ["install", "--no-save", "--no-package-lock", "--prefix", join(BUILD, "pw"), `playwright-core@${PW_VERSION}`], { stdio: "inherit", shell: true });
   }
   const { chromium } = createRequire(join(process.cwd(), BUILD, "pw/"))("playwright-core");
-  const browser = await chromium.launch({ channel: process.env.DEMO_BROWSER || "chrome" });
+  const browser = await chromium.launch(process.env.DEMO_EXE ? { executablePath: process.env.DEMO_EXE } : { channel: process.env.DEMO_BROWSER || "chrome" });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   async function record(name, script) {
     const dir = join(BUILD, name);
     rmSync(dir, { recursive: true, force: true });
-    const ctx = await browser.newContext({ viewport: { width: W, height: DASH_H }, recordVideo: { dir, size: { width: W, height: DASH_H } } });
+    const ctx = await browser.newContext({ colorScheme: "dark", viewport: { width: W, height: DASH_H }, recordVideo: { dir, size: { width: W, height: DASH_H } } });
     await ctx.addInitScript((t) => { try { sessionStorage.setItem("om_tok", t); } catch {} }, T.admin);
     const page = await ctx.newPage();
     const t0 = Date.now();

@@ -9,7 +9,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { BIND_HOST, DATA_DIR, DB_PATH } from "./config.js";
 import { runDrill, type DrillReport } from "./drill.js";
 import { meterStats } from "./meter.js";
-import { esc } from "./receipts.js";
+import { cardBrand, cardFooter, esc, svgLines } from "./receipts.js";
 import { auditPath as defaultAuditPath, printable, verifyAuditChain } from "./security.js";
 import { Store } from "./store.js";
 import { embeddingsConfig } from "./embeddings.js";
@@ -308,19 +308,20 @@ export function renderHealth(r: HealthReport): string {
 export function renderHealthCard(r: HealthReport): string {
   const colour: Record<Status, string> = { ok: "#FFFFFF", info: "#FFFFFF", warn: "#F0C171", fail: "#FF6B5B" };
   const gradeColour = r.grade > "C" ? "#FF6B5B" : "#F0C171";
-  const step = Math.min(20, 190 / Math.max(1, r.checks.length));
+  const step = Math.min(20, 170 / Math.max(1, r.checks.length));
   const rows = r.checks
-    .map((c, i) => `<text x="200" y="${Math.round(100 + i * step)}" font-size="14" fill="${colour[c.status]}">${esc(`${c.label}: ${c.status}`)}</text>`)
+    .map((c, i) => `<text x="190" y="${Math.round(100 + i * step)}" font-size="14" fill="${colour[c.status]}">${esc(`${c.label}: ${c.status}`)}</text>`)
     .join("");
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" font-family="system-ui, -apple-system, Segoe UI, sans-serif">` +
     `<rect width="640" height="360" rx="18" fill="#0B2E45"/>` +
-    `<text x="40" y="60" font-size="30" font-weight="700" fill="#F0C171">monomem health</text>` +
-    `<text x="40" y="215" font-size="150" font-weight="700" fill="${gradeColour}">${esc(r.grade)}</text>` +
+    cardBrand("health") +
+    `<text x="600" y="56" font-size="13" font-weight="600" text-anchor="end" fill="#F0C171">${esc(r.date)}</text>` +
+    `<text x="40" y="210" font-size="150" font-weight="700" fill="${gradeColour}">${esc(r.grade)}</text>` +
     rows +
-    `<text x="40" y="290" font-size="14" font-weight="600" fill="${gradeColour}">${esc(gradeReason(r))}</text>` +
-    `<text x="40" y="318" font-size="12" fill="#FFFFFF">${esc(r.not_covered)}</text>` +
-    `<text x="40" y="340" font-size="13" font-weight="600" fill="#F0C171">${esc(r.date)}</text>` +
+    svgLines(gradeReason(r), 40, 264, 70, `font-size="14" font-weight="600" fill="${gradeColour}"`) +
+    svgLines(r.not_covered, 40, 296, 88, `font-size="12" fill="#9FB3C4"`, 16) +
+    cardFooter() +
     `</svg>\n`
   );
 }

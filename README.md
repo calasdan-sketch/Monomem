@@ -15,7 +15,7 @@ Needs Node 22.16 or newer (check with `node -v`). On an older Node, use [Docker]
 
 - **One memory for all your assistants.** Tell Claude Code something once, and Cursor, Codex and Gemini CLI can read it too. It's one SQLite file on your own machine: no cloud, no API keys, no hidden model calls. Already use another memory tool? See [how it compares](#how-it-compares).
 - **Knows who wrote it.** Every note records its writer. For callers that use a token, the server stamps the name; for local apps it is a label from that app's config file, so it tells your apps apart but is not proof.
-- **Holds suspicious writes.** A write that looks like prompt injection (an instruction planted to steer your other assistants) is held back until you approve it. To make every agent write wait for your OK, use `monomem approve-first --all on` (it covers namespaces created later), or set it for one namespace (a named group of notes). One limit: an agent that can run shell commands, like Claude Code, can run the `monomem` command itself, and writes made that way are not held. So this protects you from tools that only have the memory connection, not from an agent with a shell (see [SECURITY.md](./SECURITY.md)). The check is pattern matching, so it doesn't catch everything.
+- **Holds suspicious writes.** A write that looks like an instruction planted to steer your other assistants is held until you approve it, and `monomem approve-first --all on` makes every agent write wait for your OK. The check is pattern matching, so it doesn't catch everything. An agent that can run shell commands, like Claude Code, can run the `monomem` command itself and its writes are not held, so this protects you from tools that only have the memory connection (see [SECURITY.md](./SECURITY.md)).
 
 [![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)
@@ -33,6 +33,7 @@ Needs Node 22.16 or newer (check with `node -v`). On an older Node, use [Docker]
 
 ```bash
 npx monomem setup
+npx monomem drill   # replays 20 known poisoning attacks on a copy of your store
 ```
 
 `setup` finds Claude Code, Claude Desktop, Cursor, Codex, Gemini CLI, Muse, VS Code and Zed on this computer, shows you in plain words what it will do and the exact
@@ -163,9 +164,9 @@ Notes keep their earlier versions (up to 20 per note by default), so replacing o
 | `monomem drill` | Replays known poisoning attacks on a copy of your store and says which reached an agent | Only attacks it already knows about |
 | `monomem health` | One grade A-F with the reason: setup, settings, drill, audit chain, held writes | It grades what it checks, not everything in your notes |
 | `monomem why 42` | The story of note #42: who wrote each version, what replaced it, which sessions were shown it | Who read the note (only a count and the last read time are kept), and versions older than the kept history (20 by default) |
-| `monomem conflicts` | Possible disagreements between writers; it only flags and never changes a note | It matches exact facts and keys, so a reworded disagreement is missed |
+| `monomem conflicts` | Disagreements between writers: exact ones from attached facts, then a "possible" tier guessed from `key: value` lines in the text. It only flags and never changes a note | A reworded disagreement with no fact or `key: value` line is missed |
 | `monomem facts` | The decisions agents recorded as facts, with who wrote them; disputed keys marked | Decisions nobody recorded as a fact |
-| `monomem receipts` | Which notes the last session start showed, and why | Notes an agent found later by searching, and sessions older than the receipt window (30 days by default) |
+| `monomem receipts` | Which notes recent session starts showed, and why (give a session id for one session's list) | Notes an agent found later by searching, and sessions older than the receipt window (30 days by default) |
 | `monomem search --as-of <time>` | What your memory held at an earlier time, rebuilt from history | Notes deleted for good, and text older than the kept versions |
 
 Agents that record decisions as `facts` (deploy_target, package_manager ...) get an exact match: a different value from another writer is flagged on write and, at session start, shown as a short "writers disagree" line. `health` opens your store (an older database file is upgraded once) and writes one small row noting how long the audit log was, so the next run can see lines removed. These are local commands: `drill` and `health` run the drill with embeddings forced off, so they make no embedding call (and no call to any other machine; the drill talks only to a temporary server on 127.0.0.1) even when `MONOMEM_EMBEDDINGS` and a remote `MONOMEM_EMBED_URL` are set (`health` only reports that such a URL is configured).
@@ -234,8 +235,9 @@ the tag `never-show`. It stays searchable; it is just never injected again.
 
 ### What it costs you
 
-Monomem makes **no hidden model calls**. The only model it ever talks to is the optional local summarizer
-(`MONOMEM_LLM_URL`, off by default, one call per session). The meter shows the rest, as aggregate numbers only (no
+Monomem makes **no hidden model calls**. The only models it ever talks to are the optional local summarizer
+(`MONOMEM_LLM_URL`, off by default, one call per session) and the optional embeddings endpoint (`MONOMEM_EMBEDDINGS`, off by default; it
+receives note and search text, defaults to a local Ollama, and is a remote host if you set `MONOMEM_EMBED_URL` to one). The meter shows the rest, as aggregate numbers only (no
 prompt or note text is recorded):
 
 - tokens injected at session start, per session and in total, and the tokens of captured work they stood in for;
