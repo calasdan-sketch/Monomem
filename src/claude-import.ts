@@ -495,8 +495,12 @@ export async function runClaudeImport(e: Pick<SetupEnv, "home" | "env" | "cwd">,
       io.out("\nNothing to import.");
       return 0;
     }
-    if (!opts.yes && io.interactive) {
-      const a = (await io.ask(`\nImport ${todo.length} note(s) into ${opts.dbPath}? Type y to continue: `)).trim().toLowerCase();
+    if (!opts.yes && !io.interactive) {
+      io.err("Not an interactive terminal, so I cannot ask: nothing was written. Re-run with --yes to import, or --dry-run to only look.");
+      return 1;
+    }
+    if (!opts.yes) {
+      const a =(await io.ask(`\nImport ${todo.length} note(s) into ${opts.dbPath}? Type y to continue: `)).trim().toLowerCase();
       if (a !== "y" && a !== "yes") {
         io.out("Cancelled. Nothing was written.");
         return 0;

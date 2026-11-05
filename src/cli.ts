@@ -16,7 +16,7 @@ const COMMANDS = [
   "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
   "consolidate", "rebuild-edges", "relevant", "search", "token", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
   "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality",
-  "encrypt", "meter", "receipts", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "drill", "audit",
+  "encrypt", "meter", "receipts", "why", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "drill", "audit",
   "help", "--help", "-h", "--version", "-v", "version",
 ];
 
@@ -122,6 +122,8 @@ function usage(all = false): void {
       "            Off switch: MONOMEM_CAPTURE=off. When: installed by `monomem setup --capture`.",
       "            file-context (PreToolUse on Read) lists what memory knows about the file, once per session; it never",
       "            blocks or changes the Read.",
+      "  why <note-id> [--json] [--body]",
+      "            The story of one note in time order: who wrote it, versions, replacements, holds, pin, sessions shown it, status.",
       "  receipts [session-id] [--json]",
       "            List recent sessions, or show which memories one session start showed and why (ids and tags are stored, never note text).",
       "  meter [--json] [--card [file.svg]]",
@@ -2669,6 +2671,9 @@ async function main(): Promise<void> {
       break;
     case "encrypt":
       await encryptCmd();
+      break;
+    case "why":
+      await (await import("./why.js")).whyCmd(process.argv.slice(3));
       break;
     case "receipts":
     case "meter": {
