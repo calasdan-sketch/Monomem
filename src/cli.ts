@@ -4,6 +4,7 @@ import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as M
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { setProcessWriter } from "./actor.js";
+import { gatePinned, requireOperator } from "./operator-gate.js";
 // monomem CLI: one command to run, check, or wire up the bridge.
 //   monomem [start]   start the API + dashboard AND MCP-over-HTTP (default)
 //   monomem mcp       start the MCP server over stdio (for Claude Code/Cursor/...)
@@ -73,6 +74,7 @@ function shortUsage(): void {
       "  why <id> [--json]       The story of one note: who wrote it, versions, replacements, holds, sessions shown it",
       "  receipts [session] [--json]   Which notes a session start showed, and why (ids and tags, never note text)",
       "  conflicts               Notes from different writers that disagree (flag only)",
+      "  facts [--check]         The decisions agents recorded; --check exits 1 if writers disagree (for CI)",
       "  access                  Who read memory, and when",
       "  drill [--json]          Replay known memory-poisoning attacks on a copy of your store and your settings",
       "  health [--json] [--card [file.svg]]   One grade A-F with the reason: setup, settings, drill, audit chain, held writes (rule: health --help)",
@@ -239,9 +241,9 @@ function usage(all = false): void {
       "  conflicts [--json] [--namespace ns]",
       "            Live notes from different writers that give different values for the same key (deploy target, package",
       "            manager, a version, a URL). Flag only: you choose supersede, pin, distrust, or remove just the fact.",
-      "  facts [--namespace ns] [--json] [--as-of <ISO|7d|2h>]",
+      "  facts [--namespace ns] [--json] [--as-of <ISO|7d|2h>] [--check]",
       "            The decisions agents recorded as facts: key, current value(s), writers, since. Marks disputed keys and keys",
-      "            two or more writers agree on.",
+      "            two or more writers agree on. --check prints one line and exits 1 if any fact is disputed (0 if none): for CI.",
       "  fact remove <note id> <key>",
       "            Drop one fact from a note. The note stays and gets a fact-removed:<key> tag; its text may still mention the old value.",
       "  decay [--dry-run] [--namespace ns]",
@@ -2515,41 +2517,6 @@ async function uninstallCmd(): Promise<void> {
 
 // Untrusted text (note titles, imported text) printed to the terminal goes through this; bound in main() once config is loaded.
 let printable: typeof import("./security.js").printable = (s) => String(s ?? "");
-
-/**
- * Operator gate for commands that LOWER protection (undistrust, attester-add/unrevoke, quarantine approve).
- * Needs a real terminal on both ends and a typed "yes"; there is no --yes. This raises the bar against an
- * agent running the CLI through a non-interactive shell tool. It is not a guarantee: a tool that allocates
- * a pseudo-terminal can pass it (SECURITY.md).
- */
-/**
- * Pinned notes are the operator's: changing or retiring one from the CLI needs the same terminal + typed yes as the commands that lower
- * protection. Without it an agent with a shell tool (`</dev/null`) could use the CLI's writer `cli` to get past the pin. Done here, not in
- * the Store, so library callers and tests that act as `cli` are unaffected.
- */
-async function gatePinned(store: import("./store.js").Store, ids: number[], what: string): Promise<void> {
-  if (!ids.length) return;
-  const pinned = new Set(store.pinnedNotes().map((n) => n.id));
-  const hit = ids.find((i) => pinned.has(i));
-  if (hit !== undefined) await requireOperator(`${what} on pinned note #${hit}`);
-}
-
-async function requireOperator(what: string): Promise<void> {
-  if (!(process.stdin.isTTY && process.stdout.isTTY)) {
-    console.error(
-      `Refused: ${what} lowers this store's protection, so a person must run it in a terminal and type a confirmation. ` +
-        "This is not a terminal (an agent's shell tool, a script or a pipe), and there is no --yes for it. Open a terminal and run the same command there."
-    );
-    process.exit(1);
-  }
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await new Promise<string>((resolve) => rl.question(`${what} lowers protection. Type "yes" to continue: `, resolve));
-  rl.close();
-  if (answer.trim().toLowerCase() !== "yes") {
-    console.error("Not confirmed; nothing changed.");
-    process.exit(1);
-  }
-}
 
 function askYesNo(prompt: string): Promise<boolean> {
   return new Promise((resolve) => {

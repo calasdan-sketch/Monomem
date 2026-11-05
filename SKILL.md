@@ -54,9 +54,9 @@ Use a short `title`, put detail in `body`, add `tags` to group related
 notes, and use `namespace` to separate projects or clients. To update an
 existing note, pass its `id`.
 
-Record decisions as `facts` (deploy_target, package_manager, test_runner …): a different value from another agent is then flagged to the user. Pass `facts` whenever the note states a decision or setting:
-`facts: { "deploy_target": "render", "node_version": "22" }` (at most 10; lowercase keys, values one line of at most 80
-characters). Reuse a key from `similar_keys` or this list: `deploy_target`, `package_manager`, `test_runner`, `database`, `node_version`, `base_url`, `ci_provider`, `formatter`. Prefix a subject only when the project has several (`api.deploy_target`). If another writer's live note in the same namespace states a different value for a key (or a synonym such as `hosting`), the write still succeeds and the reply has a `conflicts` list: tell the user and ask which is right; do not decide yourself. If the key is new and an existing key looks like the same thing, the reply has `similar_keys` (each with the existing value, note id and writer) and a `hint`: reuse that key. `fact_warnings` means the note's own text states another value than its fact: fix one of them.
+When the note states a decision or setting, ALSO pass `facts`, e.g. `facts: {"deploy_target":"render"}`. Other agents then read the exact value, and a disagreement is caught.
+Example: `{"package_manager":"pnpm","test_runner":"vitest"}` (at most 10; lowercase keys, values one line of at most 80
+characters). Reuse a key from `similar_keys` or this list: `deploy_target`, `package_manager`, `test_runner`, `database`, `node_version`, `base_url`, `ci_provider`, `formatter`. Prefix a subject only when the project has several (`api.deploy_target`). If another writer's live note in the same namespace states a different value for a key (or a synonym such as `hosting`), the write still succeeds and the reply has a `conflicts` list: tell the user and ask which is right; do not decide yourself. If the key is new and an existing key looks like the same thing, the reply has `similar_keys` (each with the existing value, note id and writer) and a `hint`: reuse that key. `fact_warnings` means the note's own text may state another value than its fact: check which is right.
 
 ## When to RECALL (call `state_search` or `state_list`)
 

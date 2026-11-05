@@ -415,9 +415,10 @@ describe("adoption wording, key drift, session start", () => {
     const client = new Client({ name: "t", version: "1.0.0" });
     await Promise.all([client.connect(c), server.connect(sv)]);
     const tool = (await client.listTools()).tools.find((t) => t.name === "state_write")!;
-    assert.ok(tool.description!.includes("Record decisions as `facts` (deploy_target, package_manager, test_runner …): a different value from another agent is then flagged to the user."));
+    assert.ok(tool.description!.includes('ALSO pass `facts`, e.g. facts: {"deploy_target":"render"}. Other agents then read the exact value, and a disagreement is caught.'));
     const desc = (tool.inputSchema.properties as any).facts.description as string;
-    assert.ok(desc.startsWith(`Pass whenever the note states a decision or setting. Reuse a key from similar_keys or this list: ${COMMON_FACT_KEYS.join(", ")}. Prefix a subject only when the project has several (api.deploy_target).`), desc);
+    assert.ok(!desc.includes("fact_warnings") && !/[^\x00-\x7f]/.test(desc + tool.description!), "ASCII only, no fact_warnings sentence");
+    assert.ok(desc.startsWith(`Example: {"package_manager":"pnpm","test_runner":"vitest"}. Keys: reuse one from similar_keys or this list: ${COMMON_FACT_KEYS.join(", ")}. Prefix a subject only when the project has several (api.deploy_target).`), desc);
     client.close(); s.close();
   });
   test("SKILL.md and the docs repeat the same advice (common keys, subject prefix only when needed; no 'always scope')", async () => {
@@ -491,7 +492,7 @@ describe("adoption wording, key drift, session start", () => {
     const s = new Store(":memory:");
     mk(s, "alice", "a", "x", { deploy_target: "fly.io" }, "proj");
     mk(s, "bob", "b", "x", { deploy_target: "render" }, "proj");
-    assert.match(disputedLines(s, {}), /disagree on deploy_target/);
+    assert.match(disputedLines(s, {}), /disagree on \[proj\] deploy_target/); // unscoped: the line names the namespace
     assert.equal(disputedLines(s, { writtenBy: "alice" }), "");
     assert.equal(disputedLines(s, { notWrittenBy: "bob" }), "");
     assert.match(disputedLines(s, { notWrittenBy: "carol" }), /disagree/);
@@ -512,7 +513,8 @@ describe("adoption wording, key drift, session start", () => {
     mk(s, "alice", "Deploy", "we deploy", { deploy_target: "fly.io" });
     assert.ok(!(await injectContext(s, { signals: {} })).includes("Monomem: writers disagree"));
     mk(s, "bob", "Hosting", "we host", { deploy_target: "render" });
-    for (const ns of [undefined, "default"]) assert.match(await injectContext(s, { namespace: ns, signals: {} }), /Monomem: writers disagree on deploy_target: 'fly\.io' \(#1 alice\) vs 'render' \(#2 bob\)\. Check with the user\./);
+    for (const [ns, label] of [[undefined, "[default] "], ["default", ""]] as const) assert.ok((await injectContext(s, { namespace: ns, signals: {} })).includes("Monomem: writers disagree on " + label + "deploy_target:"));
+    assert.match(await injectContext(s, { signals: {} }), /Monomem: writers disagree on \[default\] deploy_target: 'fly\.io' \(#1 alice\) vs 'render' \(#2 bob\)\. Check with the user\./);
     s.distrustAdd("default", "bob");
     assert.ok(!(await injectContext(s, { signals: {} })).includes("writers disagree"));
     s.close();
@@ -662,7 +664,9 @@ describe("precision and recall by tier", () => {
     const [, realPossible] = run("realistic, no facts", false, REAL_POS, REAL_NEG);
     const [bFacts] = run("bench B, facts attached", true, B_PAIRS, []);
     const [, bPossible] = run("bench B, no facts", false, B_PAIRS, []);
-    assert.equal(realFacts.precision, 1);
+    // Round 7: synonym keys (api.host vs api.deploy_target) are one setting, so three unrelated planted pairs that use both spellings now
+    // flag each other (3 of 23 flags). That is the designed behavior, not look-alike noise (lookalike stays 0 below).
+    assert.ok(realFacts.precision >= 0.85, String(realFacts.precision));
     assert.equal(realFacts.recall, 1);
     assert.equal(realFacts.lookalike, 0);
     assert.equal(bFacts.precision, 1);

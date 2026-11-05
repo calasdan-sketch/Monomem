@@ -7,6 +7,8 @@
 import type { Store, NoteRecord } from "./store.js";
 import { ValidationError } from "./store.js";
 import { printable } from "./security.js";
+import { actorStore } from "./actor.js";
+import { gatePinned } from "./operator-gate.js";
 import { factMismatchWarnings } from "./lint.js";
 
 export const FACT_PREFIX = "fact:";
@@ -79,6 +81,22 @@ const quote = (v: string, max: number): string => `'${printable(v, max).replace(
 /** "deploy_target" and "api.deploy_target" are one setting with a deliberate scope: never a drift pair. */
 const scopedForm = (a: string, b: string): boolean => a.endsWith("." + b) || b.endsWith("." + a);
 
+/** The common spelling of a key ("hosting" -> "deploy_target", "api.host" -> "api.deploy_target"); any other key is returned unchanged. */
+export const canonKey = (key: string): string => {
+  const g = groupOf(lastSegment(key));
+  return g ? prefixOf(key) + g[0] : key;
+};
+
+/** Plural / one-edit spellings of one word ("deploy_targets", "deploy_targt"). Short words are skipped: "db" vs "dr" is not drift. */
+function nearWord(a: string, b: string): boolean {
+  if (a === b || a.length < 5 || b.length < 5 || Math.abs(a.length - b.length) > 1) return false;
+  const [s1, l1] = a.length <= b.length ? [a, b] : [b, a];
+  let i = 0;
+  while (i < s1.length && s1[i] === l1[i]) i++;
+  // one substitution (same length) or one insertion (l1 is one longer): the rest must match
+  return s1.slice(s1.length === l1.length ? i + 1 : i) === l1.slice(i + 1);
+}
+
 /** Keys that name the same setting as `key` by synonym ("hosting" for "deploy_target"), same prefix. Not `key` itself. */
 function synonymKeys(key: string): string[] {
   const g = groupOf(lastSegment(key));
@@ -128,9 +146,11 @@ export function similarKeys(store: Store, note: NoteRecord): Record<string, Simi
     if (existing.has(key)) continue;
     const seg = lastSegment(key);
     const group = groupOf(seg);
+    const rank = (k: string): number => (lastSegment(k) === group?.[0] ? 0 : 2) + (prefixOf(k) === prefixOf(key) ? 0 : 1);
     const like = [...existing.values()]
-      .filter((e) => e.key !== key && !scopedForm(e.key, key) && (lastSegment(e.key) === seg || (group !== undefined && group.includes(lastSegment(e.key)))))
-      .sort((a, b) => a.key.localeCompare(b.key))
+      .filter((e) => e.key !== key && !scopedForm(e.key, key) && (lastSegment(e.key) === seg || nearWord(lastSegment(e.key), seg) || (group !== undefined && group.includes(lastSegment(e.key)))))
+      // The hint names the first one: the common key, then one with this key's prefix, beats a synonym.
+      .sort((a, b) => rank(a.key) - rank(b.key) || a.key.localeCompare(b.key))
       .slice(0, 3);
     if (like.length) out[key] = like;
   }
@@ -147,81 +167,106 @@ const MAX_DISPUTE_LINES = 2;
 const MAX_SIDES = 3;
 const MAX_WRITERS_SHOWN = 2;
 export interface DisputeOpts { namespace?: string; writtenBy?: string; notWrittenBy?: string }
-interface Side { shown: string; writers: Map<string, { name: string; id: number }> }
+interface Side { shown: string; writers: Map<string, { name: string; id: number; key: string }> }
+interface Dispute { namespace: string; key: string; sides: Side[] }
 
-/** The disputed keys of a set of live notes: [key, sides] with one value per writer, strongest side (most writers) first, >= 2 sides. */
-function disputes(notes: readonly NoteRecord[]): Array<[string, Side[]]> {
+/**
+ * The disputed settings of a set of live notes: one value per writer, strongest side (most writers) first, >= 2 sides.
+ * Grouped by namespace + key; synonym spellings (hosting / deploy_target) are one setting under the common key.
+ */
+function disputes(notes: readonly NoteRecord[]): Dispute[] {
   const byKey = new Map<string, Map<string, Side>>();
   for (const n of notes) {
-    for (const [k, v] of noteFacts(n.tags)) {
-      const vals = byKey.get(k) ?? byKey.set(k, new Map()).get(k)!;
+    for (const [rawKey, v] of noteFacts(n.tags)) {
+      const gk = `${n.namespace}\u0000${canonKey(rawKey)}`;
+      const vals = byKey.get(gk) ?? byKey.set(gk, new Map()).get(gk)!;
       const side = vals.get(normFact(v)) ?? vals.set(normFact(v), { shown: v, writers: new Map() }).get(normFact(v))!;
       const w = writerOf(n);
-      if (!side.writers.has(w) || n.id < side.writers.get(w)!.id) side.writers.set(w, { name: n.written_by, id: n.id });
+      if (!side.writers.has(w) || n.id < side.writers.get(w)!.id) side.writers.set(w, { name: n.written_by, id: n.id, key: rawKey });
     }
   }
   const minId = (s: Side): number => Math.min(...[...s.writers.values()].map((x) => x.id));
-  const out: Array<[string, Side[]]> = [];
-  for (const [key, vals] of [...byKey].sort(([a], [b]) => a.localeCompare(b))) {
+  const out: Dispute[] = [];
+  for (const [gk, vals] of [...byKey].sort(([a], [b]) => a.localeCompare(b))) {
     const sides = [...vals.values()].sort((a, b) => b.writers.size - a.writers.size || minId(a) - minId(b));
     // One value per writer: a writer who stated two values counts on the stronger side only, so one writer cannot fill both sides.
     const taken = new Set<string>();
     const kept: Side[] = [];
-    for (const s of sides) {
-      const w = new Map([...s.writers].filter(([id]) => !taken.has(id)));
+    for (const sd of sides) {
+      const w = new Map([...sd.writers].filter(([id]) => !taken.has(id)));
       w.forEach((_, id) => taken.add(id));
-      if (w.size) kept.push({ shown: s.shown, writers: w });
+      if (w.size) kept.push({ shown: sd.shown, writers: w });
     }
-    if (kept.length >= 2) out.push([key, kept]);
+    const [namespace, key] = gk.split("\u0000");
+    if (kept.length >= 2) out.push({ namespace, key, sides: kept });
   }
   return out;
 }
 
 /**
- * Session start: at most 2 short lines naming keys on which different writers' live notes disagree. Framed as a notice from Monomem,
- * values quoted, note ids and writers given, "+N more" when more keys are disputed than fit. Works without a configured namespace
- * (undefined = every namespace). Never-show notes and distrusted writers are left out; the session's writtenBy / notWrittenBy apply.
- * A writer who changed their mind (old note still live) is one side, not two. "" when nothing is disputed.
+ * Session start: at most 2 short lines naming settings on which different writers' live notes disagree. Framed as a notice from Monomem,
+ * values quoted, note ids and writers given, "+N more" when more are disputed than fit. Without a configured namespace
+ * (undefined = every namespace) the line names the namespace. Never-show notes and distrusted writers are left out; the session's
+ * writtenBy / notWrittenBy apply. A writer who changed their mind (old note still live) is one side, not two. "" when nothing is disputed.
  */
 export function disputedLines(store: Store, opts: DisputeOpts | string = {}): string {
   const o: DisputeOpts = typeof opts === "string" ? { namespace: opts } : opts;
   const found = disputes(store.liveFactNotesIn(o.namespace, { writtenBy: o.writtenBy, notWrittenBy: o.notWrittenBy }));
-  const lines = found.slice(0, MAX_DISPUTE_LINES).map(([key, sides]) => {
+  const lines = found.slice(0, MAX_DISPUTE_LINES).map(({ namespace, key, sides }) => {
     const text = sides.slice(0, MAX_SIDES).map((s) => {
       const ws = [...s.writers.values()].sort((a, b) => a.id - b.id);
-      const shown = ws.slice(0, MAX_WRITERS_SHOWN).map((w) => `#${w.id} ${printable(w.name, 30)}`).join(", ");
+      const shown = ws.slice(0, MAX_WRITERS_SHOWN).map((w) => `#${w.id} ${printable(w.name, 30)}${w.key !== key ? ` as ${printable(w.key, 40)}` : ""}`).join(", ");
       return `${quote(s.shown, 40)} (${shown}${ws.length > MAX_WRITERS_SHOWN ? `, +${ws.length - MAX_WRITERS_SHOWN}` : ""})`;
     }).join(" vs ");
-    return `Monomem: writers disagree on ${printable(key, 40)}: ${text}. Check with the user.`;
+    return `Monomem: writers disagree on ${o.namespace === undefined ? `[${printable(namespace, 40)}] ` : ""}${printable(key, 40)}: ${text}. Check with the user.`;
   });
   if (found.length > MAX_DISPUTE_LINES) lines[lines.length - 1] += ` (+${found.length - MAX_DISPUTE_LINES} more: monomem conflicts)`;
   return lines.join("\n");
 }
 
-export interface FactRow { key: string; disputed: boolean; agreed: boolean; values: Array<{ value: string; writers: string[]; ids: number[]; since: string }> }
+export interface FactValue { value: string; writers: string[]; ids: number[]; since: string;
+  /** Notes in `ids` whose writer has a newer note with another value for this key. */
+  older: number[];
+  /** This writer-with-several-values has this value as the newest one. */
+  current: boolean }
+export interface FactRow { key: string; disputed: boolean; agreed: boolean; values: FactValue[] }
 
-/** `monomem facts`: per namespace, key -> current value(s) with writers and since. Disputed keys marked; keys two+ writers agree on marked too. */
+const newestFirst = (a: NoteRecord, b: NoteRecord): number => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : b.id - a.id);
+
+/** `monomem facts`: per namespace, key -> current value(s) with writers and since. Disputed keys marked (synonym spellings count as one); keys two+ writers agree on marked too. */
 export function factsTable(notes: readonly NoteRecord[]): Record<string, FactRow[]> {
   const out: Record<string, FactRow[]> = {};
   const byNs = new Map<string, NoteRecord[]>();
   for (const n of notes) (byNs.get(n.namespace) ?? byNs.set(n.namespace, []).get(n.namespace)!).push(n);
   for (const [ns, list] of [...byNs].sort(([a], [b]) => a.localeCompare(b))) {
-    const disputedKeys = new Set(disputes(list).map(([k]) => k));
-    const keys = new Map<string, Map<string, { value: string; writers: Set<string>; ids: number[]; since: string }>>();
-    const writersOfKey = new Map<string, Set<string>>();
+    const disputedKeys = new Set(disputes(list).map((d) => d.key));
+    type Entry = { value: string; writers: Set<string>; ids: number[]; since: string; older: number[]; current: boolean };
+    const keys = new Map<string, Map<string, Entry>>();
+    const stated = new Map<string, Array<{ n: NoteRecord; norm: string }>>(); // key + writer -> that writer's notes
     for (const n of list) {
       for (const [k, v] of noteFacts(n.tags)) {
         const vals = keys.get(k) ?? keys.set(k, new Map()).get(k)!;
-        const e = vals.get(normFact(v)) ?? vals.set(normFact(v), { value: v, writers: new Set(), ids: [], since: n.updated_at }).get(normFact(v))!;
+        const e = vals.get(normFact(v)) ?? vals.set(normFact(v), { value: v, writers: new Set(), ids: [], since: n.updated_at, older: [], current: false }).get(normFact(v))!;
         e.writers.add(n.written_by);
         e.ids.push(n.id);
         if (n.updated_at < e.since) e.since = n.updated_at;
-        (writersOfKey.get(k) ?? writersOfKey.set(k, new Set()).get(k)!).add(writerOf(n));
+        const sk = `${k}\u0000${writerOf(n)}`;
+        (stated.get(sk) ?? stated.set(sk, []).get(sk)!).push({ n, norm: normFact(v) });
       }
     }
+    // A writer with several different values for one key: the newest is current, the others are older notes.
+    const writersOfKey = new Map<string, Set<string>>();
+    for (const [sk, mine] of stated) {
+      const [key, w] = sk.split("\u0000");
+      (writersOfKey.get(key) ?? writersOfKey.set(key, new Set()).get(key)!).add(w);
+      mine.sort((a, b) => newestFirst(a.n, b.n));
+      if (!mine.some((m) => m.norm !== mine[0].norm)) continue;
+      keys.get(key)!.get(mine[0].norm)!.current = true;
+      for (const m of mine) if (m.norm !== mine[0].norm) keys.get(key)!.get(m.norm)!.older.push(m.n.id);
+    }
     out[ns] = [...keys].sort(([a], [b]) => a.localeCompare(b)).map(([key, vals]) => {
-      const values = [...vals.values()].map((e) => ({ value: e.value, writers: [...e.writers].sort(), ids: e.ids.sort((a, b) => a - b), since: e.since }));
-      return { key, disputed: disputedKeys.has(key), agreed: values.length === 1 && writersOfKey.get(key)!.size >= 2, values };
+      const values = [...vals.values()].map((e) => ({ value: e.value, writers: [...e.writers].sort(), ids: e.ids.sort((a, b) => a - b), since: e.since, older: e.older.sort((a, b) => a - b), current: e.current }));
+      return { key, disputed: disputedKeys.has(canonKey(key)), agreed: values.length === 1 && writersOfKey.get(key)!.size >= 2, values };
     });
   }
   return out;
@@ -241,10 +286,9 @@ const optVal = (args: string[], name: string): string | undefined => {
   const i = args.findIndex((a) => a === name || a.startsWith(name + "="));
   return i < 0 ? undefined : args[i].includes("=") ? args[i].slice(name.length + 1) : args[i + 1];
 };
-
-/** `monomem facts [--namespace ns] [--json] [--as-of t]` */
+/** `monomem facts [--namespace ns] [--json] [--as-of t] [--check]` */
 export async function factsCmd(args: string[]): Promise<void> {
-  const usage = "Usage: monomem facts [--namespace ns] [--json] [--as-of <ISO|7d|2h>]";
+  const usage = "Usage: monomem facts [--namespace ns] [--json] [--as-of <ISO|7d|2h>] [--check]";
   const ns = optVal(args, "--namespace");
   const asOf = optVal(args, "--as-of");
   if ((args.includes("--namespace") && !ns) || (args.includes("--as-of") && !asOf)) {
@@ -255,20 +299,35 @@ export async function factsCmd(args: string[]): Promise<void> {
   const { Store: S } = await import("./store.js");
   const store = new S(DB_PATH);
   try {
+    if (args.includes("--check")) {
+      // For CI: the same disputes `monomem conflicts` lists at the fact tier (synonym spellings included). Exit 1 when there is one.
+      const { findConflicts, groupConflicts } = await import("./conflicts.js");
+      const groups = groupConflicts(findConflicts(store, { namespaces: ns ? [ns] : undefined }).filter((c) => c.tier === "fact"));
+      if (!groups.length) console.log("facts check: no disputed facts.");
+      else {
+        console.log(`facts check: ${groups.length} disputed fact${groups.length === 1 ? "" : "s"}: ${groups.slice(0, 5).map((g) => `${printable(g.namespace, 40)}/${printable(g.key, 40)}`).join(", ")}${groups.length > 5 ? ", ..." : ""}. Run: monomem conflicts`);
+        process.exitCode = 1;
+      }
+      return;
+    }
     let notes: NoteRecord[];
+    let when: Date | undefined;
     if (asOf) {
       const { parseAsOf, asOfView } = await import("./asof.js");
-      const view = asOfView(store, parseAsOf(asOf), ns ? { namespace: ns } : {});
+      when = parseAsOf(asOf);
+      const view = asOfView(store, when, ns ? { namespace: ns } : {});
       // ponytail: the tags shown are the notes' current tags; a tag change that made no history row is not reconstructed (asof.ts says the same).
       notes = view.notes.filter((h) => h.kept).map((h) => h.note).filter((n) => noteFacts(n.tags).length);
     } else {
       notes = store.liveFactNotesIn(ns, { includeNeverShow: true });
     }
     const table = factsTable(notes);
+    const asOfNote = when ? `As of ${when.toISOString()}: the notes that existed then, with their facts as tagged NOW (tag history is not kept, so a fact changed since shows its current value).` : "";
     if (args.includes("--json")) {
-      console.log(JSON.stringify({ ...(asOf ? { as_of: asOf } : {}), facts: table }, null, 2));
+      console.log(JSON.stringify({ ...(when ? { as_of: when.toISOString(), as_of_note: asOfNote } : {}), facts: table }, null, 2));
       return;
     }
+    if (asOfNote) console.log(asOfNote);
     const spaces = Object.keys(table);
     if (!spaces.length) {
       console.log("No facts recorded. Agents record decisions with `facts` (deploy_target, package_manager ...).");
@@ -279,7 +338,11 @@ export async function factsCmd(args: string[]): Promise<void> {
       for (const r of table[space]) {
         const mark = r.disputed ? "  DISPUTED" : r.agreed ? `  (${r.values[0].writers.length > 1 ? r.values[0].writers.length : 2} writers agree)` : "";
         console.log(`  ${printable(r.key, 40)}${mark}`);
-        for (const v of r.values) console.log(`    ${printable(v.value, MAX_FACT_VALUE)}   by ${v.writers.map((w) => printable(w, 40)).join(", ")}   #${v.ids.join(",#")}   since ${v.since.slice(0, 10)}`);
+        for (const v of r.values) {
+          const cur = v.ids.filter((i) => !v.older.includes(i)).map((i) => `#${i}`);
+          const old = v.older.map((i) => `older note #${i}`);
+          console.log(`    ${printable(v.value, MAX_FACT_VALUE)}   by ${v.writers.map((w) => printable(w, 40)).join(", ")}   ${[...(cur.length ? [cur.join(",")] : []), ...old].join(", ")}${v.current ? "   (current)" : ""}   since ${v.since.slice(0, 10)}`);
+        }
       }
     }
   } finally {
@@ -287,7 +350,7 @@ export async function factsCmd(args: string[]): Promise<void> {
   }
 }
 
-/** `monomem fact remove <id> <key>`: drop one fact from a note (the note stays; it gets a fact-removed:<key> tag). Local, no protection lowered. */
+/** `monomem fact remove <id> <key>`: drop one fact from a note (the note stays; it gets a fact-removed:<key> tag). Changes a note, so a pinned note needs the terminal confirmation like every other CLI edit of one. */
 export async function factRemoveCmd(args: string[]): Promise<void> {
   const [sub, idRaw, key] = args;
   const id = Number(idRaw);
@@ -309,8 +372,10 @@ export async function factRemoveCmd(args: string[]): Promise<void> {
       console.error(`#${id} has no fact "${key}"`);
       process.exit(1);
     }
+    await gatePinned(store, [id], "fact remove");
     const mark = `fact-removed:${key}`;
-    store.update(id, { tags: [...n.tags.filter((t) => !t.startsWith(pre) && t !== mark), mark] }, {});
+    // The change log records who edited: the CLI, like the other `monomem` edits.
+    actorStore.run({ label: "cli" }, () => store.update(id, { tags: [...n.tags.filter((t) => !t.startsWith(pre) && t !== mark), mark] }, {}));
     console.log(`Removed fact ${key} from #${id}. The note stays; its text may still mention the old value (find it with the tag ${mark}).`);
   } finally {
     store.close();

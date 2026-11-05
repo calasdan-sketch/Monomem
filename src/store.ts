@@ -2851,18 +2851,19 @@ export class Store {
       where.push(f.sql);
       params.push(...f.params);
     }
-    const rows = this.db.prepare(`SELECT * FROM notes WHERE ${where.join(" AND ")} ORDER BY id LIMIT ${namespace === undefined ? 5000 : 500}`).all(...params) as unknown as NoteRow[];
-    return this.filterVisible(rows.map((r) => this.rec(r)));
+    const rows = this.db.prepare(`SELECT * FROM notes WHERE ${where.join(" AND ")} ORDER BY id DESC LIMIT ${namespace === undefined ? 5000 : 500}`).all(...params) as unknown as NoteRow[];
+    // newest kept when over the cap, handed back oldest first
+    return this.filterVisible(rows.reverse().map((r) => this.rec(r)));
   }
 
   /**
-   * Live notes of a namespace whose tags carry the fact `fact:<key>=...` (facts.ts), minus `exceptId` and minus
-   * distrusted writers'. For the write-time conflict check; `key` must already be a valid fact key (a-z 0-9 _ . -).
+   * Live notes of a namespace whose tags carry the fact `fact:<key>=...` (facts.ts), minus `exceptId`, minus never-show notes
+   * (as liveFactNotesIn does) and minus distrusted writers'. For the write-time conflict check; `key` must already be a valid fact key (a-z 0-9 _ . -).
    */
   liveFactNotes(namespace: string, key: string, exceptId: number): NoteRecord[] {
     const pattern = `%"fact:${key.replace(/_/g, "\\_")}=%`;
     const rows = this.db
-      .prepare("SELECT * FROM notes WHERE archived_at IS NULL AND superseded_at IS NULL AND namespace = ? AND id <> ? AND tags LIKE ? ESCAPE '\\'")
+      .prepare("SELECT * FROM notes WHERE archived_at IS NULL AND superseded_at IS NULL AND namespace = ? AND id <> ? AND tags LIKE ? ESCAPE '\\' AND tags NOT LIKE '%\"never-show\"%'")
       .all(namespace, exceptId, pattern) as unknown as NoteRow[];
     return this.filterVisible(rows.map((r) => this.rec(r)));
   }
