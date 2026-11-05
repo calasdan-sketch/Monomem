@@ -664,9 +664,8 @@ describe("precision and recall by tier", () => {
     const [, realPossible] = run("realistic, no facts", false, REAL_POS, REAL_NEG);
     const [bFacts] = run("bench B, facts attached", true, B_PAIRS, []);
     const [, bPossible] = run("bench B, no facts", false, B_PAIRS, []);
-    // Round 7: synonym keys (api.host vs api.deploy_target) are one setting, so three unrelated planted pairs that use both spellings now
-    // flag each other (3 of 23 flags). That is the designed behavior, not look-alike noise (lookalike stays 0 below).
-    assert.ok(realFacts.precision >= 0.85, String(realFacts.precision));
+    // "host" is not a synonym of deploy_target (api.host is usually a host name), so unrelated planted pairs do not flag each other.
+    assert.equal(realFacts.precision, 1, String(realFacts.precision));
     assert.equal(realFacts.recall, 1);
     assert.equal(realFacts.lookalike, 0);
     assert.equal(bFacts.precision, 1);

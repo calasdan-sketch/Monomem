@@ -116,7 +116,8 @@ describe("disputes by namespace and synonym", () => {
     const s = new Store(":memory:");
     const a = mk(s, "alice", "a", { deploy_target: "render" });
     const b = mk(s, "bob", "b", { hosting: "fly.io" });
-    assert.equal(canonKey("api.host"), "api.deploy_target");
+    assert.equal(canonKey("api.hosting"), "api.deploy_target");
+    assert.equal(canonKey("api.host"), "api.host", "a host name is not a deploy target");
     assert.match(disputedLines(s, { namespace: "default" }), /deploy_target: 'render' \(#\d+ alice\) vs 'fly\.io' \(#\d+ bob as hosting\)/);
     const found = findConflicts(s);
     assert.equal(found.length, 1);

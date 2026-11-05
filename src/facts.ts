@@ -23,7 +23,7 @@ export const COMMON_FACT_KEYS = ["deploy_target", "package_manager", "test_runne
 
 // Spellings agents drift to. The first entry of each group is the common key. Deterministic: no model, no fuzzy matching.
 const KEY_SYNONYMS: readonly (readonly string[])[] = [
-  ["deploy_target", "hosting", "host", "runs_on", "deploy_to", "deployment_target", "deploy_host"],
+  ["deploy_target", "hosting", "runs_on", "deploy_to", "deployment_target"],
   ["package_manager", "pkg_manager", "pkg_mgr", "package_mgr"],
   ["test_runner", "test_framework", "testing_framework", "test_tool"],
   ["database", "db", "datastore", "db_engine"],
@@ -81,7 +81,7 @@ const quote = (v: string, max: number): string => `'${printable(v, max).replace(
 /** "deploy_target" and "api.deploy_target" are one setting with a deliberate scope: never a drift pair. */
 const scopedForm = (a: string, b: string): boolean => a.endsWith("." + b) || b.endsWith("." + a);
 
-/** The common spelling of a key ("hosting" -> "deploy_target", "api.host" -> "api.deploy_target"); any other key is returned unchanged. */
+/** The common spelling of a key ("hosting" -> "deploy_target", "api.hosting" -> "api.deploy_target"); any other key is returned unchanged. */
 export const canonKey = (key: string): string => {
   const g = groupOf(lastSegment(key));
   return g ? prefixOf(key) + g[0] : key;
