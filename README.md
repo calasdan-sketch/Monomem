@@ -9,7 +9,7 @@ npx monomem setup
 
 Needs Node 22.16 or newer (check with `node -v`). On an older Node, use [Docker](#docker).
 
-Stop explaining your project to every assistant again. Tell Claude Code something once, and Cursor, Codex and Gemini CLI can read it too, because they all share one memory. It's one SQLite file on your own machine. No cloud, no API keys, no hidden model calls. Already use another memory tool? See [how it compares](#how-it-compares).
+Stop explaining your project to every assistant again. Tell Claude Code something once, and Cursor, Codex and Gemini CLI can read it too, because they all share one memory. It's one SQLite file on your own machine. No cloud, no API keys, no hidden model calls. Already use another memory tool? See [how it compares](#how-it-compares). To check what it holds and why, see [Check and explain your memory](#check-and-explain-your-memory).
 
 [![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)
@@ -162,6 +162,25 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
   [docs/file-sync.md](./docs/file-sync.md).
 
 ---
+
+## Check and explain your memory
+
+```bash
+monomem drill       # replay known poisoning attacks on a copy of your store; says which reached an agent
+monomem health      # one grade A-F with the reason: setup, settings, drill, audit chain, held writes
+monomem why 42      # the story of note #42: who wrote each version, what replaced it, which sessions were shown it
+monomem conflicts   # possible disagreements between writers
+monomem receipts    # which notes the last session start showed, and why
+```
+
+`conflicts` only flags: it matches exact facts and keys, so a disagreement that is reworded is missed, and it never changes a note. `health` opens your store (an older database file is upgraded once) and writes one small row noting how long the audit log was, so the next run can see lines removed. These are local commands with no cloud call.
+
+In Claude Code you can also install Monomem as a plugin instead of running `setup` ([what the plugin does and does not do](./docs/plugin.md)):
+
+```
+/plugin marketplace add calasdan-sketch/monomem
+/plugin install monomem@monomem
+```
 
 ## Automatic memory
 

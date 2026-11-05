@@ -51,7 +51,7 @@ describe("session-start context", () => {
     assert.ok(text.startsWith(`What I know about this project:\nLast session: Session: refactor\n\nLatest session summary (#${sum.id}`), text.slice(0, 120));
     assert.ok(text.indexOf("Recent memory (1 note):\n- [A plain note] {recent 0d}: remember this") > 0);
     assert.match(text, /\n#\d+ \[change\] Observation number \d+ \(\d{4}-\d\d-\d\d, ~\d+ tok\)/);
-    assert.match(text, /Showing \d+ of 82 memories \(~\d+ tokens\) standing in for ~\d+ tokens of captured work\. Open any with memory_get ids=\[/);
+    assert.match(text, /Showing \d+ of 82 memories in ~\d+ tokens \(estimate\), (?:condensed from|about the same text as) ~\d+ tokens of notes and captured events; the block also holds headers and index lines\. Open any with memory_get ids=\[/);
     const big = await injectContext(s, { signals: noGit, tokens: 3000 });
     assert.ok(big.length > text.length, "a bigger budget shows more");
     assert.equal(indexLine(sum).startsWith(`#${sum.id} [summary] Session: refactor`), true);

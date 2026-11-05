@@ -3,7 +3,7 @@
 // Text rule: titles only (printed through printable()); a body only when the operator passes --body on the CLI.
 import { WRITER_MARKERS } from "./actor.js";
 import { accessLogDays, type NoteRecord, type Store } from "./store.js";
-import { printable } from "./security.js";
+import { describeWriter, printable } from "./security.js";
 import { localTime, whyText } from "./receipts.js";
 
 export interface WhyEvent {
@@ -28,7 +28,7 @@ export interface Why {
   approve_first_namespace: boolean;
   created_by: { writer: string; kind: string };
   timeline: WhyEvent[];
-  shown_to: { total: number; recent: WhyShown[] };
+  shown_to: { total: number; recent: WhyShown[]; retention_days: number };
   reads: { total: number; last: string | null; attributable: false };
   body?: string;
   not_recorded: string;
@@ -43,11 +43,15 @@ export const NOT_RECORDED =
 export function writerKind(w: string, claimed = false): string {
   if (claimed) return "claimed by an import file, not verified";
   if (!w) return "unknown (written before writers were recorded)";
-  if (w.startsWith("stdio:") || (WRITER_MARKERS as readonly string[]).includes(w)) return "server-stamped marker";
-  return "token label from your config";
+  if (w.startsWith("stdio:")) return "self-declared by its launch config, no token";
+  if ((WRITER_MARKERS as readonly string[]).includes(w)) return "server-stamped marker";
+  return "token label, stamped by the server from the token";
 }
 
 const p = (v: unknown): string => printable(v, 80);
+const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? "" : "s"}`;
+/** A writer label in the same words the rest of Monomem uses (describeWriter), through printable(). */
+const who = (w: string): string => p(describeWriter(w));
 
 /** Build the story for a note the caller already read (and, for agents, already passed through the trust gate). */
 export function noteWhy(store: Store, note: NoteRecord, opts: { namespaces?: string[]; body?: boolean } = {}): Why {
@@ -58,17 +62,20 @@ export function noteWhy(store: Store, note: NoteRecord, opts: { namespaces?: str
   const creator = note.created_by || note.written_by;
   tl.push({
     at: note.created_at,
-    what: `created by ${p(creator || "unknown")} (${writerKind(creator, claimed)})${note.imported_created_by ? `; the import file claimed ${p(note.imported_created_by)}` : ""}`,
+    what: `created by ${claimed ? `${p(creator || "unknown")} (${writerKind(creator, true)})` : who(creator)}${note.imported_created_by ? `; the import file claimed ${p(note.imported_created_by)}` : ""}`,
   });
 
   const hist = store.historyOf(id).reverse(); // oldest first
   for (const h of hist) {
-    const by = h.imported ? `${p(h.written_by)} (${writerKind("", true)}${h.claimed_writer ? `: ${p(h.claimed_writer)}` : ""})` : p(h.written_by || "unknown");
-    tl.push({ at: h.saved_at, what: `version ${h.version} ("${p(h.title)}", written by ${by}) replaced by ${p(h.saved_by || "unknown")}, reason: ${p(h.reason)}` });
+    const by = h.imported ? `${p(h.written_by)} (${writerKind("", true)}${h.claimed_writer ? `: ${p(h.claimed_writer)}` : ""})` : who(h.written_by);
+    // An earlier version by a distrusted writer is as hidden as the note itself would be: no title.
+    const hidden = store.isDistrusted({ namespace: note.namespace, written_by: h.written_by, merged_from_writers: h.merged_from });
+    const title = hidden ? "title hidden: its writer is distrusted" : `"${p(h.title)}"`;
+    tl.push({ at: h.saved_at, what: `version ${h.version} (${title}, written by ${by}) replaced by ${who(h.saved_by)}, reason: ${p(h.reason)}` });
   }
   const dropped = store.historyDropped(id).reduce((a, d) => a + Number(d.count), 0);
-  if (dropped) tl.push({ at: note.updated_at, what: `${dropped} older version(s) are no longer kept` });
-  if (note.rev > 1 || hist.length) tl.push({ at: note.updated_at, what: `version ${note.rev} is current, last written by ${p(note.written_by || "unknown")} (${writerKind(note.written_by)})` });
+  if (dropped) tl.push({ at: note.updated_at, what: `${dropped} older version${dropped === 1 ? "" : "s"} no longer kept` });
+  if (note.rev > 1 || hist.length) tl.push({ at: note.updated_at, what: `version ${note.rev} is current, last written by ${who(note.written_by)}` });
 
   // Metadata-only changes (tags, archive, move): change-log rows whose revision did not move.
   const log = db.prepare("SELECT kind, rev, changed_at, actor FROM change_log WHERE note_id = ? ORDER BY seq").all(id) as Array<{ kind: string; rev: number | null; changed_at: string; actor: string }>;
@@ -109,14 +116,14 @@ export function noteWhy(store: Store, note: NoteRecord, opts: { namespaces?: str
   return {
     id,
     namespace: note.namespace,
-    title: note.title,
+    title: printable(note.title, 200),
     status,
     distrusted_writer: store.isDistrusted(note),
     pinned: !!note.pinned,
     approve_first_namespace: store.isApproveFirst(note.namespace),
     created_by: { writer: creator, kind: writerKind(creator, claimed) },
     timeline: tl,
-    shown_to: { total: shown.length, recent: shown.slice(0, SHOWN_LIMIT) },
+    shown_to: { total: shown.length, recent: shown.slice(0, SHOWN_LIMIT), retention_days: accessLogDays() },
     reads: { total: note.access_count, last: note.last_accessed, attributable: false },
     ...(opts.body ? { body: note.body } : {}),
     not_recorded: NOT_RECORDED,
@@ -146,8 +153,8 @@ export async function whyCmd(args: string[]): Promise<void> {
     for (const e of w.timeline) console.log(`  ${localTime(e.at)}  ${e.what}`);
     const flags = [w.pinned ? "pinned by the operator" : "", w.distrusted_writer ? "writer is distrusted: hidden from agents" : "", w.approve_first_namespace ? "namespace is approve-first" : ""].filter(Boolean);
     console.log(`status: ${w.status}${flags.length ? ` (${flags.join("; ")})` : ""}`);
-    console.log(`shown at ${w.shown_to.total} session start(s) (receipts kept ${accessLogDays()} days)`);
-    console.log(`read ${w.reads.total} time(s)${w.reads.last ? `, last ${localTime(w.reads.last)}` : ""}; who read it is not recorded`);
+    console.log(`shown at ${plural(w.shown_to.total, "session start")} (receipts kept ${w.shown_to.retention_days} days)`);
+    console.log(`read ${plural(w.reads.total, "time")}${w.reads.last ? `, last ${localTime(w.reads.last)}` : ""}; who read it is not recorded`);
     if (w.body !== undefined) console.log(`body:\n${w.body.split("\n").map((l) => printable(l, 500)).join("\n")}`);
     console.log(w.not_recorded);
   } finally {

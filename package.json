@@ -46,6 +46,7 @@
     "bench": "npm run build && node dist/src/cli.js bench",
     "cli": "node dist/src/cli.js",
     "test": "npm run build && node --test --import ./dist/test/setup-env.js \"dist/test/*.test.js\"",
+    "version": "node scripts/sync-plugin-version.mjs",
     "prepublishOnly": "npm run build",
     "demo-gif": "node scripts/record-demo.mjs",
     "runner": "node dist/src/runner-start.js",

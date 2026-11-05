@@ -19,12 +19,13 @@ monomem start                                  # dashboard + REST on :8790, MCP 
 On Windows PowerShell:
 
 ```powershell
-$env:MONOMEM_TOKEN = -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })   # the admin token, yours
+$b = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+$env:MONOMEM_TOKEN = -join ($b | ForEach-Object { '{0:x2}' -f $_ })   # the admin token, yours
 $env:MONOMEM_BIND = "0.0.0.0"     # only if the server must listen beyond this machine
 monomem start
 ```
 
-(`Get-Random` is fine for a first setup; for a long-lived token use `openssl rand -hex 32` if you have it.)
+(That draws from the operating system's cryptographic random generator. `openssl rand -hex 32` does the same if you have it.)
 
 By default the server listens on `127.0.0.1` only. It refuses to bind to anything else unless `MONOMEM_TOKEN` is set.
 Do not put the plain port on the internet. Put an authenticated tunnel or a TLS proxy in front of it; the three checks
@@ -100,6 +101,10 @@ own local store and run `monomem sync --git <repo-folder> --encrypt` to merge th
 shared server for this, and it is not the same thing as steps 1 to 4: each computer has its own copy, there are no
 approve-first holds across computers, and deleting a note does not remove it from the other computers. See
 [docs/file-sync.md](./file-sync.md#git-in-one-command-sync---git).
+
+## When teammates' notes disagree
+
+Two people can save notes that state different values for the same thing ("deploy day is Friday" and "deploy day is Monday"). Run `monomem conflicts` to list them. It only flags: it matches exact facts and keys, so a disagreement that is reworded is missed, and it never changes or removes a note. You decide which note is right, then replace or archive the other.
 
 ## A short checklist
 

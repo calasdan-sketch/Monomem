@@ -25,7 +25,7 @@ describe("noteWhy", () => {
     const { s, id } = story();
     const w = noteWhy(s, s.read(id)!);
     const text = w.timeline.map((e) => e.what).join("\n");
-    assert.match(text, /created by alice \(token label from your config\)/);
+    assert.match(text, /created by alice \(token\)/);
     assert.match(text, /version 1 .*written by alice.* replaced by bob/);
     assert.match(text, /shown at session start sess-9 \(claude\), rank 1, why: files; 2 days old/);
     assert.equal(w.status, "live");
@@ -49,10 +49,27 @@ describe("noteWhy", () => {
     s.close();
   });
 
+  test("writer wording matches describeWriter; distrusted versions lose their title; JSON title is printable; retention", () => {
+    const s = new Store(":memory:");
+    const n = as("alice", () => s.create({ title: "Old secret title", body: "b" }));
+    as("mallory", () => s.update(n.id, { title: "Newer", body: "c" }));
+    as("bob", () => s.update(n.id, { title: "Newest", body: "d" }));
+    s.distrustAdd(n.namespace, "mallory");
+    const text = noteWhy(s, s.read(n.id)!).timeline.map((e) => e.what).join("\n");
+    assert.match(text, /version 1 \("Old secret title", written by alice \(token\)\)/);
+    assert.match(text, /version 2 \(title hidden: its writer is distrusted, written by mallory/);
+    assert.ok(!text.includes('"Newer"'));
+    const m = s.create({ title: "Line\u001b[31m one\ntwo", body: "b" });
+    const w = noteWhy(s, s.read(m.id)!);
+    assert.ok(!/[\u0000-\u001f]/.test(w.title));
+    assert.equal(w.shown_to.retention_days, 30);
+    s.close();
+  });
+
   test("a writer label is classified, never trusted", () => {
     assert.match(writerKind("cli"), /server-stamped/);
-    assert.match(writerKind("stdio:cursor"), /server-stamped/);
-    assert.match(writerKind("token:cli"), /config/);
+    assert.match(writerKind("stdio:cursor"), /self-declared by its launch config/);
+    assert.match(writerKind("token:cli"), /stamped by the server from the token/);
     assert.match(writerKind("", false), /unknown/);
     assert.match(writerKind("x", true), /claimed/);
   });
