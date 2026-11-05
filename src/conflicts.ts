@@ -10,7 +10,9 @@ import { noteFacts, normFact } from "./facts.js";
 import { writerKind } from "./why.js";
 
 /** kind = what the label is (server-stamped marker or token label), so a spoofed "stdio" label is told apart from a token holder. */
-export interface ConflictNote { id: number; title: string; writer: string; kind: string; pinned: boolean; at: string }
+export interface ConflictNote { id: number; title: string; writer: string; kind: string; pinned: boolean; at: string;
+  /** How many OTHER facts the note carries besides the disputed key (Keep removes only the disputed one). */
+  otherFacts: number }
 export interface Conflict {
   namespace: string;
   /** Older first. */
@@ -78,13 +80,14 @@ function statements(n: NoteRecord): Stmt[] {
 }
 
 const writerOf = (n: NoteRecord): string => n.writer_id || n.written_by;
-const brief = (n: NoteRecord): ConflictNote => ({
+const brief = (n: NoteRecord, key?: string): ConflictNote => ({
   id: n.id,
   title: n.title,
   writer: n.written_by,
   kind: writerKind(n.written_by, !!n.imported_unverified || !!n.imported_written_by),
   pinned: n.pinned === true,
   at: n.updated_at,
+  otherFacts: noteFacts(n.tags).filter(([k]) => k !== key).length,
 });
 
 // "fly.io" vs "fly.io (prod)" is a refinement, not a conflict; "npm" vs "pnpm" is (whole words, not substrings).
@@ -118,7 +121,7 @@ export function findConflicts(store: Store, opts: { namespaces?: string[]; notes
         const [p, q] = oldestFirst(g[i], g[j]);
         if (writerOf(p.n) === writerOf(q.n) || normFact(p.v) === normFact(q.v)) continue;
         done.add(`${p.n.id}-${q.n.id}`);
-        out.push({ namespace: p.n.namespace, a: brief(p.n), b: brief(q.n), key, values: [normFact(p.v), normFact(q.v)], shown: [p.v, q.v], tier: "fact", confidence: "exact" });
+        out.push({ namespace: p.n.namespace, a: brief(p.n, key), b: brief(q.n, key), key, values: [normFact(p.v), normFact(q.v)], shown: [p.v, q.v], tier: "fact", confidence: "exact" });
         if (out.length >= MAX_CONFLICTS) break factLoop;
       }
     }
@@ -159,16 +162,73 @@ export function findConflicts(store: Store, opts: { namespaces?: string[]; notes
 
 const quoted = (v: string): string => JSON.stringify(printable(v));
 
-/** Plain-text lines for the CLI; every title and value goes through printable(). The human picks the fix. */
-export function conflictLines(conflicts: Conflict[]): string[] {
-  const out: string[] = [];
+/** One disputed key: every value with the notes (and so the writers) that state it. */
+export interface ConflictGroup {
+  namespace: string;
+  key: string;
+  tier: "fact" | "possible";
+  /** The strongest confidence of the pairs in the group. */
+  confidence: "exact" | "high" | "medium";
+  /** Most notes first. `value` is as written (original case). */
+  values: Array<{ value: string; notes: ConflictNote[] }>;
+}
+
+const RANK = { exact: 0, high: 1, medium: 2 };
+
+/** Pairs -> one block per (namespace, key, tier), N values instead of N^2 pairs. Order follows the pairs. */
+export function groupConflicts(conflicts: Conflict[]): ConflictGroup[] {
+  const groups = new Map<string, { g: ConflictGroup; byValue: Map<string, { value: string; notes: Map<number, ConflictNote> }> }>();
   for (const c of conflicts) {
-    out.push(`\n[conflict:${c.confidence}] [${printable(c.namespace)}] ${printable(c.key)}: ${printable(c.shown[0])}  vs  ${printable(c.shown[1])}`);
-    for (const n of [c.a, c.b]) out.push(`    #${n.id} "${printable(n.title)}" by ${printable(n.writer)} [${printable(n.kind)}] (${printable(n.at.slice(0, 10))})${n.pinned ? " [pinned]" : ""}`);
-    out.push(`    keep ${printable(c.shown[1])} (#${c.b.id}): monomem supersede --old ${c.a.id} --new-id ${c.b.id}`);
-    out.push(`    keep ${printable(c.shown[0])} (#${c.a.id}): monomem supersede --old ${c.b.id} --new-id ${c.a.id}`);
-    out.push(`    or pin one: monomem pin ${c.a.id} | monomem pin ${c.b.id}`);
-    out.push(`    or distrust a writer: monomem trust distrust ${quoted(c.a.writer)} --namespace ${quoted(c.namespace)} | monomem trust distrust ${quoted(c.b.writer)} --namespace ${quoted(c.namespace)}`);
+    const gk = `${c.tier}\u0000${c.namespace}\u0000${c.key}`;
+    const e = groups.get(gk) ?? groups.set(gk, { g: { namespace: c.namespace, key: c.key, tier: c.tier, confidence: c.confidence, values: [] }, byValue: new Map() }).get(gk)!;
+    if (RANK[c.confidence] < RANK[e.g.confidence]) e.g.confidence = c.confidence;
+    for (const [i, n] of [c.a, c.b].entries()) {
+      const v = e.byValue.get(c.values[i]) ?? e.byValue.set(c.values[i], { value: c.shown[i], notes: new Map() }).get(c.values[i])!;
+      v.notes.set(n.id, n);
+    }
+  }
+  return [...groups.values()].map(({ g, byValue }) => ({
+    ...g,
+    values: [...byValue.values()].map((v) => ({ value: v.value, notes: [...v.notes.values()].sort((x, y) => x.id - y.id) })).sort((x, y) => y.notes.length - x.notes.length || x.notes[0].id - y.notes[0].id),
+  }));
+}
+
+/** Most groups a report prints; the rest are counted. */
+export const MAX_GROUPS_SHOWN = 50;
+
+export interface ConflictReport { groups: ConflictGroup[]; total: number; capped: boolean }
+
+/** Group, and cut to `limit` blocks. `capped`: the pair search hit MAX_CONFLICTS, so `total` is a lower bound ("at least"). */
+export function conflictReport(pairs: Conflict[], limit = MAX_GROUPS_SHOWN): ConflictReport {
+  const all = groupConflicts(pairs);
+  return { groups: all.slice(0, limit), total: all.length, capped: pairs.length >= MAX_CONFLICTS };
+}
+
+/** "3 conflicts" / "showing 50 of 73 conflicts" / "showing 50 of at least 73 conflicts". */
+export function reportHeader(r: ConflictReport): string {
+  const n = r.groups.length;
+  if (r.capped) return `showing ${n} of at least ${r.total} conflict${r.total === 1 ? "" : "s"}`;
+  if (n < r.total) return `showing ${n} of ${r.total} conflicts`;
+  return `${n} conflict${n === 1 ? "" : "s"}`;
+}
+
+/** Plain-text lines for the CLI; every title and value goes through printable(). The human picks the fix. */
+export function conflictLines(groups: ConflictGroup[]): string[] {
+  const out: string[] = [];
+  for (const g of groups) {
+    out.push(`\n[conflict:${g.confidence}] [${printable(g.namespace)}] ${printable(g.key)}`);
+    for (const v of g.values) {
+      out.push(`  ${printable(v.value)}`);
+      for (const n of v.notes) out.push(`    #${n.id} "${printable(n.title)}" by ${printable(n.writer)} [${printable(n.kind)}] (${printable(n.at.slice(0, 10))})${n.pinned ? " [pinned]" : ""}`);
+    }
+    for (const v of g.values) {
+      const others = g.values.filter((o) => o !== v).flatMap((o) => o.notes.map((n) => n.id));
+      out.push(`    keep ${printable(v.value)}: monomem supersede --old ${others.join(",")} --new-id ${v.notes[0].id}   (replaces ${others.length === 1 ? "note" : "notes"} ${others.join(", ")} whole)`);
+    }
+    const all = g.values.flatMap((v) => v.notes);
+    out.push(`    or pin one: ${all.map((n) => `monomem pin ${n.id}`).join(" | ")}`);
+    const writers = [...new Set(all.map((n) => n.writer))];
+    out.push(`    or distrust a writer: ${writers.map((w) => `monomem trust distrust ${quoted(w)} --namespace ${quoted(g.namespace)}`).join(" | ")}`);
   }
   return out;
 }
@@ -187,11 +247,12 @@ export async function conflictsCmd(args: string[]): Promise<void> {
   const store = new S(DB_PATH);
   try {
     const found = findConflicts(store, { namespaces: ns ? [ns] : undefined });
-    if (json) console.log(JSON.stringify({ conflicts: found }, null, 2));
+    const report = conflictReport(found);
+    if (json) console.log(JSON.stringify({ conflicts: found, groups: report.groups, total: report.total, capped: report.capped }, null, 2));
     else if (!found.length) console.log("No conflicts found.");
     else {
-      console.log(`${found.length} conflict${found.length === 1 ? "" : "s"} (flagged only; nothing was changed)`);
-      for (const l of conflictLines(found)) console.log(l);
+      console.log(`${reportHeader(report)} (flagged only; nothing was changed)`);
+      for (const l of conflictLines(report.groups)) console.log(l);
     }
   } finally {
     store.close();

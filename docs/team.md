@@ -106,6 +106,8 @@ approve-first holds across computers, and deleting a note does not remove it fro
 
 Two people can save notes that state different values for the same thing ("deploy day is Friday" and "deploy day is Monday"). Run `monomem conflicts` to list them. It only flags: it matches exact facts and keys, so a disagreement that is reworded is missed, and it never changes or removes a note. You decide which note is right, then replace or archive the other.
 
+To make agents' decisions comparable, tell them to attach `facts` under a shared key. Use a common key when one fits: `deploy_target`, `package_manager`, `test_runner`, `database`, `node_version`, `base_url`, `ci_provider`, `formatter`. Prefix a subject only when the project has several (`api.deploy_target`). At the start of a session, a disputed key shows up as a short "Disputed:" line so the agent asks you before acting.
+
 ## A short checklist
 
 - [ ] Server is behind a tunnel or proxy that checks who is calling, and `MONOMEM_TOKEN` is set.

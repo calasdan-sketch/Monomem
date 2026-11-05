@@ -39,7 +39,7 @@ import { rollbackPreview, rollbackConfirm, embedRestored } from "./rollback.js";
 import { supersedePreview, supersedeConfirm, supersedeUndo, noteHistory, restoreVersion, purgeNoteHistory, SupersedeError, type Caller } from "./supersede.js";
 import { runnerStatus } from "./liveness.js";
 import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
-import { withFacts, writeConflicts } from "./facts.js";
+import { withFacts, writeConflicts, similarKeys, COMMON_FACT_KEYS } from "./facts.js";
 import { waitForChanges, parseWait, WAIT_MAX_SECONDS, WAIT_RECOMMENDED_SECONDS } from "./change-wait.js";
 import { type Scope, PACKAGE_VERSION } from "./config.js";
 export { PACKAGE_VERSION };
@@ -179,13 +179,15 @@ function quarantinedResult(e: QuarantinedError) {
   });
 }
 
-/** Attach linter warnings (MONOMEM_LINT=warn) to a write payload. */
-/** Adds `conflicts` (other writers' different values for this note's fact keys) when the write carried facts. The write already succeeded. */
-function withConflicts<T extends object>(payload: T, store: Store, note: NoteRecord, facts: unknown): T & { conflicts?: string[] } {
-  const c = facts === undefined ? [] : writeConflicts(store, note);
-  return c.length ? { ...payload, conflicts: c } : payload;
+/** Adds `conflicts` (other writers' different values for this note's fact keys) and `similar_keys` (existing keys that look like a new one) when the write carried facts. The write already succeeded. */
+function withConflicts<T extends object>(payload: T, store: Store, note: NoteRecord, facts: unknown): T & { conflicts?: string[]; similar_keys?: Record<string, string[]> } {
+  if (facts === undefined) return payload;
+  const c = writeConflicts(store, note);
+  const similar = similarKeys(store, note);
+  return { ...payload, ...(c.length ? { conflicts: c } : {}), ...(Object.keys(similar).length ? { similar_keys: similar } : {}) };
 }
 
+/** Attach linter warnings (MONOMEM_LINT=warn) to a write payload. */
 function withWarnings<T extends object>(payload: T, warnings: LintFinding[]): T & { warnings?: LintFinding[] } {
   return warnings.length ? { ...payload, warnings } : payload;
 }
@@ -469,6 +471,7 @@ export function createMcpServer(
       title: "Write shared state",
       description:
         "Create a new note in the shared cross-surface state store, or update an existing one if `id` is given. Returns the resulting note." +
+        " Recording a decision (deploy target, package manager, test runner, database, a version or URL)? Also pass `facts`, so a teammate's different value is caught exactly." +
         (nsActive
           ? " SERVER-RESOLVED NAMESPACE: this server writes to its own namespace; no `namespace` parameter is accepted."
           : ""),
@@ -501,7 +504,7 @@ export function createMcpServer(
           .record(z.string(), z.string())
           .optional()
           .describe(
-            "Decisions as exact key/value pairs, e.g. {\"deploy_target\": \"render\", \"package_manager\": \"pnpm\"}. At most 10; keys are lowercase a-z 0-9 _ . - (max 40 chars), values one line of at most 80 chars. If another writer's live note in the same namespace states a different value for a key, the write still succeeds and the reply carries `conflicts`: tell the user. Scope keys to the subject (orders.database, not database)."
+            "Use a common key when one fits: " + COMMON_FACT_KEYS.join(", ") + ". Prefix a subject only when the project has several (api.deploy_target). Decisions as exact key/value pairs, e.g. {\"deploy_target\": \"render\", \"package_manager\": \"pnpm\"}. At most 10; keys are lowercase a-z 0-9 _ . - (max 40 chars), values one line of at most 80 chars. If another writer's live note in the same namespace states a different value for a key, the write still succeeds and the reply carries `conflicts`: tell the user. If the key is new to the namespace and an existing key looks like the same thing, the reply carries `similar_keys`: reuse one of them."
           ),
         source: z
           .string()

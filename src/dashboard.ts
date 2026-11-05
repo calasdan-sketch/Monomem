@@ -90,6 +90,10 @@ export const DASHBOARD_HTML = `<!doctype html>
   .msg{overflow-wrap:anywhere}
   .cf{border-top:1px solid var(--line);padding:10px 0 2px}
   .cf h3{margin:0 0 6px}
+  .cfval{margin:6px 0}
+  .cfdlg:empty{display:none}
+  .cfdlg{margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:6px}
+  .cfdlg ul{margin:0 0 6px;padding-left:18px}
   .cf .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
   .cf .acts button{max-width:100%;overflow-wrap:anywhere}
   /* Phones: the note text comes before its action buttons. */
@@ -487,27 +491,97 @@ function loadQuality(){
       return "<div class='card'><div class='cardhead'><div><h3><span class='tag'>"+esc(i.type)+"</span>"+esc(i.detail)+"</h3>"+
         "<div class='meta'>"+esc(i.namespace)+" &middot; "+esc(i.fix)+(i.alt ? " &middot; or "+esc(i.alt) : "")+"</div></div>"+acts(btn)+"</div></div>";
     }).join("");
-    var cf = j.conflicts || [];
-    var crow = cf.length ? "<div class='card'><h3>Conflicts ("+cf.length+")</h3><div class='meta'>Different writers, same key, different value. Flag only: nothing changes until you press a button and confirm. Exact = both notes carry the same fact key. Possible = guessed from the text.</div>"+cf.map(cfRow).join("")+"</div>" : "";
+    var cf = j.conflict_groups || [];
+    CFG = cf; CFACT = {};
+    var tot = Number(j.conflict_total) || cf.length;
+    var head = j.conflict_capped ? "showing "+cf.length+" of at least "+tot : (cf.length < tot ? "showing "+cf.length+" of "+tot : String(cf.length));
+    var crow = cf.length ? "<div class='card'><h3>Conflicts ("+head+")</h3><div class='meta'>Different writers, same key, different value. Flag only: nothing changes until you press a button and confirm. Exact = the notes carry the same fact key. Possible = guessed from the text.</div>"+cf.map(function(g, gi){ return cfRow(g, gi); }).join("")+"</div>" : "";
     $("list").innerHTML = crow + rows || empty("No quality issues found. Duplicates, stale notes and held writes will be listed here.");
   }).catch(failList);
 }
-// One conflict: both sides stated plainly, then the buttons under it. Neither side is the default.
-function cfSide(n, v){
-  return "<div class='meta'><b>"+esc(v)+"</b> &middot; #"+Number(n.id)+" "+esc(n.title)+" &middot; "+esc(n.writer)+" ("+esc(n.kind)+") &middot; "+esc(String(n.at).slice(0,10))+(n.pinned ? " &middot; pinned" : "")+"</div>";
+// One disputed key: every value with the notes that state it, then the buttons. No value is the default.
+var CFG = [], CFACT = {};
+function cfNote(n){
+  return "<div class='meta'>#"+Number(n.id)+" "+esc(n.title)+" &middot; "+esc(n.writer)+" ("+esc(n.kind)+") &middot; "+esc(String(n.at).slice(0,10))+(n.pinned ? " &middot; pinned" : "")+"</div>";
 }
-function cfRow(c){
-  var a = c.a, b = c.b, ai = Number(a.id), bi = Number(b.id), btns = [];
-  // Keeping one side replaces the other, and a pinned note can only be changed from the CLI.
-  if(!b.pinned){ btns.push("<button class='ghost' onclick='qReplace("+bi+","+ai+")'>Keep "+esc(c.shown[0])+"</button>"); }
-  if(!a.pinned){ btns.push("<button class='ghost' onclick='qReplace("+ai+","+bi+")'>Keep "+esc(c.shown[1])+"</button>"); }
-  [a, b].forEach(function(n){
-    if(!n.pinned){ btns.push("<button class='ghost' onclick='var x=this;arm(x,function(){qPin("+Number(n.id)+")})'>Pin #"+Number(n.id)+"</button>"); }
-    btns.push("<button class='ghost' data-ns='"+esc(c.namespace)+"' data-w='"+esc(n.writer)+"' onclick='var x=this;arm(x,function(){qDistrust(x)})'>Distrust "+esc(n.writer)+"</button>");
+function cfRow(g, gi){
+  gi = Number(gi) || 0;
+  var btns = [], all = [], seen = {};
+  g.values.forEach(function(v, vi){
+    v.notes.forEach(function(n){ all.push(n); });
+    // Keeping one value changes the other values' notes, and a pinned note can only be changed from the CLI.
+    var blocked = g.values.some(function(o, oi){ return oi !== vi && o.notes.some(function(n){ return n.pinned; }); });
+    if(!blocked){ btns.push("<button class='ghost' onclick='cfKeep("+gi+","+vi+")'>Keep "+esc(v.value)+"</button>"); }
   });
-  var pins = [a, b].filter(function(n){ return n.pinned; }).map(function(n){ return "#"+Number(n.id); });
-  return "<div class='cf'><h3><span class='tag'>"+esc(c.confidence)+"</span>"+esc(c.key)+"</h3>"+cfSide(a, c.shown[0])+cfSide(b, c.shown[1])+
-    "<div class='meta'>"+esc(c.namespace)+(pins.length ? " &middot; "+pins.join(", ")+" pinned: change it from the CLI" : "")+"</div>"+acts(btns.join(" "))+"</div>";
+  all.forEach(function(n){
+    if(!n.pinned){ btns.push("<button class='ghost' onclick='var x=this;arm(x,function(){qPin("+Number(n.id)+")})'>Pin #"+Number(n.id)+"</button>"); }
+    if(!seen[n.writer]){
+      seen[n.writer] = 1;
+      btns.push("<button class='ghost' data-ns='"+esc(g.namespace)+"' data-w='"+esc(n.writer)+"' onclick='var x=this;arm(x,function(){qDistrust(x)})'>Distrust "+esc(n.writer)+"</button>");
+    }
+  });
+  var pins = all.filter(function(n){ return n.pinned; }).map(function(n){ return "#"+Number(n.id); });
+  return "<div class='cf'><h3><span class='tag'>"+esc(g.confidence)+"</span>"+esc(g.key)+"</h3>"+
+    g.values.map(function(v){ return "<div class='cfval'><b>"+esc(v.value)+"</b>"+v.notes.map(cfNote).join("")+"</div>"; }).join("")+
+    "<div class='meta'>"+esc(g.namespace)+(pins.length ? " &middot; "+pins.join(", ")+" pinned: change it from the CLI" : "")+"</div>"+acts(btns.join(" "))+
+    "<div class='cfdlg' id='cfdlg"+gi+"'></div></div>";
+}
+// The confirmation sits inside the clicked card: short bullets, then the buttons. Bullets are built from escaped pieces.
+function cfDialog(gi, bullets, actions){
+  CFACT[gi] = actions.map(function(a){ return a[1]; });
+  $("cfdlg"+gi).innerHTML = "<ul>"+bullets.map(function(b){ return "<li>"+b+"</li>"; }).join("")+"</ul><div class='acts'>"+
+    actions.map(function(a, i){ return "<button onclick='cfAct("+gi+","+i+")'>"+esc(a[0])+"</button>"; }).join(" ")+
+    " <button class='ghost' onclick='cfClose("+gi+")'>Cancel</button></div>";
+}
+function cfAct(gi, i){ var f = CFACT[gi] && CFACT[gi][i]; if(f){ f(); } }
+function cfClose(gi){ var d = $("cfdlg"+gi); if(d){ d.innerHTML = ""; } CFACT[gi] = []; }
+function cfNoteText(n){ return "#"+Number(n.id)+" &ldquo;"+esc(n.title)+"&rdquo; ("+esc(n.writer)+")"; }
+function cfFacts(n){ var k = Number(n); return k === 1 ? "1 other fact" : k+" other facts"; }
+function cfKeep(gi, vi){
+  var g = CFG[gi]; if(!g){ return; }
+  var keep = g.values[vi], losers = [];
+  g.values.forEach(function(v, i){ if(i !== vi){ v.notes.forEach(function(n){ losers.push({ n: n, value: v.value }); }); } });
+  if(g.tier !== "fact"){ cfReplace(gi, g, keep, losers); return; }
+  var bullets = ["You are keeping <b>"+esc(g.key)+" = "+esc(keep.value)+"</b>."];
+  losers.forEach(function(l){
+    var o = Number(l.n.otherFacts) || 0;
+    bullets.push(cfNoteText(l.n)+" says "+esc(g.key)+" = "+esc(l.value)+". That one fact is removed. The note stays"+(o ? ", with its "+cfFacts(o)+"." : "."));
+  });
+  bullets.push("No note is deleted or hidden. To bring a fact back, write it on the note again.");
+  bullets.push("To retire a whole note instead, choose Replace whole note.");
+  cfDialog(gi, bullets, [["Remove the disputed fact", function(){ cfRemoveFacts(gi, g, losers); }], ["Replace whole note", function(){ cfReplace(gi, g, keep, losers); }]]);
+}
+// Removes only the disputed fact tag, through the ordinary note edit (lint, approve-first and the pin gate still apply).
+function cfRemoveFacts(gi, g, losers){
+  var p = Promise.resolve(), done = 0, pre = "fact:"+g.key+"=";
+  losers.forEach(function(l){
+    p = p.then(function(){
+      return api("/notes/"+Number(l.n.id)).then(function(j){
+        var n = j.note || j;
+        var tags = (n.tags || []).filter(function(t){ return String(t).trim().indexOf(pre) !== 0; });
+        return api("/notes/"+Number(l.n.id), { method:"PUT", body: JSON.stringify({ tags: tags, if_rev: n.rev }) });
+      }).then(function(){ done++; });
+    });
+  });
+  p.then(function(){ loadQuality(); say("Removed "+g.key+" from "+done+(done === 1 ? " note." : " notes.")); })
+   .catch(function(e){ loadQuality(); say("Removed "+g.key+" from "+done+" of "+losers.length+" notes, then: "+(e && e.message ? e.message : String(e)), true); });
+}
+// Replace whole note: the server's preview issues the one-time code; the bullets are ours.
+function cfReplace(gi, g, keep, losers){
+  api("/supersede/preview", { method:"POST", body: JSON.stringify({ old_ids: losers.map(function(l){ return Number(l.n.id); }), new_id: Number(keep.notes[0].id), gui: true }) }).then(function(p){
+    var bullets = ["You are keeping <b>"+esc(g.key)+" = "+esc(keep.value)+"</b> (note #"+Number(keep.notes[0].id)+")."];
+    losers.forEach(function(l){
+      var o = Number(l.n.otherFacts) || 0;
+      bullets.push("Replaces "+cfNoteText(l.n)+": it stops showing in search and lists"+(g.tier === "fact" && o ? ", and its "+cfFacts(o)+" go with it." : "."));
+    });
+    bullets.push("Nothing is deleted. To bring one back: monomem supersede undo "+Number(losers[0].n.id)+".");
+    if(p.requires_acknowledgement){ bullets.push("An administrator warning applies to this replacement. Confirming accepts it."); }
+    cfDialog(gi, bullets, [["Replace whole note", function(){
+      var body = { token: p.token };
+      if(p.requires_acknowledgement){ body.acknowledge_risk = true; }
+      api("/supersede/confirm", { method:"POST", body: JSON.stringify(body) }).then(loadQuality).catch(fail);
+    }]]);
+  }).catch(fail);
 }
 function qReplace(oldId, newId){
   // gui: the server words the question for a person (no request codes or POST instructions).

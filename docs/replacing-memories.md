@@ -173,7 +173,8 @@ so a label cannot pass as a peer by its spelling.
   change; the secret and injection scan runs on them like any tag). Two live notes in one namespace, from different writers,
   with the same key and different values (case and extra spaces ignored) are flagged. When such a note is written, the write
   succeeds and the reply carries `conflicts` so the agent can ask the user. Limit: the match is exact on the key, so one key
-  reused for two subjects is flagged; scope keys (`orders.database`, not `database`).
+  reused for two subjects is flagged. Use a common key when one fits: `deploy_target`, `package_manager`, `test_runner`, `database`, `node_version`, `base_url`, `ci_provider`, `formatter`. Prefix a subject only when the project has several (`api.deploy_target`). When a write uses a key that is new to the namespace, the reply adds `similar_keys` (existing keys with the same last segment or a known synonym, e.g. `hosting` for `deploy_target`) so the agent can reuse one. At session start, disputed keys appear as at most two "Disputed:" lines.
+- **Keep on a fact dispute.** The dashboard's "Keep <value>" removes only the disputed fact from the other notes (they stay, with their other facts). "Replace whole note" retires the whole note instead. Conflicts are shown as one block per key listing every value and its notes; when the search is capped (500 pairs) the header says "showing N of at least M".
 - **Possible tier (no facts).** The older text rule: both titles state the same `key: value`, or the titles are identical
   and the bodies hold different values for one key. Titles that merely differ ("Hosting" vs "Where the app runs") are not
   matched: loosening that gate was measured and flooded the list with look-alike notes.

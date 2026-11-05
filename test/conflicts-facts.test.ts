@@ -7,8 +7,8 @@ import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Store, ValidationError } from "../src/store.js";
-import { findConflicts, conflictLines } from "../src/conflicts.js";
-import { factTags, withFacts, noteFacts, writeConflicts } from "../src/facts.js";
+import { findConflicts, conflictLines, groupConflicts, conflictReport, reportHeader, MAX_CONFLICTS } from "../src/conflicts.js";
+import { factTags, withFacts, noteFacts, writeConflicts, similarKeys, disputedLines, COMMON_FACT_KEYS } from "../src/facts.js";
 import { createMcpServer } from "../src/mcp-server-core.js";
 import { createApiServer } from "../src/api.js";
 import { DASHBOARD_JS } from "../src/dashboard.js";
@@ -182,8 +182,9 @@ describe("CLI lines", () => {
     const s = new Store(":memory:");
     const a = mk(s, "alice", "Deploy target: Fly.io", "x");
     const b = mk(s, "bob", "Deploy target: Render", "y");
-    const text = conflictLines(findConflicts(s)).join("\n");
-    assert.match(text, /deploy target: Fly\.io {2}vs {2}Render/);
+    const text = conflictLines(groupConflicts(findConflicts(s))).join("\n");
+    assert.match(text, /deploy target\n {2}Fly\.io\n/);
+    assert.match(text, /\n {2}Render\n/);
     assert.ok(text.includes(`monomem supersede --old ${a} --new-id ${b}`));
     assert.ok(text.includes(`monomem supersede --old ${b} --new-id ${a}`));
     assert.ok(text.includes(`monomem pin ${a}`) && text.includes(`monomem pin ${b}`));
@@ -195,7 +196,8 @@ describe("CLI lines", () => {
 });
 
 // ---- the dashboard, run in a stub browser ----
-function page(conflicts: unknown[]) {
+const NOTE_TAGS = ["fact:deploy_target=Render", "fact:node_version=22", "plain"];
+function page(groups: unknown[], over: { capped?: boolean; total?: number } = {}) {
   const calls: Array<{ path: string; method: string; body?: any }> = [];
   const els = new Map<string, any>();
   const el = (id: string): any => {
@@ -205,12 +207,13 @@ function page(conflicts: unknown[]) {
   const ctx: any = {
     document: { getElementById: el, createElement: () => ({ style: {}, setAttribute() {} }) },
     sessionStorage: { getItem: () => "tok", setItem() {}, removeItem() {} },
-    setTimeout, clearTimeout, encodeURIComponent,
+    setTimeout, clearTimeout, encodeURIComponent, Promise,
     fetch: async (path: string, opts: any = {}) => {
       calls.push({ path, method: opts.method ?? "GET", body: opts.body ? JSON.parse(opts.body) : undefined });
       let json: any = {};
-      if (path.startsWith("/quality")) json = { counts: {}, issues: [], conflicts };
-      if (path === "/supersede/preview") json = { warning: "Replace #1 with #2?", token: "T", requires_acknowledgement: false };
+      if (path.startsWith("/quality")) json = { counts: {}, issues: [], conflicts: [], conflict_groups: groups, conflict_total: over.total ?? groups.length, conflict_capped: over.capped ?? false };
+      if (path === "/supersede/preview") json = { warning: "ARE YOU SURE?\nSays: \"\"", token: "T", requires_acknowledgement: false };
+      if (/^\/notes\/\d+$/.test(path) && !opts.method) json = { note: { id: 2, rev: 3, tags: NOTE_TAGS } };
       return { ok: true, status: 200, json: async () => json };
     },
   };
@@ -219,18 +222,61 @@ function page(conflicts: unknown[]) {
   return { ctx, calls, el };
 }
 const settle = () => new Promise((r) => setTimeout(r, 20));
-const C = (over: any = {}) => ({
-  namespace: "default", key: "deploy_target", values: ["fly.io", "render"], shown: ["Fly.io", "Render"], tier: "fact", confidence: "exact",
-  a: { id: 1, title: "Hosting", writer: "alice", kind: "token label, stamped by the server from the token", pinned: false, at: "2026-10-01T00:00:00Z" },
-  b: { id: 2, title: "Runs on", writer: "bob", kind: "token label, stamped by the server from the token", pinned: false, at: "2026-10-02T00:00:00Z" }, ...over,
+const KIND = "token label, stamped by the server from the token";
+const G = (over: any = {}) => ({
+  namespace: "default", key: "deploy_target", tier: "fact", confidence: "exact",
+  values: [
+    { value: "Fly.io", notes: [{ id: 1, title: "Hosting", writer: "alice", kind: KIND, pinned: false, at: "2026-10-01T00:00:00Z", otherFacts: 0 }] },
+    { value: "Render", notes: [{ id: 2, title: "Runs on", writer: "bob", kind: KIND, pinned: false, at: "2026-10-02T00:00:00Z", otherFacts: 2 }] },
+  ], ...over,
+});
+
+describe("CLI and report grouping", () => {
+  test("N values on one key are ONE block, not N^2 pairs; every value lists its notes and writers", () => {
+    const s = new Store(":memory:");
+    const ids = ["fly.io", "render", "heroku", "vercel"].map((v, i) => mk(s, `w${i}`, `note ${i}`, "x", { deploy_target: v }));
+    const pairs = findConflicts(s);
+    assert.equal(pairs.length, 6);
+    const groups = groupConflicts(pairs);
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0].values.length, 4);
+    assert.deepEqual(groups[0].values.flatMap((v) => v.notes.map((n) => n.id)).sort(), [...ids].sort());
+    const text = conflictLines(groups).join("\n");
+    assert.equal((text.match(/\[conflict:/g) ?? []).length, 1);
+    assert.match(text, new RegExp(`monomem supersede --old ${[ids[1], ids[2], ids[3]].join(",")} --new-id ${ids[0]}`));
+    s.close();
+  });
+  test("two notes can state one value: both listed under it", () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "a", "x", { database: "postgres" });
+    mk(s, "carol", "c", "x", { database: "Postgres" });
+    mk(s, "bob", "b", "x", { database: "mysql" });
+    const [g] = groupConflicts(findConflicts(s));
+    assert.deepEqual(g.values.map((v) => v.notes.length), [2, 1]);
+    s.close();
+  });
+  test("capped: says 'showing N of at least M'; uncapped says the plain count", () => {
+    const s = new Store(":memory:");
+    for (let i = 0; i < 33; i++) mk(s, `w${i}`, `n${i}`, "x", { deploy_target: `host${i}` }); // 528 pairs > MAX_CONFLICTS
+    const pairs = findConflicts(s);
+    assert.equal(pairs.length, MAX_CONFLICTS);
+    const r = conflictReport(pairs, 2);
+    assert.equal(r.capped, true);
+    assert.equal(reportHeader({ ...r, total: 7 }), "showing 1 of at least 7 conflicts");
+    const small = conflictReport(pairs.slice(0, 1), 50);
+    assert.equal(small.capped, false);
+    assert.equal(reportHeader(small), "1 conflict");
+    assert.equal(reportHeader({ groups: small.groups, total: 5, capped: false }), "showing 1 of 5 conflicts");
+    s.close();
+  });
 });
 
 describe("dashboard conflicts UI", () => {
-  test("Keep <value> buttons for both sides, equal weight, Pin and Distrust, writer kind shown, no Replace", () => {
+  test("Keep <value> for each value, equal weight, Pin and Distrust, writer kind shown, no Replace", () => {
     const { ctx } = page([]);
-    const html: string = ctx.cfRow(C());
-    assert.match(html, /qReplace\(2,1\)'>Keep Fly\.io</);
-    assert.match(html, /qReplace\(1,2\)'>Keep Render</);
+    const html: string = ctx.cfRow(G(), 0);
+    assert.match(html, /cfKeep\(0,0\)'>Keep Fly\.io</);
+    assert.match(html, /cfKeep\(0,1\)'>Keep Render</);
     assert.match(html, /Pin #1/);
     assert.match(html, /Distrust alice/);
     assert.match(html, /alice \(token label, stamped by the server from the token\)/);
@@ -238,34 +284,90 @@ describe("dashboard conflicts UI", () => {
     const keeps = html.match(/<button[^>]*>Keep /g) ?? [];
     assert.equal(new Set(keeps.map((k) => k.match(/class='[^']*'/)?.[0])).size, 1, "same class on both Keep buttons: neither is primary");
     assert.ok(html.includes("class='ghost'") && !html.includes("<button>"));
+    assert.ok(html.includes("id='cfdlg0'"), "the confirmation lives inside the card");
   });
-  test("a pinned note hides the Keep that would replace it and says to use the CLI", () => {
+  test("a pinned note hides the Keep that would change it and says to use the CLI", () => {
     const { ctx } = page([]);
-    const html: string = ctx.cfRow(C({ b: { ...C().b, pinned: true } }));
-    assert.ok(!html.includes("Keep Fly.io"), "keeping #1 would replace the pinned #2");
+    const g = G();
+    g.values[1].notes[0].pinned = true;
+    const html: string = ctx.cfRow(g, 0);
+    assert.ok(!html.includes("Keep Fly.io"), "keeping #1 would change the pinned #2");
     assert.ok(html.includes("Keep Render"));
     assert.ok(html.includes("#2 pinned: change it from the CLI"));
     assert.ok(!html.includes("Pin #2"));
   });
-  test("everything from the server is escaped", () => {
-    const { ctx } = page([]);
+  test("everything from the server is escaped, in the card and in the dialog", async () => {
     const evil = "<img src=x onerror=alert(1)>'\"";
-    const html: string = ctx.cfRow(C({ shown: [evil, evil], key: evil, a: { ...C().a, writer: evil, title: evil, kind: evil }, b: { ...C().b, writer: evil, title: evil, kind: evil } }));
+    const g = G({ key: evil });
+    for (const v of g.values) { v.value = evil; for (const n of v.notes) Object.assign(n, { writer: evil, title: evil, kind: evil }); }
+    const { ctx, el } = page([g]);
+    const html: string = ctx.cfRow(g, 0);
     assert.ok(!html.includes("<img"), html);
     assert.ok(html.includes("data-w='&lt;img src=x onerror=alert(1)&gt;&#39;&quot;'"));
-  });
-  test("Keep asks the server for a GUI-worded preview, then confirms with the code", async () => {
-    const { ctx, calls, el } = page([C()]);
     ctx.loadQuality();
     await settle();
-    assert.match(el("list").innerHTML, /Conflicts \(1\)/);
-    ctx.qReplace(2, 1);
+    ctx.cfKeep(0, 0);
+    assert.ok(!el("cfdlg0").innerHTML.includes("<img"), el("cfdlg0").innerHTML);
+  });
+  test("a capped report says 'showing N of at least M'", async () => {
+    const { ctx, el } = page([G()], { capped: true, total: 9 });
+    ctx.loadQuality();
     await settle();
-    const p = calls.find((c) => c.path === "/supersede/preview")!;
-    assert.deepEqual(p.body, { old_ids: [2], new_id: 1, gui: true });
+    assert.match(el("list").innerHTML, /Conflicts \(showing 1 of at least 9\)/);
+  });
+  test("Keep on a fact dispute: plain bullets in the clicked card, no raw fact: tag, no ALL CAPS, no empty Says, nothing sent yet", async () => {
+    const { ctx, calls, el } = page([G()]);
+    ctx.loadQuality();
+    await settle();
+    const before = calls.length;
+    ctx.cfKeep(0, 0);
+    const d: string = el("cfdlg0").innerHTML;
+    assert.equal(calls.length, before, "asking changes nothing");
+    assert.match(d, /deploy_target = Fly\.io/);
+    assert.match(d, /deploy_target = Render/);
+    assert.match(d, /That one fact is removed\. The note stays, with its 2 other facts\./);
+    assert.match(d, /Remove the disputed fact/);
+    assert.match(d, /Replace whole note/);
+    assert.ok(!/fact:/.test(d) && !/Says/.test(d) && !/\b[A-Z]{4,}\b/.test(d.replace(/<[^>]*>/g, "")), d);
+  });
+  test("Remove the disputed fact: only that tag goes, other tags and facts stay, through the ordinary note edit; no supersede", async () => {
+    const { ctx, calls } = page([G()]);
+    ctx.loadQuality();
+    await settle();
+    ctx.cfKeep(0, 0);
+    ctx.cfAct(0, 0);
+    await settle();
+    const put = calls.find((c) => c.method === "PUT" && c.path === "/notes/2")!;
+    assert.deepEqual(put.body, { tags: ["fact:node_version=22", "plain"], if_rev: 3 });
+    assert.ok(!calls.some((c) => c.path.startsWith("/supersede")));
+  });
+  test("Replace whole note: a preview first, plain bullets that say its other facts go too, then confirm with the code", async () => {
+    const { ctx, calls, el } = page([G()]);
+    ctx.loadQuality();
+    await settle();
+    ctx.cfKeep(0, 0);
+    ctx.cfAct(0, 1);
+    await settle();
+    assert.deepEqual(calls.find((c) => c.path === "/supersede/preview")!.body, { old_ids: [2], new_id: 1, gui: true });
+    const d: string = el("cfdlg0").innerHTML;
+    assert.match(d, /its 2 other facts go with it/);
+    assert.match(d, /monomem supersede undo 2/);
+    assert.ok(!/Says|ARE YOU SURE/.test(d));
+    ctx.cfAct(0, 0);
+    await settle();
+    assert.deepEqual(calls.find((c) => c.path === "/supersede/confirm")!.body, { token: "T" });
+  });
+  test("a text-guessed (possible) conflict has no tag to remove: Keep goes to the replace preview", async () => {
+    const { ctx, calls, el } = page([G({ tier: "possible", confidence: "high" })]);
+    ctx.loadQuality();
+    await settle();
+    ctx.cfKeep(0, 1);
+    await settle();
+    assert.deepEqual(calls.find((c) => c.path === "/supersede/preview")!.body, { old_ids: [1], new_id: 2, gui: true });
+    assert.ok(!/Remove the disputed fact/.test(el("cfdlg0").innerHTML));
   });
   test("each conflict keeps its buttons inside its own block (phone layout: no .cardhead flattening)", async () => {
-    const { ctx, el } = page([C(), C({ key: "other" })]);
+    const { ctx, el } = page([G(), G({ key: "other" })]);
     ctx.loadQuality();
     await settle();
     const blocks = el("list").innerHTML.split("<div class='cf'>").slice(1);
@@ -274,7 +376,7 @@ describe("dashboard conflicts UI", () => {
     assert.ok(!/cardhead/.test(el("list").innerHTML));
   });
   test("Pin and Distrust call the existing endpoints", async () => {
-    const { ctx, calls } = page([C()]);
+    const { ctx, calls } = page([G()]);
     ctx.qPin(1);
     ctx.qDistrust({ getAttribute: (k: string) => (k === "data-ns" ? "default" : "alice") });
     await settle();
@@ -301,6 +403,80 @@ describe("supersede preview for the dashboard", () => {
       server.close();
       s.close();
     }
+  });
+});
+
+describe("adoption wording, key drift, session start", () => {
+  test("the common keys live in one constant and the tool text uses it", async () => {
+    assert.deepEqual([...COMMON_FACT_KEYS], ["deploy_target", "package_manager", "test_runner", "database", "node_version", "base_url", "ci_provider", "formatter"]);
+    const s = new Store(":memory:");
+    const server = createMcpServer(s, "admin", {}, { label: "alice", authed: true });
+    const [c, sv] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "t", version: "1.0.0" });
+    await Promise.all([client.connect(c), server.connect(sv)]);
+    const tool = (await client.listTools()).tools.find((t) => t.name === "state_write")!;
+    assert.match(tool.description!, /Recording a decision \(deploy target, package manager, test runner, database, a version or URL\)\? Also pass `facts`, so a teammate's different value is caught exactly\./);
+    const desc = (tool.inputSchema.properties as any).facts.description as string;
+    assert.ok(desc.startsWith(`Use a common key when one fits: ${COMMON_FACT_KEYS.join(", ")}. Prefix a subject only when the project has several (api.deploy_target).`), desc);
+    client.close(); s.close();
+  });
+  test("SKILL.md and the docs repeat the same advice (common keys, subject prefix only when needed; no 'always scope')", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const f of ["SKILL.md", "docs/team.md", "docs/replacing-memories.md"]) {
+      const t = readFileSync(f, "utf8");
+      for (const k of COMMON_FACT_KEYS) assert.ok(t.includes(k), `${f} lacks ${k}`);
+      assert.match(t, /api\.deploy_target/, f);
+      assert.ok(!/scope (?:a )?keys?( to| \()/i.test(t) && !/always scope/i.test(t), `${f} still says to scope keys`);
+    }
+  });
+  test("similar_keys: a NEW key gets the existing same-last-segment or synonym keys; a known key gets none", () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "a", "x", { hosting: "fly.io", "api.package_manager": "pnpm", database: "postgres" });
+    const hit = s.create({ title: "b", body: "x", tags: withFacts(undefined, { deploy_target: "render", pkg_manager: "npm", "web.package_manager": "yarn", database: "mysql", colour: "red" }) }, { writtenBy: "bob" });
+    assert.deepEqual(similarKeys(s, hit), { deploy_target: ["hosting"], pkg_manager: ["api.package_manager"], "web.package_manager": ["api.package_manager"] });
+    s.close();
+  });
+  test("similar_keys comes back over state_write only when the key is new and something looks alike", async () => {
+    const s = new Store(":memory:");
+    const server = createMcpServer(s, "admin", {}, { label: "bob", authed: true });
+    const [c, sv] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "t", version: "1.0.0" });
+    await Promise.all([client.connect(c), server.connect(sv)]);
+    const call = async (args: Record<string, unknown>): Promise<any> => {
+      const r: any = await client.callTool({ name: "state_write", arguments: args });
+      const t = r.content[0].text as string;
+      return JSON.parse(t.slice(t.indexOf("{")));
+    };
+    mk(s, "alice", "a", "x", { hosting: "fly.io" });
+    assert.deepEqual((await call({ title: "b", body: "y", facts: { deploy_target: "render" } })).similar_keys, { deploy_target: ["hosting"] });
+    assert.equal((await call({ title: "c", body: "y", facts: { hosting: "render" } })).similar_keys, undefined, "hosting is already known");
+    assert.equal((await call({ title: "d", body: "y", facts: { unrelated_thing: "1" } })).similar_keys, undefined);
+    client.close(); s.close();
+  });
+  test("session start: a dispute is at most 2 short lines; none = no text at all; same writer or same value is no dispute", () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "a", "x", { deploy_target: "fly.io" });
+    mk(s, "alice", "a2", "x", { deploy_target: "render" }); // one writer changing their mind
+    assert.equal(disputedLines(s, "default"), "");
+    mk(s, "bob", "b", "x", { deploy_target: "Render" });
+    assert.match(disputedLines(s, "default"), /^Disputed: deploy_target = fly\.io \(alice\) vs render \(alice\/bob\)\. Ask the user before acting\.$/);
+    for (const [k, v1, v2] of [["database", "pg", "mysql"], ["test_runner", "jest", "vitest"]] as const) { mk(s, "alice", `x${k}`, "y", { [k]: v1 }); mk(s, "bob", `y${k}`, "y", { [k]: v2 }); }
+    assert.equal(disputedLines(s, "default").split("\n").length, 2);
+    assert.equal(disputedLines(s, "elsewhere"), "");
+    s.close();
+  });
+  test("injectContext: the Disputed line rides inside the context; absent when nothing is disputed; distrusted writers do not count", async () => {
+    const { injectContext } = await import("../src/context-inject.js");
+    const s = new Store(":memory:");
+    mk(s, "alice", "Deploy", "we deploy", { deploy_target: "fly.io" });
+    const quiet = await injectContext(s, { namespace: "default", signals: {} });
+    assert.ok(!quiet.includes("Disputed:"));
+    mk(s, "bob", "Hosting", "we host", { deploy_target: "render" });
+    const loud = await injectContext(s, { namespace: "default", signals: {} });
+    assert.match(loud, /Disputed: deploy_target = fly\.io \(alice\) vs render \(bob\)\. Ask the user before acting\./);
+    s.distrustAdd("default", "bob");
+    assert.ok(!(await injectContext(s, { namespace: "default", signals: {} })).includes("Disputed:"));
+    s.close();
   });
 });
 
