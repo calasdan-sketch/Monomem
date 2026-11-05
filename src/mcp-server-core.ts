@@ -56,6 +56,7 @@ import { annotateStaleness } from "./staleness.js";
 /** Staleness fields plus a compact `when` ("2023-05-08, 5 months ago") so the reader sees the note's date and age. */
 const withWhen = (n: NoteRecord) => ({ ...annotateStaleness(n), when: describeWhen(n.created_at) });
 import { meterStats } from "./meter.js";
+import { receiptList, receiptGet } from "./receipts.js";
 import {
   findCandidatesGuarded,
   resolveConsolidationNotes,
@@ -1014,6 +1015,40 @@ export function createMcpServer(
         // returned pre-prompt -- so the untrusted-data banner applies, like
         // every other tool that echoes stored note content.
         return untrustedResult({ ...store.accessStats(namespaces, { hideDistrusted: !scopeAllows(scope, "admin") }), meter: meterStats(store, namespaces) });
+      } catch (e) {
+        return errorFor(e);
+      }
+    }
+  );
+
+  // Opt-in (MONOMEM_TOOLS=memory_receipt), not in DEFAULT_TOOLS: the default surface stays ten tools.
+  server.registerTool(
+    "memory_receipt",
+    {
+      title: "Memory receipt",
+      annotations: { readOnlyHint: true },
+      description:
+        "Read-only: which memories a session start showed the agent and why (note id, rank, why-tag, approximate tokens). With session_id: that session, with note titles looked up now (a note deleted since is marked). Without: the most recent sessions. Receipts store ids and tags only, never note text." +
+        (nsActive ? " Scoped to the namespaces this server may read." : ""),
+      inputSchema: {
+        session_id: z.string().max(200).optional().describe("The session to show; omit to list recent sessions."),
+        namespace: z.string().optional().describe(nsActive ? "Untrusted hint: restrict to this namespace. Ignored unless this server may read it." : "Restrict to this namespace."),
+      },
+    },
+    async ({ session_id, namespace }) => {
+      try {
+        const denied = denyIfUnder("read");
+        if (denied) return errorResult(denied);
+        let namespaces: string[] | undefined;
+        if (nsActive) {
+          const hint = trustedHint(namespace);
+          namespaces = hint ? [hint] : readable();
+        } else if (namespace) {
+          namespaces = [namespace];
+        }
+        if (!session_id) return untrustedResult({ sessions: receiptList(store, namespaces) });
+        const r = receiptGet(store, session_id, namespaces);
+        return r ? untrustedResult(r) : errorResult(`no receipt for session ${session_id}`);
       } catch (e) {
         return errorFor(e);
       }
