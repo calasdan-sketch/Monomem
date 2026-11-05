@@ -818,11 +818,14 @@ describe("doctor and the primary token", () => {
     const id = cli(home, ["trust", "identity", "--json"]);
     assert.equal(id.status, 0, id.stderr);
     const k = loadOrCreateSigningKey(tmp("om-142-pk-"));
-    const noPin = cli(home, ["trust", "attester-add", k.publicKey]);
-    assert.equal(noPin.status, 1);
-    assert.match(noPin.stderr, /--any-server/);
-    const add = cli(home, ["trust", "attester-add", k.publicKey, "--server-id", "55555555-5555-4555-8555-555555555555"]);
-    assert.equal(add.status, 0, add.stderr);
+    // attester-add lowers protection: from a script it is refused (no terminal), so add through the store.
+    const refused = cli(home, ["trust", "attester-add", k.publicKey, "--server-id", "55555555-5555-4555-8555-555555555555"]);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /person must run it in a terminal/);
+    const st = new Store(join(home, "state.db"));
+    assert.throws(() => st.attesterAdd({ public_key: k.publicKey }), /--any-server|server_id is required/);
+    st.attesterAdd({ public_key: k.publicKey, server_id: "55555555-5555-4555-8555-555555555555" });
+    st.close();
     // a key id may begin with "-" (base64url); it is a value, never "Unknown option"
     const dash = cli(home, ["trust", "attester-revoke", "-Abc123notarealkeyid", "--reason", "x"]);
     assert.doesNotMatch(dash.stderr, /Unknown option/);
@@ -830,7 +833,10 @@ describe("doctor and the primary token", () => {
     assert.equal(rev.status, 0, rev.stderr);
     assert.match(rev.stdout, /Revoked key/);
     assert.match(cli(home, ["trust", "list"]).stdout, /Revoked keys \(1\)/);
-    assert.match(cli(home, ["trust", "attester-unrevoke", k.keyId]).stdout, /no longer revoked/);
+    const unrevoke = cli(home, ["trust", "attester-unrevoke", k.keyId]);
+    assert.equal(unrevoke.status, 1, "unrevoke lowers protection: refused without a terminal");
+    assert.match(unrevoke.stderr, /person must run it in a terminal/);
+    assert.match(cli(home, ["trust", "list"]).stdout, /Revoked keys \(1\)/);
     const rot = cli(home, ["trust", "rotate"]);
     assert.equal(rot.status, 0, rot.stderr);
     assert.match(rot.stdout, /retired key of this server/);
