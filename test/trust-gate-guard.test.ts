@@ -46,6 +46,7 @@ const EXPECTED_SITES: Record<string, string[]> = {
     "local shell command (archive/restore): the operator owns the database file",
   ],
   "quality.ts": ["admin-only report"],
+  "conflicts.ts": ["admin-only report"],
   "consolidate.ts": [
     "admin consolidation by ids: mixed trusted/distrusted sources are refused below",
     "candidate scan is filtered with store.filterVisible before use",

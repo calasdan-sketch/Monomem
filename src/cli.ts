@@ -15,7 +15,7 @@ import { setProcessWriter } from "./actor.js";
 const COMMANDS = [
   "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
   "consolidate", "rebuild-edges", "relevant", "search", "token", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
-  "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality",
+  "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality", "conflicts",
   "encrypt", "meter", "receipts", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "drill", "health", "audit",
   "help", "--help", "-h", "--version", "-v", "version",
 ];
@@ -77,6 +77,7 @@ function shortUsage(): void {
       "  backup [--out <dir>]    Copy the database safely, even while the server runs",
       "  export | import         Move notes in and out (JSON or Markdown)",
       "  quality                 Duplicates, stale notes and flagged notes worth a look",
+      "  conflicts               Notes from different writers that disagree (flag only)",
       "  delete <id>             Delete a note permanently, with its earlier versions",
       "  uninstall               Take Monomem out of every app setup connected",
       "",
@@ -227,6 +228,9 @@ function usage(all = false): void {
       "  quality [--json] [--namespace ns]",
       "            What is worth a look: near-duplicates, stale notes with a newer twin, quarantined writes, notes",
       "            the linter flags, and captured rows about to decay. Each comes with the command that fixes it.",
+      "  conflicts [--json] [--namespace ns]",
+      "            Live notes from different writers that give different values for the same key (deploy target, package",
+      "            manager, a version, a URL). Flag only: you choose supersede, pin or distrust.",
       "  decay [--dry-run] [--namespace ns]",
       "            Archive (never delete) captured observations idle MONOMEM_DECAY_DAYS (30) and summaries idle",
       "            MONOMEM_DECAY_SUMMARY_DAYS (180). Never: your own notes, decisions, anything tagged \"pinned\".",
@@ -2192,11 +2196,13 @@ async function qualityCmd(): Promise<void> {
       console.log(JSON.stringify(report, null, 2));
       return;
     }
-    if (!report.issues.length) {
+    const { conflictLines } = await import("./conflicts.js");
+    if (!report.issues.length && !report.conflicts.length) {
       console.log("No quality issues found.");
       return;
     }
-    console.log(QUALITY_TYPES.map((t) => `${report.counts[t]} ${t}`).join(", "));
+    console.log(QUALITY_TYPES.map((t) => `${report.counts[t]} ${t}`).join(", ") + `, ${report.conflicts.length} possible conflicts`);
+    for (const l of conflictLines(report.conflicts)) console.log(l);
     for (const i of report.issues) {
       console.log(`\n[${i.type}] [${i.namespace}] ${i.detail}`);
       console.log(`    fix: ${i.fix}${i.alt ? `   (or: ${i.alt})` : ""}`);
@@ -2667,6 +2673,9 @@ async function main(): Promise<void> {
     }
     case "quality":
       await qualityCmd();
+      break;
+    case "conflicts":
+      await (await import("./conflicts.js")).conflictsCmd(process.argv.slice(3));
       break;
     case "encrypt":
       await encryptCmd();
