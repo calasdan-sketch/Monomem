@@ -46,7 +46,7 @@
     "cli": "node dist/src/cli.js",
     "test": "npm run build && node --test --import ./dist/test/setup-env.js \"dist/test/*.test.js\"",
     "prepublishOnly": "npm run build",
-    "demo-gif": "node scripts/make-demo-gif.mjs",
+    "demo-gif": "node scripts/record-demo.mjs",
     "runner": "node dist/src/runner-start.js",
     "runner:sign": "node dist/src/runner-sign-start.js"
   },
