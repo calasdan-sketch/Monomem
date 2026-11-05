@@ -66,10 +66,51 @@ def redraw(path: Path, size: int, ink_xy: tuple[int, int], clear: tuple[int, int
     print(f"{path}: wordmark redrawn as {NAME!r} at {size}px")
 
 
+GOLD = (240, 193, 113)  # the colour of the claim lines, sampled from the originals
+
+# The claim lines used to end in "undoable". Deleting a note is permanent (on
+# purpose), so the artwork now says "reviewable": writes can be held and reviewed.
+# "ink_x" is the ink's left edge, or its right edge when "right" is true.
+CLAIMS = [
+    {
+        "path": "docs/brand/monomem-banner.png",
+        "text": "reviewable",
+        "size": 36,
+        "ink_x": 1609,
+        "right": True,
+        "ink_top": 214,
+        "clear": (1400, 205, 1625, 250),
+    },
+    {
+        "path": "docs/brand/social-preview.png",
+        "text": "Every note sourced, versioned and reviewable.",
+        "size": 38,
+        "ink_x": 297,
+        "right": False,
+        "ink_top": 430,
+        "clear": (285, 420, 1200, 480),
+    },
+]
+
+
+def redraw_claim(path: Path, c: dict) -> None:
+    image = Image.open(path).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle(c["clear"], fill=NAVY)
+    font = ImageFont.truetype(FONT, c["size"])
+    left, top, right, _ = draw.textbbox((0, 0), c["text"], font=font)
+    x = c["ink_x"] - (right if c["right"] else left)
+    draw.text((x, c["ink_top"] - top), c["text"], fill=GOLD, font=font)
+    image.save(path)
+    print(f"{path}: claim redrawn as {c['text']!r}")
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     for target in TARGETS:
         redraw(root / target["path"], target["size"], target["ink_xy"], target["clear"])
+    for claim in CLAIMS:
+        redraw_claim(root / claim["path"], claim)
 
 
 if __name__ == "__main__":

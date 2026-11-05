@@ -1,14 +1,13 @@
 <!-- Image URLs are absolute on purpose: GitHub resolves relative paths, npm does not. -->
 ![Monomem — one memory, every assistant](https://raw.githubusercontent.com/calasdan-sketch/monomem/main/docs/brand/monomem-banner.png)
 
-**Shared memory for AI coding agents that records who wrote what.** Tell Claude, Cursor, Codex or
-Gemini something once and the rest already know it — one self-hosted SQLite
-file, over MCP or plain REST. No API keys, no cloud, no hidden model calls.
-**Every note records who wrote it and keeps its earlier versions. Replacing or
-editing a note can be undone; deleting one is permanent, by design.** The default
-local setup marks each app's notes `stdio:<app>` (`stdio:cursor`, `stdio:claude-code`, ...), a
-name the app's config file declares, not a login; give each app its own token when the writer
-must be authenticated. [Benchmarks](#benchmark) back each of these claims.
+**One memory for every AI coding assistant, and it shows who wrote each note.**
+
+```bash
+npx monomem setup
+```
+
+Tell Claude Code something once, and your other assistants can read it too. It's one SQLite file on your own machine. No cloud, no API keys, no hidden model calls.
 
 [![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)
@@ -19,9 +18,25 @@ must be authenticated. [Benchmarks](#benchmark) back each of these claims.
 
 *Rendered from a real two-writer run against one store ([transcript](https://github.com/calasdan-sketch/monomem/blob/main/docs/brand/demo-transcript.txt)): two separately authenticated tokens, real server-stamped `written_by`, nothing sped up.*
 
-Tell one assistant something; every other assistant already knows it. Write a
-note in Claude Code, read it back in Cursor, Gemini CLI or Codex — one store,
-shared across tools from different companies, on your own machine.
+- **Knows who wrote it.** Every note carries a writer name the server stamps itself; a note can't claim to be from someone else.
+- **Holds suspicious writes.** Writes that look like prompt injection wait in quarantine until you approve them, and you can make a whole namespace approve-first so every agent write waits for you. The linter is pattern matching, so it doesn't catch everything.
+- **Takes back mistakes.** Edits and replacements keep the earlier versions (up to 20 per note by default) and can be undone. Deleting a note is permanent, on purpose.
+- **Sets itself up.** `setup` finds the supported apps on your computer, shows the exact lines it will change, backs up each file, and waits for you to type `y`.
+
+## More detail
+
+Shared memory for AI coding agents that records who wrote what. Tell Claude,
+Cursor, Codex or Gemini something once and the rest already know it: one
+self-hosted SQLite file, over MCP or plain REST. Write a note in Claude Code,
+read it back in Cursor, Gemini CLI or Codex; one store, shared across tools from
+different companies, on your own machine.
+
+**Every note records who wrote it and keeps its earlier versions (up to 20 by
+default). Replacing or editing a note can be undone; deleting one is permanent,
+by design.** The default local setup marks each app's notes `stdio:<app>`
+(`stdio:cursor`, `stdio:claude-code`, ...), a name the app's config file
+declares, not a login; give each app its own token when the writer must be
+authenticated. [Benchmarks](#benchmark) back each of these claims.
 
 `setup` wires up eight clients on this computer: **Claude Code, Claude Desktop,
 Cursor, Codex, Gemini CLI, Muse, VS Code and Zed.** Anything else that speaks

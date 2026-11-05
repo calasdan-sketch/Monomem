@@ -698,7 +698,7 @@ describe("setup: Claude Code rewriting its file while we work", () => {
 describe("setup: wiring", () => {
   test("`monomem help` lists setup and the new import and sync forms", async () => {
     const { spawnSync } = await import("node:child_process");
-    const r = spawnSync(process.execPath, [CLI, "help"], { encoding: "utf8" });
+    const r = spawnSync(process.execPath, [CLI, "help", "--all"], { encoding: "utf8" });
     assert.match(r.stdout, /setup \[--dry-run\]/);
     assert.match(r.stdout, /import --claude/);
     assert.match(r.stdout, /sync --git/);
