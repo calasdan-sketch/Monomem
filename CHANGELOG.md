@@ -8,6 +8,16 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Tamper-evident audit log.** Each audit line carries `prev`, the sha256 of the line before it (carried across
+  rotation), and `monomem audit verify` reports the first broken line. It detects lines edited or removed inside the
+  chain; it cannot detect the newest lines being cut off or the whole file being rewritten by someone with access to
+  it. Lines written by older versions have no `prev` and are skipped.
+- **Dashboard: a Held tab.** Writes waiting for review are listed with their reasons ("instruction override",
+  "namespace requires approval" ...), writer and namespace, with Approve and Reject. Admin `GET /quarantine` lists them.
+- **Dashboard: who wrote it, on every card.** Each note shows its writer with a colour chip, and pinned notes are marked.
+- **MCP results say when.** `state_search`, `state_relevant` and `state_get` results carry a compact `when`
+  (for example "2023-05-08, 5 months ago").
+
 - **Import from the official MCP memory server.** `monomem import --from mcp-memory [--path memory.jsonl] [--dry-run]` turns
   each entity of `@modelcontextprotocol/server-memory`'s knowledge graph into a note (observations as a list, relations
   underneath). Without `--path` it uses `MEMORY_FILE_PATH` or finds the file in the npx cache, where that server keeps it by
@@ -84,6 +94,22 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Dashboard look and access.** The Monomem navy and gold, with a light theme that follows the system setting; a tab
+  bar; a visible keyboard focus ring; buttons instead of link-styled actions; labelled inputs; inline confirmations
+  and a status line instead of pop-up dialogs; empty states that say what to do next; it fits a phone-width screen.
+- **Session-start recall ranks with one any-keyword search** (rare words count more than common ones) instead of one
+  search per keyword.
+- **Questions that add things up** ("how many", "in total", "every" ...) return twice the results, and no more than two
+  per session or source stay at the front, so one conversation cannot fill the list. Nothing is dropped.
+- **Shorter help.** `monomem help` shows the common commands in four groups; `monomem help --all` shows everything. An
+  unknown command suggests the closest one and exits with an error instead of printing all of help.
+- `monomem doctor` colours `[ok]` and `[warn]` on a terminal (not when `NO_COLOR` is set or output is piped).
+- On a Node version that is too old, the error now shows a one-line `npx` workaround for running setup.
+- README: a new first screen (what it is, the install line, four reasons), with the detail below it. Earlier versions
+  are kept up to 20 per note by default, and the README now says so. The brand images no longer say notes are
+  "undoable" (deleting is permanent); they say "reviewable".
+- SECURITY.md: a section on the write controls and their limits; SQL, token-file (POSIX only) and linter wording corrected.
+
 - **Better search ranking when a question only partly matches.** `state_search` (after its all-words step) and
   `state_relevant` now rank notes with one BM25 query over the question's keywords, so rare words count more than
   common ones, scaled by how many of the keywords each note contains. Before, each keyword was searched separately and
@@ -117,6 +143,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Instructions hidden in invisible Unicode tag characters (U+E0000-E007F) were never scanned.** The memory linter
+  removed them before scanning, but they were stored and shown to the model as written. They are now decoded and
+  scanned, and any tag character is flagged as "hidden Unicode tag text" (well-formed emoji subdivision flags such as
+  England's are exempt). Bench scenario E19.
+- **Every forget, restore and expiry is now in the audit log.** Archive and restore over REST and the CLI, and the
+  expiry and decay sweeps, wrote no audit line. They now do, from the store itself, whatever the caller.
+
 - `memory_index` (and `GET /index`) with a whole question ("why did the login test fail?") returned nothing: it needed every
   word in one row. It now uses the same keyword search as `state_search`, and a captured observation written just before or
   after another hit in the same session ranks higher. Measured with LoCoMo-10 turns stored as captured observations, on
@@ -126,7 +159,7 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Benchmark
 
-- **127 deterministic scenarios** (was 125): A 32, B 31, C 27, D 19, E 18.
+- **128 deterministic scenarios** (was 125): A 32, B 31, C 27, D 19, E 19.
   - **E17:** a sleeper instruction for a later session is stored with a "deferred trigger" warning.
   - **E18:** a `curl … | sh` note is stored with a "pipe to shell" warning.
 - The bench adapter now passes a write's linter warnings through to the checks.

@@ -136,7 +136,7 @@ function requiredScope(method: string | undefined, path: string): Scope {
   if (method === "POST" && /^\/notes\/\d+\/(archive|restore)$/.test(path)) return "admin";
   if (method === "POST" && path === "/sweep-expired") return "admin";
   // The quality view lists titles from every writer, and approving a held write is the linter's human gate.
-  if (path === "/quality" || /^\/quarantine\/\d+\/(approve|reject)$/.test(path)) return "admin";
+  if (path === "/quality" || path === "/quarantine" || /^\/quarantine\/\d+\/(approve|reject)$/.test(path)) return "admin";
   // Approve-first is the switch in front of an agent's own writes: reading or flipping it is admin, like the queue itself.
   if (path === "/approve-first") return "admin";
   // Pins and rollback are operator switches, like approve-first.
@@ -986,6 +986,14 @@ export function createApiServer(
         } catch (e) {
           sendError(res, e);
         }
+        return;
+      }
+
+      // GET /quarantine -> the held writes with their reasons, for the dashboard's Held view (admin; a namespace-pinned admin sees its own).
+      if (req.method === "GET" && path === "/quarantine") {
+        const namespace = url.searchParams.get("namespace") || undefined;
+        const namespaces = nsCtx.active ? [nsCtx.ownNamespace] : namespace ? [namespace] : undefined;
+        sendJson(res, 200, { quarantine: store.listQuarantine({ namespaces, limit: 200 }) });
         return;
       }
 

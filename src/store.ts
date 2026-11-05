@@ -550,6 +550,8 @@ export interface QuarantineEntry {
   tags: string[] | null;
   source: string | null;
   reasons: LintFinding[];
+  /** Server-stamped writer of the held write ('' when unknown). */
+  written_by: string;
   created_at: string;
 }
 
@@ -7206,6 +7208,7 @@ export class Store {
       body: (row.body as string | null) ?? null,
       tags: row.tags === null ? null : parseTags(String(row.tags)),
       source: (row.source as string | null) ?? null,
+      written_by: typeof row.written_by === "string" ? row.written_by : "",
       reasons,
       created_at: String(row.created_at),
     };

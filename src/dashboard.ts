@@ -11,93 +11,124 @@ export const DASHBOARD_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>monomem</title>
 <style>
-  :root{--bg:#0c0f16;--panel:#141926;--line:#232a3b;--ink:#e8ecf5;--dim:#93a0bd;
-    --accent:#4f8cff;--danger:#ff5d6c;--ok:#35d0a5}
+  /* Brand: navy #0B2E45 + gold #F0C171. Every colour is a token; the light theme only redefines tokens. */
+  :root{color-scheme:dark;--gold:#F0C171;
+    --bg:#061a28;--panel:#0B2E45;--panel2:#143c58;--line:#2a5878;--field-line:#6b93ae;
+    --ink:#eef3f7;--dim:#a9bfcf;--body:#d3e0ea;--accent:#F0C171;--focus:#F0C171;
+    --btn-bg:#F0C171;--btn-fg:#0B2E45;--danger:#ffa3a3;--danger-bg:#b3261e;--danger-fg:#fff;
+    --chip-s:45%;--chip-bg-l:24%;--chip-fg-l:86%;--chip-fg-s:80%}
+  @media (prefers-color-scheme:light){:root{color-scheme:light;
+    --bg:#f3f6f9;--panel:#ffffff;--panel2:#e6edf3;--line:#c3d1dc;--field-line:#6b879b;
+    --ink:#0B2E45;--dim:#46607a;--body:#1d3b50;--accent:#7a4f00;--focus:#0B2E45;
+    --btn-bg:#0B2E45;--btn-fg:#ffffff;--danger:#b3261e;--danger-bg:#b3261e;--danger-fg:#fff;
+    --chip-s:60%;--chip-bg-l:90%;--chip-fg-l:20%;--chip-fg-s:70%}}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
     font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  header{display:flex;gap:10px;align-items:center;padding:14px 18px;
-    border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);flex-wrap:wrap}
+  header{display:flex;gap:10px;align-items:center;padding:12px 16px;
+    border-bottom:3px solid var(--gold);background:var(--bg);flex-wrap:wrap}
+  @media (min-width:700px){header{position:sticky;top:0;z-index:2}}
   h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.2px}
   h1 span{color:var(--accent)}
   input,textarea,button,select{font:inherit;color:var(--ink);background:var(--panel);
-    border:1px solid var(--line);border-radius:9px;padding:8px 11px;outline:none}
-  input:focus,textarea:focus{border-color:var(--accent)}
-  button{cursor:pointer;background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-  button.ghost{background:var(--panel);color:var(--ink)}
+    border:1px solid var(--field-line);border-radius:9px;padding:6px 11px;min-height:34px}
+  :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+  button{cursor:pointer;background:var(--btn-bg);border-color:var(--btn-bg);color:var(--btn-fg);font-weight:600}
+  button.ghost{background:var(--panel);color:var(--ink);border-color:var(--field-line)}
   button.danger{background:transparent;border-color:transparent;color:var(--danger);padding:4px 8px}
-  .grow{flex:1;min-width:140px}
-  main{max-width:900px;margin:0 auto;padding:18px}
-  .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  button.linkbtn{background:none;border:0;color:var(--accent);text-decoration:underline;
+    padding:4px 2px;font-weight:400}
+  nav{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0;max-width:900px;margin:0 auto}
+  nav button{background:transparent;color:var(--ink);border-color:var(--line);font-weight:500}
+  nav button[aria-current=page]{background:var(--panel2);border-color:var(--accent);
+    box-shadow:inset 0 -3px 0 var(--accent);font-weight:700}
+  .grow{flex:1 1 140px;min-width:0}
+  .ns{width:130px;max-width:100%}
+  main{max-width:900px;margin:0 auto;padding:14px 16px 18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
     padding:14px 16px;margin-bottom:12px}
-  .card h3{margin:0 0 4px;font-size:15px}
-  .meta{color:var(--dim);font-size:12px;margin-bottom:8px}
-  .tag{display:inline-block;background:#1d2435;border:1px solid var(--line);
-    border-radius:999px;padding:1px 9px;font-size:11px;margin-right:5px;color:var(--dim)}
-  .body{white-space:pre-wrap;word-break:break-word;color:#cdd6ea;font-size:14px}
-  .cardhead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .card h3{margin:0 0 4px;font-size:15px;overflow-wrap:anywhere}
+  .meta{color:var(--dim);font-size:12px;margin-bottom:8px;overflow-wrap:anywhere}
+  .tag{display:inline-block;background:var(--panel2);border:1px solid var(--line);
+    border-radius:999px;padding:1px 9px;font-size:12px;margin:0 5px 3px 0;color:var(--dim)}
+  .tag.why{color:var(--ink);border-color:var(--danger)}
+  .chip{display:inline-block;border-radius:6px;padding:0 7px;font-size:12px;font-weight:600;
+    background:hsl(var(--h) var(--chip-s) var(--chip-bg-l));color:hsl(var(--h) var(--chip-fg-s) var(--chip-fg-l))}
+  .badge-pin{display:inline-block;background:var(--gold);color:#0B2E45;border-radius:6px;
+    padding:0 7px;font-size:11px;font-weight:700;margin-left:6px;vertical-align:middle}
+  .body{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--body);font-size:14px}
+  .cardhead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .cardhead>div:first-child{flex:1 1 220px;min-width:0}
   #new textarea{width:100%;min-height:70px;resize:vertical}
   #new{display:none}
   .muted{color:var(--dim)}
   .err{color:var(--danger)}
-  .gate{max-width:420px;margin:12vh auto;text-align:center}
+  .msg{min-height:0;margin-bottom:10px}
+  .msg:empty{display:none}
+  .gate{max-width:420px;margin:12vh auto;padding:0 16px;text-align:center}
   .gate input{width:100%;margin:12px 0;text-align:center}
-  footer{max-width:900px;margin:0 auto;padding:10px 18px 40px;color:var(--dim);
+  footer{max-width:900px;margin:0 auto;padding:10px 16px 40px;color:var(--dim);
     font-size:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
-  a.linkish{color:var(--accent);cursor:pointer;text-decoration:underline}
-  .badge-bad{display:inline-block;background:var(--danger);color:#fff;border-radius:6px;
+  .badge-bad{display:inline-block;background:var(--danger-bg);color:var(--danger-fg);border-radius:6px;
     padding:0 7px;font-size:11px;font-weight:700;margin-left:6px;vertical-align:middle}
   #runner div+div{margin-top:4px}
   label.chk{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
+  .scroll{overflow-x:auto}
+  code{background:var(--panel2);border-radius:4px;padding:0 4px}
 </style>
 </head>
 <body>
 <div id="app" style="display:none">
 <header>
   <h1>mono<span>mem</span></h1>
-  <input id="q" class="grow" placeholder="Search notes...">
-  <input id="ns" placeholder="namespace" style="width:130px">
+  <input id="q" class="grow" aria-label="Search notes" placeholder="Search notes...">
+  <input id="ns" class="ns" aria-label="Namespace filter" placeholder="namespace">
   <button class="ghost" onclick="toggleNew()">+ New</button>
   <button class="ghost" onclick="load()">Refresh</button>
-  <button class="ghost" onclick="loadChanges()" title="What changed in the last 24 hours">Changes</button>
-  <button class="ghost" onclick="loadSessions()" title="Agent sessions Monomem recorded, each with its timeline">Sessions</button>
-  <button class="ghost" onclick="loadReview()" title="Notes written by agents that you have not looked at yet">Review</button>
-  <button class="ghost" onclick="loadQuality()" title="Duplicates, stale twins, held writes, linter findings and rows about to decay (admin token)">Quality</button>
-  <button class="ghost" onclick="loadMeter()" title="What Monomem costs you: tokens injected and saved, local-model tokens, database size">Meter</button>
   <label class="chk" title="Also show notes written by writers an admin distrusts (marked DISTRUSTED)"><input type="checkbox" id="inc" onchange="load()"> distrusted</label>
 </header>
+<nav aria-label="Views">
+  <button id="tab_list" onclick="load()" title="All notes, newest first">Notes</button>
+  <button id="tab_held" onclick="loadHeld()" title="Writes the linter held for your approval (admin token)">Held<span id="held_n"></span></button>
+  <button id="tab_review" onclick="loadReview()" title="Notes written by agents that you have not looked at yet">Review</button>
+  <button id="tab_changes" onclick="loadChanges()" title="What changed in the last 24 hours">Changes</button>
+  <button id="tab_sessions" onclick="loadSessions()" title="Agent sessions Monomem recorded, each with its timeline">Sessions</button>
+  <button id="tab_quality" onclick="loadQuality()" title="Duplicates, stale twins, held writes, linter findings and rows about to decay (admin token)">Quality</button>
+  <button id="tab_meter" onclick="loadMeter()" title="What Monomem costs you: tokens injected and saved, local-model tokens, database size">Meter</button>
+</nav>
 <main>
   <div id="new" class="card">
     <div class="row">
-      <input id="n_title" class="grow" placeholder="Title">
-      <input id="n_ns" placeholder="namespace (optional)" style="width:180px">
-      <input id="n_tags" placeholder="tags, comma, separated" style="width:200px">
+      <input id="n_title" class="grow" aria-label="Title" placeholder="Title">
+      <input id="n_ns" class="grow" aria-label="Namespace (optional)" placeholder="namespace (optional)">
+      <input id="n_tags" class="grow" aria-label="Tags, comma separated" placeholder="tags, comma, separated">
     </div>
-    <textarea id="n_body" placeholder="Body..."></textarea>
+    <textarea id="n_body" aria-label="Body" placeholder="Body..."></textarea>
     <div class="row" style="margin-top:10px">
       <button onclick="addNote()">Save note</button>
-      <span id="n_err" class="err"></span>
+      <span id="n_err" class="err" role="alert"></span>
     </div>
   </div>
+  <div id="msg" class="msg" role="status" aria-live="polite"></div>
   <div id="runner" class="card err" style="display:none"></div>
   <div id="list"></div>
 </main>
 <footer>
-  <span id="count"></span>
-  <a class="linkish" onclick="doExport()">Export JSON</a>
-  <a class="linkish" onclick="document.getElementById('imp').click()">Import JSON</a>
-  <input id="imp" type="file" accept="application/json" style="display:none" onchange="doImport(this)">
-  <a class="linkish" onclick="logout()">Change token</a>
+  <span id="count" role="status"></span>
+  <button class="linkbtn" onclick="doExport()">Export JSON</button>
+  <button class="linkbtn" onclick="document.getElementById('imp').click()">Import JSON</button>
+  <input id="imp" type="file" accept="application/json" aria-label="Import JSON file" style="display:none" onchange="doImport(this)">
+  <button class="linkbtn" onclick="logout()">Change token</button>
 </footer>
 </div>
 
 <div id="gate" class="gate">
   <h1>mono<span style="color:var(--accent)">mem</span></h1>
-  <p class="muted">Paste your Monomem token to view the store.</p>
+  <p class="muted"><label for="tok">Paste your Monomem token to view the store.</label></p>
   <input id="tok" type="password" placeholder="MONOMEM_TOKEN" onkeydown="if(event.key==='Enter')saveTok()">
   <button onclick="saveTok()">Open</button>
-  <p id="gate_err" class="err"></p>
+  <p id="gate_err" class="err" role="alert"></p>
 </div>
 <script src="/dashboard.js"></script>
 </body>
@@ -111,20 +142,61 @@ var TOKKEY = "om_tok";
 function tok(){ try { return sessionStorage.getItem(TOKKEY) || ""; } catch(e){ return ""; } }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c]; }); }
+function $(id){ return document.getElementById(id); }
+
+// A small coloured chip per writer: a stable hash of the label picks the hue (the label itself is escaped text).
+function hue(s){ var h = 0; s = String(s); for(var i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; } return h % 360; }
+function chip(label){ return "<span class='chip' style='--h:"+hue(label)+"'>"+esc(label)+"</span>"; }
+function byLine(w){ return w ? " &middot; by "+chip(w) : ""; }
+
+// Messages (errors, results) go to the status line, never a popup dialog; say() replaces whatever was there.
+function say(text, isErr){ var m = $("msg"); m.className = "msg" + (isErr ? " err" : ""); m.textContent = text || ""; }
+function fail(e){ say(e && e.message ? e.message : String(e), true); }
+function failList(e){ $("list").innerHTML = "<p class='err'>"+esc(e.message)+"</p>"; }
+function empty(text){ return "<p class='muted'>"+text+"</p>"; }
+
+// Inline confirm: the first click turns the button into "Confirm <label>?" for a few seconds; a second click runs fn.
+function arm(btn, fn){
+  if(btn.getAttribute("data-armed")){ clearTimeout(btn._t); btn.removeAttribute("data-armed"); fn(); return; }
+  var was = btn.textContent;
+  btn.setAttribute("data-armed", "1");
+  btn.textContent = "Confirm " + was.toLowerCase() + "?";
+  btn._t = setTimeout(function(){ btn.removeAttribute("data-armed"); btn.textContent = was; }, 4000);
+}
+// Longer confirm with a server-written warning (supersede preview): text plus Confirm / Cancel on the status line.
+function ask(text, okLabel, fn){
+  var m = $("msg"); m.className = "msg"; m.textContent = text + " ";
+  var ok = document.createElement("button"); ok.textContent = okLabel;
+  ok.onclick = function(){ m.textContent = ""; fn(); };
+  var no = document.createElement("button"); no.textContent = "Cancel"; no.className = "ghost";
+  no.onclick = function(){ m.textContent = ""; };
+  m.appendChild(ok); m.appendChild(no); ok.focus();
+}
+
+var VIEW = "list";
+// The view buttons are a tab bar: the active one carries aria-current.
+var TABS = { list:"list", held:"held", review:"review", changes:"changes", sessions:"sessions", session:"sessions", quality:"quality", meter:"meter" };
+function setView(v){
+  VIEW = v;
+  say("");
+  ["list","held","review","changes","sessions","quality","meter"].forEach(function(t){
+    $("tab_" + t).ariaCurrent = TABS[v] === t ? "page" : null;
+  });
+}
 
 function show(app){
-  document.getElementById("app").style.display = app ? "block" : "none";
-  document.getElementById("gate").style.display = app ? "none" : "block";
+  $("app").style.display = app ? "block" : "none";
+  $("gate").style.display = app ? "none" : "block";
 }
 function saveTok(){
-  var v = document.getElementById("tok").value.trim();
+  var v = $("tok").value.trim();
   if(!v){ return; }
   try { sessionStorage.setItem(TOKKEY, v); } catch(e){}
   show(true); load();
 }
 function logout(){ try { sessionStorage.removeItem(TOKKEY); } catch(e){} show(false); }
 function toggleNew(){
-  var n = document.getElementById("new");
+  var n = $("new");
   n.style.display = n.style.display === "block" ? "none" : "block";
 }
 
@@ -140,27 +212,32 @@ function api(path, opts){
 }
 
 function render(notes){
-  var list = document.getElementById("list");
-  document.getElementById("count").textContent = notes.length + " note" + (notes.length===1?"":"s");
-  if(!notes.length){ list.innerHTML = "<p class='muted'>No notes yet.</p>"; return; }
+  var list = $("list");
+  $("count").textContent = notes.length + " note" + (notes.length===1?"":"s");
+  if(!notes.length){
+    list.innerHTML = $("q").value.trim() ? empty("No notes match that search. Try fewer words, or clear the namespace box.")
+      : empty("No notes yet. Ask your assistant to remember something, or run <code>monomem setup</code>.");
+    return;
+  }
   list.innerHTML = notes.map(function(n){
     var tags = (n.tags||[]).map(function(t){ return "<span class='tag'>"+esc(t)+"</span>"; }).join("");
     return "<div class='card'><div class='cardhead'><div>"+
-      "<h3>"+esc(n.title)+(n.distrusted ? "<span class='badge-bad' title='An admin distrusts the writer of this note: treat its content as hostile'>DISTRUSTED</span>" : "")+"</h3>"+
-      "<div class='meta'>#"+n.id+" &middot; "+esc(n.namespace)+" &middot; "+esc((n.updated_at||"").slice(0,16).replace("T"," "))+"</div>"+
+      "<h3>"+esc(n.title)+(n.pinned ? "<span class='badge-pin' title='Pinned: always kept in view for the assistant'>Pinned</span>" : "")+
+      (n.distrusted ? "<span class='badge-bad' title='An admin distrusts the writer of this note: treat its content as hostile'>DISTRUSTED</span>" : "")+"</h3>"+
+      "<div class='meta'>#"+n.id+" &middot; "+esc(n.namespace)+" &middot; "+esc((n.updated_at||"").slice(0,16).replace("T"," "))+byLine(n.written_by)+"</div>"+
       tags+"</div>"+
       "<div>"+((n.tags||[]).indexOf("never-show") >= 0
         ? "<button class='ghost' title='Let it be shown at session start again' onclick='neverShow("+n.id+",false)'>show again</button>"
         : "<button class='ghost' title='Never inject this note at session start (it stays searchable)' onclick='neverShow("+n.id+",true)'>never show</button>")+
-      " <button class='danger' onclick='del("+n.id+")'>delete</button></div></div>"+
+      " <button class='danger' onclick='arm(this,function(){del("+n.id+")})'>delete</button></div></div>"+
       (n.body ? "<div class='body'>"+esc(n.body)+"</div>" : "")+"</div>";
   }).join("");
 }
 
-function inc(){ var c = document.getElementById("inc"); return !!(c && c.checked); }
+function inc(){ var c = $("inc"); return !!(c && c.checked); }
 
 function loadRunner(){
-  var el = document.getElementById("runner");
+  var el = $("runner");
   api("/runner/status").then(function(j){
     // One line per runner (each target has its own heartbeat); fall back to the single notice of older servers.
     var lines = [];
@@ -176,29 +253,30 @@ function loadRunner(){
 
 // "distrusted" needs an admin token: the server refuses it for any other (403); untick the box so the next load works.
 function incRefused(e){
-  if(inc() && /admin/i.test(String(e && e.message))){ document.getElementById("inc").checked = false; }
+  if(inc() && /admin/i.test(String(e && e.message))){ $("inc").checked = false; }
 }
 
-var VIEW = "list";
 function load(){
-  VIEW = "list";
+  setView("list");
   loadRunner();
-  var q = document.getElementById("q").value.trim();
-  var ns = document.getElementById("ns").value.trim();
+  loadHeldCount();
+  var q = $("q").value.trim();
+  var ns = $("ns").value.trim();
   var qs = (ns ? ("namespace=" + encodeURIComponent(ns)) : "") + (inc() ? ((ns ? "&" : "") + "include_distrusted=1") : "");
   var path;
   if(q){ path = "/search?q=" + encodeURIComponent(q) + (qs?("&"+qs):""); }
   else { path = "/notes" + (qs?("?"+qs):""); }
   api(path).then(function(j){ render(j.results || j.notes || []); })
-    .catch(function(e){ incRefused(e); document.getElementById("list").innerHTML = "<p class='err'>"+esc(e.message)+"</p>"; });
+    .catch(function(e){ incRefused(e); failList(e); });
 }
 
 function loadChanges(){
-  var ns = document.getElementById("ns").value.trim();
+  setView("changes");
+  var ns = $("ns").value.trim();
   var path = "/changes?since=24h&limit=200" + (ns ? ("&namespace=" + encodeURIComponent(ns)) : "") + (inc() ? "&include_distrusted=1" : "");
   api(path).then(function(j){
     var c = j.counts || {};
-    document.getElementById("count").textContent = "last 24h: " + (c.created||0) + " created, " +
+    $("count").textContent = "last 24h: " + (c.created||0) + " created, " +
       (c.updated||0) + " updated, " + (c.deleted||0) + " deleted" + (j.quarantined ? (", " + j.quarantined + " quarantined") : "");
     var srcs = Object.keys(j.bySource || {}).map(function(k){
       var v = j.bySource[k];
@@ -208,12 +286,12 @@ function loadChanges(){
       var mark = e.kind === "created" ? "+" : (e.kind === "updated" ? "~" : "-");
       return "<div class='card'><h3>"+mark+" "+esc(e.title)+(e.distrusted ? "<span class='badge-bad'>DISTRUSTED</span>" : "")+"</h3><div class='meta'>"+esc(e.kind)+" &middot; #"+e.id+
         " &middot; "+esc(e.namespace)+" &middot; "+esc((e.at||"").slice(0,16).replace("T"," "))+
-        (e.written_by ? " &middot; by "+esc(e.written_by) : "")+
+        byLine(e.written_by)+
         (e.source ? " &middot; claims "+esc(e.source) : "")+"</div></div>";
     }).join("");
-    document.getElementById("list").innerHTML = "<div class='row'>"+srcs+"</div>" +
-      (rows || "<p class='muted'>Nothing changed in the last 24 hours.</p>");
-  }).catch(function(e){ incRefused(e); document.getElementById("list").innerHTML = "<p class='err'>"+esc(e.message)+"</p>"; });
+    $("list").innerHTML = "<div class='row'>"+srcs+"</div>" +
+      (rows || empty("Nothing changed in the last 24 hours. New and edited notes will show up here."));
+  }).catch(function(e){ incRefused(e); failList(e); });
 }
 
 // ---- Review queue: notes an AI agent wrote that nobody has looked at yet ----
@@ -229,9 +307,9 @@ function reviewQueue(notes, writer){
   });
 }
 function loadReview(){
-  VIEW = "review";
-  var ns = document.getElementById("ns").value.trim();
-  var sel = document.getElementById("rv_writer");
+  setView("review");
+  var ns = $("ns").value.trim();
+  var sel = $("rv_writer");
   var writer = sel ? sel.value : "";
   // Page through every note (500 at a time, at most 40 pages), so nothing past the first page is missed.
   var collected = [];
@@ -249,53 +327,81 @@ function loadReview(){
     var opts = "<option value=''>all writers (" + all.length + ")</option>" + Object.keys(writers).sort().map(function(w){
       return "<option value='" + esc(w) + "'" + (w === writer ? " selected" : "") + ">" + esc(w) + " (" + writers[w] + ")</option>"; }).join("");
     var shown = reviewQueue(j.notes || [], writer);
-    document.getElementById("count").textContent = shown.length + " to review";
+    $("count").textContent = shown.length + " to review";
     var rows = shown.map(function(n){
       var tags = (n.tags||[]).map(function(t){ return "<span class='tag'>"+esc(t)+"</span>"; }).join("");
-      return "<div class='card'><div class='cardhead'><div><h3>"+esc(n.title)+"</h3><div class='meta'>#"+n.id+" &middot; "+esc(n.namespace)+
-        " &middot; written by "+esc(n.written_by)+" &middot; "+esc((n.updated_at||"").slice(0,16).replace("T"," "))+"</div>"+tags+"</div>"+
-        "<div><button onclick='acceptNote("+n.id+")'>Accept</button> <button class='danger' onclick='del("+n.id+")'>delete</button></div></div>"+
+      return "<div class='card'><div class='cardhead'><div><h3>"+esc(n.title)+(n.pinned ? "<span class='badge-pin'>Pinned</span>" : "")+"</h3><div class='meta'>#"+n.id+" &middot; "+esc(n.namespace)+
+        " &middot; written by "+chip(n.written_by)+" &middot; "+esc((n.updated_at||"").slice(0,16).replace("T"," "))+"</div>"+tags+"</div>"+
+        "<div><button onclick='acceptNote("+n.id+")'>Accept</button> <button class='danger' onclick='arm(this,function(){del("+n.id+")})'>delete</button></div></div>"+
         (n.body ? "<div class='body'>"+esc(n.body)+"</div>" : "")+"</div>";
     }).join("");
-    document.getElementById("list").innerHTML = "<div class='row'><select id='rv_writer' onchange='loadReview()'>"+opts+"</select>"+
+    $("list").innerHTML = "<div class='row'><select id='rv_writer' aria-label='Filter by writer' onchange='loadReview()'>"+opts+"</select>"+
       "<span class='muted'>Accept keeps a note and marks it reviewed. Delete removes it.</span></div>" +
       (j.truncated ? "<p class='muted'>Showing the newest 20,000 notes only.</p>" : "") +
-      (rows || "<p class='muted'>Nothing waiting for review.</p>");
-  }).catch(function(e){ document.getElementById("list").innerHTML = "<p class='err'>"+esc(e.message)+"</p>"; });
+      (rows || empty("Nothing waiting for review. Notes your assistants write will queue here until you accept them."));
+  }).catch(failList);
 }
 function acceptNote(id){
   api("/notes/" + id).then(function(j){
     var n = j.note || j;
     var tags = (n.tags || []).filter(function(t){ return t !== "reviewed"; }).concat(["reviewed"]);
     return api("/notes/" + id, { method:"PUT", body: JSON.stringify({ tags: tags, if_rev: n.rev }) });
-  }).then(loadReview).catch(function(e){ alert(e.message); });
+  }).then(loadReview).catch(fail);
+}
+
+// ---- Held: writes the linter or a namespace policy kept out of the store until an admin decides (admin token) ----
+// Everything shown is stored text from an untrusted writer, so all of it goes through esc().
+function loadHeldCount(){
+  api("/quarantine" + nsQs("?", true)).then(function(j){
+    var n = (j.quarantine || []).length;
+    $("held_n").textContent = n ? " (" + n + ")" : "";
+  }).catch(function(){ $("held_n").textContent = ""; });
+}
+function refreshHeld(){ if(VIEW === "quality"){ loadQuality(); } else { loadHeld(); } }
+function loadHeld(){
+  setView("held");
+  api("/quarantine" + nsQs("?", true)).then(function(j){
+    var held = j.quarantine || [];
+    $("held_n").textContent = held.length ? " (" + held.length + ")" : "";
+    $("count").textContent = held.length + " held";
+    $("list").innerHTML = held.length ? held.map(function(q){
+      var why = (q.reasons || []).map(function(r){ return "<span class='tag why'>"+esc(r.label)+(r.field ? " in "+esc(r.field) : "")+"</span>"; }).join("");
+      var who = q.written_by ? byLine(q.written_by) : (q.source ? " &middot; claims "+esc(q.source) : "");
+      return "<div class='card'><div class='cardhead'><div><h3>"+esc(q.title || "(title unchanged)")+"</h3>"+
+        "<div class='meta'>held #"+Number(q.id)+" &middot; "+(q.op === "update" ? "update of #"+Number(q.target_id) : "new note")+
+        " &middot; "+esc(q.namespace)+" &middot; "+when(q.created_at)+who+"</div>"+(why || "<span class='tag why'>held by policy</span>")+"</div>"+
+        "<div><button onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;approve&quot;)})'>Approve</button> "+
+        "<button class='danger' onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;reject&quot;)})'>Reject</button></div></div>"+
+        (q.body ? "<div class='body'>"+esc(q.body)+"</div>" : "")+"</div>";
+    }).join("") : empty("Nothing is held. Writes that look like secrets or injected instructions wait here for your approval.");
+  }).catch(failList);
 }
 
 // ---- Sessions: what the capture hooks recorded, one session at a time (GET /sessions, GET /sessions/:id) ----
 // Everything shown is stored text (prompts, titles, folders, even the session id), so all of it goes through esc(); the
 // session id reaches the click handler through a data attribute, never spliced into script.
-function nsQs(sep){
-  var ns = document.getElementById("ns").value.trim();
-  var qs = (ns ? ("namespace=" + encodeURIComponent(ns)) : "") + (inc() ? ((ns ? "&" : "") + "include_distrusted=1") : "");
+function nsQs(sep, noDistrusted){
+  var ns = $("ns").value.trim();
+  var qs = (ns ? ("namespace=" + encodeURIComponent(ns)) : "") + (!noDistrusted && inc() ? ((ns ? "&" : "") + "include_distrusted=1") : "");
   return qs ? (sep + qs) : "";
 }
 function when(s){ return esc(String(s||"").slice(0,16).replace("T"," ")); }
 function loadSessions(){
-  VIEW = "sessions";
+  setView("sessions");
   api("/sessions?limit=100" + nsQs("&")).then(function(j){
     var ss = j.sessions || [];
-    document.getElementById("count").textContent = ss.length + " session" + (ss.length===1?"":"s");
-    document.getElementById("list").innerHTML = ss.length ? ss.map(function(s){
+    $("count").textContent = ss.length + " session" + (ss.length===1?"":"s");
+    $("list").innerHTML = ss.length ? ss.map(function(s){
       return "<div class='card'><div class='cardhead'><div><h3>"+esc(s.summary || "(no summary yet)")+"</h3>"+
         "<div class='meta'>"+when(s.started_at)+(s.ended_at ? " to "+when(s.ended_at) : " &middot; open")+" &middot; "+esc(s.namespace)+
         " &middot; "+esc(s.cwd)+" &middot; "+Number(s.prompt_count||0)+" prompts, "+Number(s.event_count||0)+" events</div></div>"+
         "<button class='ghost' data-sid='"+esc(s.id)+"' onclick='loadSession(this.getAttribute(&quot;data-sid&quot;))'>Timeline</button></div></div>";
-    }).join("") : "<p class='muted'>No sessions recorded yet (monomem setup --capture installs the hooks).</p>";
-  }).catch(function(e){ incRefused(e); document.getElementById("list").innerHTML = "<p class='err'>"+esc(e.message)+"</p>"; });
+    }).join("") : empty("No sessions recorded yet. Run <code>monomem setup --capture</code> to install the hooks.");
+  }).catch(function(e){ incRefused(e); failList(e); });
 }
 // One session: the summary on top, then prompts and observations merged oldest first.
 function loadSession(id){
-  VIEW = "session";
+  setView("session");
   api("/sessions/" + encodeURIComponent(id) + nsQs("?")).then(function(j){
     var items = (j.prompts || []).map(function(p){ return { at: p.at, html: "<span class='tag'>prompt</span>"+esc(p.text) }; })
       .concat((j.rows || []).filter(function(r){ return r.kind !== "summary"; }).map(function(r){
@@ -305,49 +411,51 @@ function loadSession(id){
       }));
     items.sort(function(a,b){ return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
     var s = j.session || {}, sum = j.summary;
-    document.getElementById("count").textContent = items.length + " timeline entr" + (items.length===1?"y":"ies");
-    document.getElementById("list").innerHTML = "<div class='row'><a class='linkish' onclick='loadSessions()'>&larr; all sessions</a>"+
+    $("count").textContent = items.length + " timeline entr" + (items.length===1?"y":"ies");
+    $("list").innerHTML = "<div class='row'><button class='linkbtn' onclick='loadSessions()'>&larr; all sessions</button>"+
       "<span class='muted'>"+esc(s.id)+" &middot; "+esc(s.cwd)+"</span></div>"+
       (sum ? "<div class='card'><h3>"+esc(sum.title)+"</h3><div class='meta'>summary #"+Number(sum.id)+" &middot; "+when(sum.updated_at)+"</div>"+
         "<div class='body'>"+esc(sum.body)+"</div></div>" : "")+
       (items.length ? items.map(function(it){ return "<div class='card'><div class='meta'>"+when(it.at)+"</div>"+it.html+"</div>"; }).join("")
-        : "<p class='muted'>Nothing recorded in this session yet.</p>");
-  }).catch(function(e){ incRefused(e); document.getElementById("list").innerHTML = "<p class='err'>"+esc(e.message)+"</p>"; });
+        : empty("Nothing recorded in this session yet."));
+  }).catch(function(e){ incRefused(e); failList(e); });
 }
 
 // ---- Quality: what is worth a look (GET /quality, admin). Every button goes through a path that asks first and can be
-// undone: replace = supersede preview + confirm (undo: supersede undo), archive (undo: restore), quarantine approve/reject.
+// undone: replace = supersede preview, then confirm (undo: supersede undo), archive (undo: restore), quarantine approve/reject.
 function loadQuality(){
-  VIEW = "quality";
+  setView("quality");
   api("/quality" + nsQs("?")).then(function(j){
     var c = j.counts || {};
-    document.getElementById("count").textContent = Object.keys(c).map(function(k){ return c[k] + " " + k; }).join(", ");
+    $("count").textContent = Object.keys(c).map(function(k){ return c[k] + " " + k; }).join(", ");
     var rows = (j.issues || []).map(function(i){
       var a = Number(i.ids[0]), b = Number(i.ids[1]), q = Number(i.quarantine_id), btn = "";
       if(i.type === "duplicate" || i.type === "stale_twin"){ btn = "<button onclick='qReplace("+a+","+b+")'>Replace #"+a+" with #"+b+"</button>"; }
-      else if(i.type === "quarantined"){ btn = "<button onclick='qQuarantine("+q+",&quot;approve&quot;)'>Approve</button> <button class='danger' onclick='qQuarantine("+q+",&quot;reject&quot;)'>Reject</button>"; }
-      else { btn = "<button class='ghost' onclick='qArchive("+a+")'>Archive</button>"; }
+      else if(i.type === "quarantined"){ btn = "<button onclick='arm(this,function(){qQuarantine("+q+",&quot;approve&quot;)})'>Approve</button> <button class='danger' onclick='arm(this,function(){qQuarantine("+q+",&quot;reject&quot;)})'>Reject</button>"; }
+      else { btn = "<button class='ghost' onclick='arm(this,function(){qArchive("+a+")})'>Archive</button>"; }
       return "<div class='card'><div class='cardhead'><div><h3><span class='tag'>"+esc(i.type)+"</span>"+esc(i.detail)+"</h3>"+
         "<div class='meta'>"+esc(i.namespace)+" &middot; "+esc(i.fix)+(i.alt ? " &middot; or "+esc(i.alt) : "")+"</div></div><div>"+btn+"</div></div></div>";
     }).join("");
-    document.getElementById("list").innerHTML = rows || "<p class='muted'>No quality issues found.</p>";
-  }).catch(function(e){ document.getElementById("list").innerHTML = "<p class='err'>"+esc(e.message)+"</p>"; });
+    $("list").innerHTML = rows || empty("No quality issues found. Duplicates, stale notes and held writes will be listed here.");
+  }).catch(failList);
 }
 function qReplace(oldId, newId){
   api("/supersede/preview", { method:"POST", body: JSON.stringify({ old_ids: [oldId], new_id: newId }) }).then(function(p){
-    if(!confirm(p.warning)){ return; }
-    var body = { token: p.token };
-    if(p.requires_acknowledgement){ body.acknowledge_risk = true; }
-    return api("/supersede/confirm", { method:"POST", body: JSON.stringify(body) }).then(loadQuality);
-  }).catch(function(e){ alert(e.message); });
+    ask(p.warning, "Confirm replace", function(){
+      var body = { token: p.token };
+      if(p.requires_acknowledgement){ body.acknowledge_risk = true; }
+      api("/supersede/confirm", { method:"POST", body: JSON.stringify(body) }).then(loadQuality).catch(fail);
+    });
+  }).catch(fail);
 }
+// The caller's button already asked ("Confirm archive?"); these just act.
 function qArchive(id){
-  if(!confirm("Archive note #" + id + "? It leaves search and recall but is kept; Restore brings it back.")){ return; }
-  api("/notes/" + id + "/archive", { method:"POST" }).then(loadQuality).catch(function(e){ alert(e.message); });
+  api("/notes/" + id + "/archive", { method:"POST" }).then(loadQuality).catch(fail);
 }
 function qQuarantine(id, action){
-  if(!confirm((action === "approve" ? "Store" : "Discard") + " held write #" + id + "?")){ return; }
-  api("/quarantine/" + id + "/" + action, { method:"POST" }).then(loadQuality).catch(function(e){ alert(e.message); });
+  api("/quarantine/" + id + "/" + action, { method:"POST" }).then(function(){
+    refreshHeld(); loadHeldCount(); say("Held write #" + id + (action === "approve" ? " stored." : " discarded."));
+  }).catch(fail);
 }
 
 // "Never show again": the never-show tag keeps a note out of the session-start context (it stays searchable).
@@ -356,49 +464,49 @@ function neverShow(id, on){
     var n = j.note || j;
     var tags = (n.tags || []).filter(function(t){ return t !== "never-show"; }).concat(on ? ["never-show"] : []);
     return api("/notes/" + id, { method:"PUT", body: JSON.stringify({ tags: tags, if_rev: n.rev }) });
-  }).then(load).catch(function(e){ alert(e.message); });
+  }).then(load).catch(fail);
 }
 
 // ---- Meter: what Monomem costs you (GET /stats -> meter). Numbers only. ----
 function loadMeter(){
-  VIEW = "meter";
-  var ns = document.getElementById("ns").value.trim();
+  setView("meter");
+  var ns = $("ns").value.trim();
   api("/stats" + (ns ? ("?namespace=" + encodeURIComponent(ns)) : "")).then(function(j){
     var m = j.meter || {}, t = m.totals || {};
     function num(v){ return Number(v||0).toLocaleString(); }
-    document.getElementById("count").textContent = num(t.sessions) + " metered session" + (t.sessions===1?"":"s");
+    $("count").textContent = num(t.sessions) + " metered session" + (t.sessions===1?"":"s");
     var rows = (m.recent || []).map(function(r){
       return "<tr><td>"+when(r.updated_at)+"</td><td>"+esc(r.namespace)+"</td><td>"+num(r.injected_tokens)+"</td><td>"+num(r.saved_tokens)+"</td><td>"+num(r.llm_tokens)+"</td></tr>";
     }).join("");
-    document.getElementById("list").innerHTML = "<div class='card'><h3>Totals</h3><div>"+
+    $("list").innerHTML = "<div class='card'><h3>Totals</h3><div>"+
       "~"+num(t.injected_tokens)+" tokens injected at session start ("+num(t.injections)+" times)<br>"+
       "~"+num(t.saved_tokens)+" tokens of captured work they stood in for<br>"+
       num(t.llm_tokens)+" local-model tokens (0 = the optional summarizer is off)<br>"+
       num(m.capture_events)+" capture events recorded<br>"+
       "database "+(Number(m.db_bytes||0)/1048576).toFixed(1)+" MB on disk</div>"+
       "<div class='meta' style='margin-top:8px'>"+esc(m.note)+"</div></div>"+
-      (rows ? "<div class='card'><h3>Recent sessions</h3><table style='width:100%;font-size:13px'><tr class='muted'><td>updated</td><td>namespace</td><td>injected</td><td>saved</td><td>model</td></tr>"+rows+"</table></div>"
-        : "<p class='muted'>No session metered yet: the numbers start with the next session the SessionStart hook runs for.</p>");
-  }).catch(function(e){ document.getElementById("list").innerHTML = "<p class='err'>"+esc(e.message)+"</p>"; });
+      (rows ? "<div class='card'><h3>Recent sessions</h3><div class='scroll'><table style='width:100%;font-size:13px'><tr class='muted'><th scope='col' align='left'>updated</th><th scope='col' align='left'>namespace</th><th scope='col' align='left'>injected</th><th scope='col' align='left'>saved</th><th scope='col' align='left'>model</th></tr>"+rows+"</table></div></div>"
+        : empty("No session metered yet: the numbers start with the next session the SessionStart hook runs for."));
+  }).catch(failList);
 }
 
 function addNote(){
-  var title = document.getElementById("n_title").value.trim();
-  var err = document.getElementById("n_err"); err.textContent = "";
+  var title = $("n_title").value.trim();
+  var err = $("n_err"); err.textContent = "";
   if(!title){ err.textContent = "title is required"; return; }
-  var tags = document.getElementById("n_tags").value.split(",").map(function(t){return t.trim();}).filter(Boolean);
-  var payload = { title: title, body: document.getElementById("n_body").value,
-    tags: tags, namespace: document.getElementById("n_ns").value.trim() || undefined };
+  var tags = $("n_tags").value.split(",").map(function(t){return t.trim();}).filter(Boolean);
+  var payload = { title: title, body: $("n_body").value,
+    tags: tags, namespace: $("n_ns").value.trim() || undefined };
   api("/notes", { method:"POST", body: JSON.stringify(payload) })
-    .then(function(j){ if(j && j.quarantined){ alert("Held for admin review (quarantine #" + j.quarantined.id + ")"); }
-      document.getElementById("n_title").value=""; document.getElementById("n_body").value="";
-      document.getElementById("n_tags").value=""; toggleNew(); load(); })
+    .then(function(j){
+      $("n_title").value=""; $("n_body").value="";
+      $("n_tags").value=""; toggleNew(); load();
+      if(j && j.quarantined){ say("Held for admin review (held write #" + j.quarantined.id + "). See the Held tab."); } })
     .catch(function(e){ err.textContent = e.message; });
 }
 
 function del(id){
-  if(!confirm("Delete note #" + id + "?")){ return; }
-  api("/notes/" + id, { method:"DELETE" }).then(function(){ if(VIEW === "review"){ loadReview(); } else { load(); } }).catch(function(e){ alert(e.message); });
+  api("/notes/" + id, { method:"DELETE" }).then(function(){ if(VIEW === "review"){ loadReview(); } else { load(); } }).catch(fail);
 }
 
 function doExport(){
@@ -407,7 +515,7 @@ function doExport(){
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "monomem-export.json"; a.click();
-  }).catch(function(e){ alert(e.message); });
+  }).catch(fail);
 }
 
 function doImport(input){
@@ -420,18 +528,18 @@ function doImport(input){
       api("/import", { method:"POST", body: JSON.stringify({ notes: notes }) })
         .then(function(j){
           var a = j.attestations;
-          alert("Imported " + j.imported + " notes" + (a ? (" (" + a.verified + " with a verified writer attestation, " + a.unverified + " unverified)") : ""));
-          load(); })
-        .catch(function(e){ alert(e.message); });
-    } catch(e){ alert("not valid JSON"); }
+          load();
+          say("Imported " + j.imported + " notes" + (a ? (" (" + a.verified + " with a verified writer attestation, " + a.unverified + " unverified)") : "")); })
+        .catch(fail);
+    } catch(e){ say("not valid JSON", true); }
   };
   reader.readAsText(f);
   input.value = "";
 }
 
 var t;
-document.getElementById("q").addEventListener("input", function(){ clearTimeout(t); t = setTimeout(load, 250); });
-document.getElementById("ns").addEventListener("input", function(){ clearTimeout(t); t = setTimeout(load, 250); });
+$("q").addEventListener("input", function(){ clearTimeout(t); t = setTimeout(load, 250); });
+$("ns").addEventListener("input", function(){ clearTimeout(t); t = setTimeout(load, 250); });
 
-if(tok()){ show(true); load(); } else { show(false); document.getElementById("tok").focus(); }
+if(tok()){ show(true); load(); } else { show(false); $("tok").focus(); }
 `;
