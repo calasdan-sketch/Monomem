@@ -143,7 +143,7 @@ describe("findConflicts: facts tier and trust", () => {
     assert.deepEqual([c.a.id, c.b.id], [a, b]);
     assert.equal(c.a.pinned, true);
     assert.equal(c.b.pinned, false);
-    assert.equal(c.a.kind, "token label from your config");
+    assert.equal(c.a.kind, "token label, stamped by the server from the token");
     s.close();
   });
   test("a pair already flagged by facts is not listed again as possible", () => {
@@ -189,7 +189,7 @@ describe("CLI lines", () => {
     assert.ok(text.includes(`monomem pin ${a}`) && text.includes(`monomem pin ${b}`));
     assert.ok(text.includes('monomem trust distrust "alice" --namespace "default"'));
     assert.ok(!/or the reverse/.test(text));
-    assert.match(text, /\[token label from your config\]/);
+    assert.match(text, /\[token label, stamped by the server from the token\]/);
     s.close();
   });
 });
@@ -221,8 +221,8 @@ function page(conflicts: unknown[]) {
 const settle = () => new Promise((r) => setTimeout(r, 20));
 const C = (over: any = {}) => ({
   namespace: "default", key: "deploy_target", values: ["fly.io", "render"], shown: ["Fly.io", "Render"], tier: "fact", confidence: "exact",
-  a: { id: 1, title: "Hosting", writer: "alice", kind: "token label from your config", pinned: false, at: "2026-10-01T00:00:00Z" },
-  b: { id: 2, title: "Runs on", writer: "bob", kind: "token label from your config", pinned: false, at: "2026-10-02T00:00:00Z" }, ...over,
+  a: { id: 1, title: "Hosting", writer: "alice", kind: "token label, stamped by the server from the token", pinned: false, at: "2026-10-01T00:00:00Z" },
+  b: { id: 2, title: "Runs on", writer: "bob", kind: "token label, stamped by the server from the token", pinned: false, at: "2026-10-02T00:00:00Z" }, ...over,
 });
 
 describe("dashboard conflicts UI", () => {
@@ -233,7 +233,7 @@ describe("dashboard conflicts UI", () => {
     assert.match(html, /qReplace\(1,2\)'>Keep Render</);
     assert.match(html, /Pin #1/);
     assert.match(html, /Distrust alice/);
-    assert.match(html, /alice \(token label from your config\)/);
+    assert.match(html, /alice \(token label, stamped by the server from the token\)/);
     assert.ok(!/Replace #/.test(html));
     const keeps = html.match(/<button[^>]*>Keep /g) ?? [];
     assert.equal(new Set(keeps.map((k) => k.match(/class='[^']*'/)?.[0])).size, 1, "same class on both Keep buttons: neither is primary");

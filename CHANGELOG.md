@@ -8,6 +8,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Time travel.** `monomem search "<query>" --as-of <ISO|7d|2h>` and the MCP `state_search` `as_of` show memory as it
+  stood at a past time, rebuilt from note history. A note whose text from then was pruned or purged says "text from
+  that time not kept" instead of showing newer text as old; hard-deleted notes cannot be rebuilt and the output says so.
+  Read-only. Ranking at a past time is a simple keyword match, not the full search.
+
 - **`monomem health [--json] [--card [file.svg]]`.** One line per check (setup, security settings, the poisoning drill,
   the audit chain, writes waiting for review, distrusted writers, redacted notes, memory size) and a grade from A to F.
   The rule is printed with it: each warning lowers the grade one step, any failure caps it at D, and an attack the drill
@@ -16,9 +21,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`monomem why <id>`** and the opt-in MCP tool `memory_why`: one note's history in time order (who wrote it, each
   version, replacements, held edits, pin, the session starts it was shown at and why, current status). Titles only. It
   ends with what is not recorded, such as who read the note (only a total and the last read time are kept).
-- **`monomem conflicts`** and a "Possible conflicts" list in `monomem quality` and the dashboard: live notes from
-  different writers that give different values for the same key (deploy target, package manager, a version, a URL).
-  It only flags; you choose to replace, pin or distrust. It matches the same key, so reworded disagreements are missed.
+- **Conflicts between writers.** Agents can attach exact facts to a note (`facts: { "deploy_target": "render" }` on
+  `state_write` or `POST /notes`, stored as `fact:key=value` tags). When another writer's live note in the same namespace
+  has the same key with a different value, the write still succeeds and the reply lists the conflict, so the agent can
+  ask you. `monomem conflicts`, `monomem quality` and the dashboard list these first, then a "possible" tier from a text
+  rule (`key: value` lines in notes with the same title). It only flags; in the dashboard you choose Keep, Pin or
+  Distrust. Measured on 20 realistic contradicting pairs: the fact tier caught 20 of 20 when the facts were attached and
+  scoped per subject (`orders.database`, not `database`); without facts the text rule caught none of them. Notes from
+  distrusted writers are left out, and each side shows whether its writer name is stamped from a token or self-declared.
 - **Claude Code plugin.** `/plugin marketplace add calasdan-sketch/monomem`, then `/plugin install monomem@monomem`,
   adds the MCP server, the start-of-session recall hook and the skill (see [docs/plugin.md](./docs/plugin.md)).
   `server.json` and `mcpName` are ready for the MCP registry.
@@ -125,6 +135,18 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log (`mcp.connect`) as a **claim** only; they are never used for `written_by` or any decision.
 
 ### Changed
+
+- **`monomem health` grades fairly.** Writes held for review, distrusted writers and redacted notes are shown as info
+  and never lower the grade; a new store grades A. Each weakening setting is its own line (the linter off and agent
+  admin tools over stdio are failures). A missing audit log, or one that shrank or changed since the last run, warns.
+  A Claude Code plugin install of the hook is detected. The card gives the reason for the grade. `doctor` and `health`
+  share one security check. `--card` without a path writes into the data folder.
+- **`monomem why`** uses the same writer wording as the rest of Monomem, hides earlier versions by a distrusted writer,
+  and its JSON includes the receipt retention.
+- **Claude Code plugin:** the start-of-session hook is `hook session-start` (so receipts and the meter work) with a 20 s
+  timeout, and `npm version` keeps the plugin files and `server.json` on the same version.
+- The start-of-session footer no longer reads as if memory cost more than it saved.
+- README: a "Check and explain your memory" section (drill, health, why, conflicts, receipts, time travel, plugin).
 
 - `monomem drill` says "blocked" for defences other than quarantine and keeps "held" for quarantined writes (the
   JSON `verdict` can be `blocked`).
