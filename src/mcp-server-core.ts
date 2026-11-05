@@ -701,7 +701,7 @@ export function createMcpServer(
           .string()
           .optional()
           .describe(
-            "Read-only time travel: search memory as it stood at this time (ISO date/time or an age like 7d, 2h), rebuilt from note history. Keyword match on the old text only; notes whose old text is no longer kept are counted, not shown. Cannot be combined with mode, when, explain, written_by, not_written_by or include_superseded."
+            "Admin only. Read-only time travel: search memory as it stood at this time (ISO date/time or an age like 7d, 2h), rebuilt from note history. Keyword match on the old text only; notes whose old text is no longer kept are counted, not shown. Cannot be combined with mode, when, explain, written_by, not_written_by or include_superseded."
           ),
         ...WRITER_FILTER_SHAPE,
         ...SUPERSEDED_SHAPE,
@@ -734,6 +734,7 @@ export function createMcpServer(
             as_of: at.toISOString(),
             note: "Reconstructed from note history; hard-deleted notes cannot be shown.",
             not_kept: view.notKept,
+            archived_then: view.archivedThen,
             results: hits.map((h) => asOfFields(h, withWhen)),
             searchedNamespaces: spaces ?? [],
           });

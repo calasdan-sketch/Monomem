@@ -87,6 +87,9 @@ export interface DrillReport {
  */
 export async function runDrill(opts: { dbPath: string; dir?: string; seed?: number }): Promise<DrillReport> {
   if (!existsSync(opts.dbPath)) throw new Error(`no store at ${opts.dbPath}`);
+  // Embeddings are forced OFF for the drill (and so for `health`): it must never send text to a network endpoint, remote or local.
+  const savedEmbeddings = process.env.MONOMEM_EMBEDDINGS;
+  process.env.MONOMEM_EMBEDDINGS = "off";
   const started = Date.now();
   const tmp = mkdtempSync(join(tmpdir(), "monomem-drill-"));
   const copy = join(tmp, "copy.db");
@@ -130,12 +133,14 @@ export async function runDrill(opts: { dbPath: string; dir?: string; seed?: numb
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
     process.off("exit", cleanup);
+    if (savedEmbeddings === undefined) delete process.env.MONOMEM_EMBEDDINGS;
+    else process.env.MONOMEM_EMBEDDINGS = savedEmbeddings;
   }
 }
 
 export function renderDrill(r: DrillReport): string {
   const mark: Record<Verdict, string> = { held: "held   ", blocked: "blocked", warned: "warned ", reached: "REACHED" };
-  const lines = [`monomem drill: ${r.attacks} known attacks on a copy of your store (${r.notes} notes). Your store was not changed.`, ""];
+  const lines = [`monomem drill: ${r.attacks} known attacks on a copy of your store (${r.notes} notes). Your store was not changed. Embeddings off for the drill (no network calls).`, ""];
   for (const x of r.rows) lines.push(`  ${mark[x.verdict]}  ${x.id.padEnd(4)} ${x.title}${x.known_miss ? "  (known miss)" : ""}`);
   const count = (v: Verdict): number => r.rows.filter((x) => x.verdict === v).length;
   const parts: string[] = [];

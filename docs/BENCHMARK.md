@@ -488,7 +488,7 @@ re-measured in this round.
 `monomem drill` copies your store to a temporary folder (`VACUUM INTO`, your file is opened read-only), replays the
 suite-E poisoning scenarios plus one self-poisoning case against the copy through the same adapter `monomem bench`
 uses, and deletes the copy. Unlike `bench`, it keeps your environment (`MONOMEM_LINT` and the rest), so the result
-reflects your configuration. Each attack is `held`, `warned` (stored, but labelled or warned about) or `REACHED`.
+reflects your configuration, except embeddings: the drill forces them off and never makes a network call. Each attack is `held`, `warned` (stored, but labelled or warned about) or `REACHED`.
 `--json` prints the full result. Exit code 0 when only known misses got through, 1 otherwise, 2 when it could not run.
 
 Two attacks are known misses by design: E16 (a reworded override that no pattern matches; one admin distrust of the

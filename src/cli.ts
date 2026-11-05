@@ -926,7 +926,7 @@ async function relevant(): Promise<void> {
       if (asJson) {
         console.log(
           JSON.stringify(
-            { as_of: when.toISOString(), as_of_local: localTimeOffset(when), not_kept: view.notKept, archive_log_since: view.archiveSince, results: hits.map((h) => asOfFields(h)) },
+            { as_of: when.toISOString(), as_of_local: localTimeOffset(when), not_kept: view.notKept, archived_then: view.archivedThen, archive_log_since: view.archiveSince, results: hits.map((h) => asOfFields(h)) },
             null,
             2
           )
