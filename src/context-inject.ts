@@ -243,17 +243,16 @@ export async function injectContext(store: Store, opts: InjectOptions = {}): Pro
     parts.push(profile);
     used += profile.length;
   }
-  // Fact-tier disputes in this namespace: 0 tokens when none, at most 2 short lines otherwise. Never lets the hook fail.
-  if (opts.namespace !== undefined) {
-    try {
-      const disputed = disputedLines(store, opts.namespace);
-      if (disputed) {
-        parts.push(disputed);
-        used += disputed.length;
-      }
-    } catch {
-      /* a lookup problem must not cost the session its memory */
+  // Fact-tier disputes (this namespace, or all when none is configured): 0 tokens when none, at most 2 short lines otherwise. Never lets the hook fail.
+  // No configured namespace = a default install: every namespace is readable, so every one is checked. The session's own writer filters apply.
+  try {
+    const disputed = disputedLines(store, { namespace: opts.namespace, writtenBy: opts.writtenBy, notWrittenBy: opts.notWrittenBy });
+    if (disputed) {
+      parts.push(disputed);
+      used += disputed.length;
     }
+  } catch {
+    /* a lookup problem must not cost the session its memory */
   }
   const now = Date.now();
   const tagOf = (n: NoteRecord): string => whyTag(n, why.get(n.id), now);

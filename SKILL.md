@@ -54,9 +54,9 @@ Use a short `title`, put detail in `body`, add `tags` to group related
 notes, and use `namespace` to separate projects or clients. To update an
 existing note, pass its `id`.
 
-Recording a decision (deploy target, package manager, test runner, database, a version or URL)? Also pass `facts`, so a teammate's different value is caught exactly:
+Record decisions as `facts` (deploy_target, package_manager, test_runner …): a different value from another agent is then flagged to the user. Pass `facts` whenever the note states a decision or setting:
 `facts: { "deploy_target": "render", "node_version": "22" }` (at most 10; lowercase keys, values one line of at most 80
-characters). Use a common key when one fits: `deploy_target`, `package_manager`, `test_runner`, `database`, `node_version`, `base_url`, `ci_provider`, `formatter`. Prefix a subject only when the project has several (`api.deploy_target`). If another writer's live note in the same namespace states a different value for a key, the write still succeeds and the reply has a `conflicts` list: tell the user and ask which is right; do not decide yourself. If the key is new and an existing key looks like the same thing, the reply has `similar_keys`: reuse one of those keys next time.
+characters). Reuse a key from `similar_keys` or this list: `deploy_target`, `package_manager`, `test_runner`, `database`, `node_version`, `base_url`, `ci_provider`, `formatter`. Prefix a subject only when the project has several (`api.deploy_target`). If another writer's live note in the same namespace states a different value for a key (or a synonym such as `hosting`), the write still succeeds and the reply has a `conflicts` list: tell the user and ask which is right; do not decide yourself. If the key is new and an existing key looks like the same thing, the reply has `similar_keys` (each with the existing value, note id and writer) and a `hint`: reuse that key. `fact_warnings` means the note's own text states another value than its fact: fix one of them.
 
 ## When to RECALL (call `state_search` or `state_list`)
 

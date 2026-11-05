@@ -101,7 +101,7 @@ import { ackChanges, resolveSince } from "./changes.js";
 import { qualityReport } from "./quality.js";
 import { rollbackPreview, rollbackConfirm, embedRestored } from "./rollback.js";
 import { SupersedeError, supersedePreview, supersedeConfirm, supersedeUndo, noteHistory, restoreVersion, purgeNoteHistory, type Caller } from "./supersede.js";
-import { withFacts, writeConflicts } from "./facts.js";
+import { withFacts, factFeedback } from "./facts.js";
 import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
 import { waitForChanges, parseWait, WaitBusyError } from "./change-wait.js";
 import type { LintFinding } from "./lint.js";
@@ -156,7 +156,7 @@ function requiredScope(method: string | undefined, path: string): Scope {
 // REST note bodies: a field Monomem does not know (a client sent `content` for `body`) used to be dropped, leaving an empty note.
 // written_by / created_by are accepted and ignored: the server stamps the writer from the token.
 const POST_NOTE_FIELDS = ["namespace", "title", "body", "tags", "source", "created_at", "forget_after", "confidence", "facts", "written_by", "created_by"];
-const PUT_NOTE_FIELDS = ["namespace", "title", "body", "tags", "source", "forget_after", "confidence", "if_rev", "written_by", "created_by"];
+const PUT_NOTE_FIELDS = ["namespace", "title", "body", "tags", "source", "forget_after", "confidence", "if_rev", "facts", "written_by", "created_by"];
 /** A 400 message naming the unknown top-level fields of a note body, or null when there are none. */
 export function unknownNoteFields(body: unknown, allowed: readonly string[]): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
@@ -593,8 +593,7 @@ export function createApiServer(
           const warnings: LintFinding[] = [];
           const note = store.create(parsed, { lintWarnings: warnings });
           await maybeEmbed(store, note);
-          const conflicts = facts === undefined ? [] : writeConflicts(store, note);
-          sendJson(res, 201, { note, ...(warnings.length ? { warnings } : {}), ...(conflicts.length ? { conflicts } : {}) });
+          sendJson(res, 201, { note, ...(warnings.length ? { warnings } : {}), ...(facts === undefined ? {} : factFeedback(store, note)) });
         } catch (e) {
           sendError(res, e);
         }
@@ -696,8 +695,12 @@ export function createApiServer(
             sendJson(res, 404, { error: "not found" });
             return;
           }
+          // `facts` as in the MCP update: they replace the note's fact tags and keep its other tags.
+          const putFacts = (parsed as { facts?: unknown }).facts;
+          if (putFacts !== undefined) delete (parsed as { facts?: unknown }).facts;
+          const currentTags = putFacts !== undefined || (parsed && parsed.tags !== undefined) ? store.read(id)?.tags : undefined; // gate-ok: tag-guard lookup only (no content returned)
+          if (putFacts !== undefined) parsed.tags = withFacts(parsed.tags, putFacts, currentTags);
           if (parsed && parsed.tags !== undefined) {
-            const currentTags = store.read(id)?.tags; // gate-ok: tag-guard lookup only (no content returned)
             assertPlainWriteTags(parsed.tags, currentTags);
             assertReviewedTag(parsed.tags, currentTags, isAdmin);
           }
@@ -708,7 +711,7 @@ export function createApiServer(
             return;
           }
           await maybeEmbed(store, note);
-          sendJson(res, 200, warnings.length ? { note, warnings } : { note });
+          sendJson(res, 200, { note, ...(warnings.length ? { warnings } : {}), ...(putFacts === undefined ? {} : factFeedback(store, note)) });
         } catch (e) {
           sendError(res, e);
         }

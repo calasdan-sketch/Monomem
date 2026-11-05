@@ -225,6 +225,7 @@ export function conflictLines(groups: ConflictGroup[]): string[] {
       const others = g.values.filter((o) => o !== v).flatMap((o) => o.notes.map((n) => n.id));
       out.push(`    keep ${printable(v.value)}: monomem supersede --old ${others.join(",")} --new-id ${v.notes[0].id}   (replaces ${others.length === 1 ? "note" : "notes"} ${others.join(", ")} whole)`);
     }
+    if (g.tier === "fact") for (const v of g.values) out.push(`    or drop just the fact ${printable(v.value)}: ${v.notes.map((n) => `monomem fact remove ${n.id} ${printable(g.key)}`).join(" | ")}`);
     const all = g.values.flatMap((v) => v.notes);
     out.push(`    or pin one: ${all.map((n) => `monomem pin ${n.id}`).join(" | ")}`);
     const writers = [...new Set(all.map((n) => n.writer))];
