@@ -40,3 +40,12 @@ describe("cli help", () => {
     }
   });
 });
+
+test("every command main() handles is on the known-command list (no 'Unknown command' for a real one)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(join(PROJECT_ROOT, "src", "cli.ts"), "utf8");
+  const listed = src.slice(src.indexOf("const COMMANDS = ["), src.indexOf("];", src.indexOf("const COMMANDS = [")));
+  const cases = [...src.matchAll(/^ {4}case "([a-z][a-z:-]*)":/gm)].map((m) => m[1]); // the top-level switch only
+  const missing = [...new Set(cases)].filter((c) => !listed.includes(`"${c}"`));
+  assert.deepEqual(missing, []);
+});

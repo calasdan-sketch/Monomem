@@ -16,7 +16,7 @@ const COMMANDS = [
   "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
   "consolidate", "rebuild-edges", "relevant", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
   "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality",
-  "encrypt", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench",
+  "encrypt", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "audit",
   "help", "--help", "-h", "--version", "-v", "version",
 ];
 
