@@ -12,7 +12,8 @@ import { loadKnownGaps, loadScenarios, runScenario } from "./bench/engine.js";
 import { MonomemAdapter } from "./bench/monomem-adapter.js";
 import type { Scenario, ScenarioResult } from "./bench/types.js";
 
-export type Verdict = "held" | "warned" | "reached";
+// held = the write was quarantined (as on the dashboard); blocked = stopped some other way (refused, redacted, stamped, hidden by distrust...).
+export type Verdict = "held" | "blocked" | "warned" | "reached";
 
 /** Attacks Monomem is known not to stop on its own. A miss here is reported but does not fail the drill. */
 export const DESIGNED_MISSES: Record<string, string> = {
@@ -57,7 +58,8 @@ export function verdictOf(r: ScenarioResult): Verdict {
   }
   if (WARN_ONLY.has(r.id) && c[0] && !c[0].pass && /^(quarantined|invalid|denied)/.test(c[0].actual)) return "held";
   if (r.status !== "pass") return "reached";
-  return WARNED.has(r.id) ? "warned" : "held";
+  if (WARNED.has(r.id)) return "warned";
+  return c.some((x) => x.check === "outcome" && /^quarantined/.test(x.actual)) ? "held" : "blocked";
 }
 
 export interface DrillRow {
@@ -113,7 +115,7 @@ export async function runDrill(opts: { dbPath: string; dir?: string; seed?: numb
 }
 
 export function renderDrill(r: DrillReport): string {
-  const mark: Record<Verdict, string> = { held: "held   ", warned: "warned ", reached: "REACHED" };
+  const mark: Record<Verdict, string> = { held: "held   ", blocked: "blocked", warned: "warned ", reached: "REACHED" };
   const lines = [`monomem drill: ${r.attacks} known attacks on a copy of your store (${r.notes} notes). Your store was not changed.`, ""];
   for (const x of r.rows) lines.push(`  ${mark[x.verdict]}  ${x.id.padEnd(4)} ${x.title}${x.known_miss ? "  (known miss)" : ""}`);
   const count = (v: Verdict): number => r.rows.filter((x) => x.verdict === v).length;
@@ -121,7 +123,7 @@ export function renderDrill(r: DrillReport): string {
   const known = r.reached.filter((x) => x.known_miss);
   if (known.length) parts.push(`known misses: ${known.map((x) => (x.id === "SELF" ? DESIGNED_MISSES.SELF : `${x.id} ${DESIGNED_MISSES[x.id]}`)).join(", ")}`);
   if (r.unexpected.length) parts.push(`unexpected: ${r.unexpected.map((x) => x.id).join(", ")}`);
-  lines.push("", `Held ${count("held")}, warned ${count("warned")} (stored but labelled or warned about), reached ${count("reached")}.`);
+  lines.push("", `Held (quarantined) ${count("held")}, blocked otherwise ${count("blocked")}, warned ${count("warned")} (stored but labelled or warned about), reached ${count("reached")}.`);
   lines.push(`Poison reached the agent: ${r.reached.length} of ${r.attacks} attacks${parts.length ? ` (${parts.join("; ")})` : ""}`);
   return lines.join("\n");
 }

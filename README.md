@@ -9,7 +9,7 @@ npx monomem setup
 
 Needs Node 22.16 or newer (check with `node -v`). On an older Node, use [Docker](#docker).
 
-Stop explaining your project to every assistant again. Tell Claude Code something once, and Cursor, Codex and Gemini CLI can read it too, because they all share one memory. Each note says which assistant wrote it, and a note that looks like a planted instruction is held for you to approve instead of being handed to your other assistants. It's one SQLite file on your own machine. No cloud, no API keys, no hidden model calls.
+Stop explaining your project to every assistant again. Tell Claude Code something once, and Cursor, Codex and Gemini CLI can read it too, because they all share one memory. It's one SQLite file on your own machine. No cloud, no API keys, no hidden model calls. Already use another memory tool? See [how it compares](#how-it-compares).
 
 [![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)
@@ -20,18 +20,12 @@ Stop explaining your project to every assistant again. Tell Claude Code somethin
 
 *Recorded from a real run against a throwaway store ([transcript](https://github.com/calasdan-sketch/monomem/blob/main/docs/brand/demo-transcript.txt)): a write containing an injected instruction is held and never reaches the other agent's search, then rejected from the real dashboard. The two terminal panes are drawn from the real REST responses; the dashboard is a screen recording. Nothing sped up.*
 
-- **Knows who wrote it.** Every note carries a writer name the server stamps itself; a note can't claim to be from someone else.
-- **Holds suspicious writes.** Writes that look like prompt injection wait in quarantine until you approve them, and you can make a whole namespace approve-first so every agent write waits for you. The linter is pattern matching, so it doesn't catch everything.
+- **Knows who wrote it.** Every note records its writer. For callers that use a token, the server stamps the name; for local apps it is a label from that app's config file, so it tells your apps apart but is not proof.
+- **Holds suspicious writes.** A write that looks like prompt injection (an instruction planted to steer your other assistants) is held back until you approve it. You can also make a whole namespace (a named group of notes) approve-first, so every agent write waits for your OK. The check is pattern matching, so it doesn't catch everything.
 - **Takes back mistakes.** Edits and replacements keep the earlier versions (up to 20 per note by default) and can be undone. Deleting a note is permanent, on purpose.
 - **Sets itself up.** `setup` finds the supported apps on your computer, shows the exact lines it will change, backs up each file, and waits for you to type `y`.
 
 ## More detail
-
-Shared memory for AI coding agents that records who wrote what. Tell Claude,
-Cursor, Codex or Gemini something once and the rest already know it: one
-self-hosted SQLite file, over MCP or plain REST. Write a note in Claude Code,
-read it back in Cursor, Gemini CLI or Codex; one store, shared across tools from
-different companies, on your own machine.
 
 **Every note records who wrote it and keeps its earlier versions (up to 20 by
 default). Replacing or editing a note can be undone; deleting one is permanent,
@@ -332,9 +326,9 @@ the left column against [its README](https://github.com/modelcontextprotocol/ser
 
 | | Official MCP memory server | Monomem |
 |---|---|---|
-| Who wrote each note | Its README documents no author on a stored observation | Every note has a `written_by` the server stamps ([Who wrote this?](#who-wrote-this)) |
+| Who wrote each note | Its README documents no author on a stored observation | Every note has a `written_by`: stamped by the server for token callers, a label from the app's config file for local apps ([Who wrote this?](#who-wrote-this)) |
 | History and undo | Its README documents delete tools and no undo or version history | Earlier versions kept (20 per note by default) and restorable; a permanent delete is deliberate and cannot be undone |
-| Quarantine | Its README documents none | Suspicious writes wait for your approval, and a namespace can be approve-first ([docs/memory-linter.md](./docs/memory-linter.md)) |
+| Holding suspicious writes (quarantine) | Its README documents none | Suspicious writes wait for your approval, and a namespace can be approve-first ([docs/memory-linter.md](./docs/memory-linter.md)) |
 | REST API | Its README documents MCP tools and one MCP resource, no REST | REST API and dashboard next to MCP over stdio and HTTP |
 | Several apps on one memory | Yes: its README describes several clients sharing one file, with a lock so writes take turns | Yes, and each app or token gets its own writer name; `setup` wires eight clients |
 | Import | Not documented | `monomem import --from mcp-memory` reads its file ([docs/switching.md](./docs/switching.md)) |

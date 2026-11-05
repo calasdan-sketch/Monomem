@@ -7,7 +7,7 @@ import { Store } from "../src/store.js";
 import { injectContext } from "../src/context-inject.js";
 import { meterAdd, meterStats } from "../src/meter.js";
 import { createMcpServer, enabledToolNames } from "../src/mcp-server-core.js";
-import { receiptAdd, receiptList, receiptGet, renderCard } from "../src/receipts.js";
+import { receiptAdd, receiptList, receiptGet, renderCard, whyText, localTime } from "../src/receipts.js";
 
 const noGit = { branch: "", diffFiles: [] };
 const SECRET = "SECRET-TITLE-xyzzy";
@@ -89,6 +89,24 @@ describe("receipts", () => {
     }
     assert.ok(!receiptList(s).some((x) => x.session_id === "off"));
     s.close();
+  });
+
+  test("footnote is two lines, 1 session is singular", () => {
+    const svg = renderCard({ sessions: 1, injections: 1, injected_tokens: 10, saved_tokens: 0, llm_tokens: 0 });
+    assert.ok(svg.includes(">session<") && !svg.includes(">sessions<"));
+    assert.equal((svg.match(/<tspan /g) ?? []).length, 2);
+    assert.ok(!/<text[^>]*>[^<]{90,}<\/text>/.test(svg), "no single long text line");
+  });
+});
+
+describe("receipt wording", () => {
+  test("why tags read as words and times as local time", () => {
+    assert.equal(whyText("{recent 0d}"), "recent; today");
+    assert.equal(whyText("{files,kw 1d}"), "files, kw; 1 day old");
+    assert.equal(whyText("{12d}"), "12 days old");
+    assert.equal(whyText("odd"), "odd");
+    assert.match(localTime("2026-11-05T12:03:00.000Z"), /^2026-11-0[456] \d\d:\d\d$/);
+    assert.equal(localTime("not a date"), "not a date");
   });
 });
 
