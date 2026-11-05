@@ -146,6 +146,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `monomem facts` puts synonym keys on one row under the common key ("also written as db") and counts agreement
+  across spellings. The key hint always steers toward the common key, never away from it.
+- Clearer wording: `approve-first` lists the store-wide switch first; the Held card no longer repeats itself and shows
+  the held note's facts and tags; the start-of-session footer says how many tokens are the notes themselves; `why`
+  cuts long titles at a word. Times in `why` and `receipts` are local with the UTC offset (JSON stays in UTC).
+- README: approve-first protects against tools that only have the memory connection; an agent that can run shell
+  commands can run `monomem` itself (see SECURITY.md).
+
 - Disputes are grouped per namespace (the same key in two projects is not a dispute); an unscoped session start names
   the namespace. Synonym keys (`hosting`, `runs_on` for `deploy_target`) count as one setting in `conflicts`, `facts`,
   the session start and the dashboard. `similar_keys` also catches plurals and one-letter slips.
@@ -288,6 +296,12 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local app.
 
 ### Fixed
+
+- `monomem drill` failed and `health` graded C when `approve-first --all on` was set. The drill's own setup notes are
+  now written as the operator; an attack that approve-first holds counts as held.
+- A token label such as `cli (x` could look like the `cli` marker in the start-of-session list; it no longer can.
+  Merging notes (consolidation) now respects approve-first. `monomem facts --check` exits 2 on a usage error or a
+  missing database, so a misconfigured CI run cannot pass as clean.
 
 - `monomem fact remove` on a pinned note now needs a person at a terminal, like every other change to a pinned note,
   and it is recorded as a `cli` edit.
