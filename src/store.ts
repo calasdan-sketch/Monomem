@@ -2910,6 +2910,8 @@ export class Store {
    * stalled read is not. Never call this inside a write transaction: it is
    * only for fire-and-forget autocommit counter bumps.
    */
+  private static accessSkipReported = false;
+
   private bestEffortWrite(fn: () => void): void {
     try {
       this.db.exec("PRAGMA busy_timeout = 0;");
@@ -3103,9 +3105,10 @@ export class Store {
    * Returns "live" when a still-running disable owns an aside file (leave it).
    */
   private recoverStrandedKey(): "none" | "restored" | "live" {
-    if (!this.hasEncryptedRows()) return "none";
+    // Cheap check first: listing aside key files costs a directory read; hasEncryptedRows scans the notes table.
     const asides = this.asideKeys();
     if (asides.length === 0) return "none";
+    if (!this.hasEncryptedRows()) return "none";
     let live = false;
     for (const a of asides) {
       let alive = false;
@@ -7014,16 +7017,26 @@ export class Store {
       // Redact before cutting, so a secret is never half-kept; the 2000-character cap only bounds the redaction work.
       const preview = redact(q.slice(0, 2000)).text.replace(/\s+/g, " ").trim().slice(0, ACCESS_PREVIEW_MAX);
       const key = preview ? this.writeKey() : null;
-      this.db
-        .prepare("INSERT INTO access_log (at, writer, tool, namespaces, query, results) VALUES (?, ?, ?, ?, ?, ?)")
-        .run(
-          new Date().toISOString(),
-          currentWriter(),
-          e.tool.slice(0, 100),
-          [...namespaces].filter(Boolean).sort().join(",").slice(0, 500),
-          key ? encrypt(preview, key, ACCESS_AAD) : preview,
-          Math.max(0, Math.floor(results) || 0)
-        );
+      // Best-effort, like the access counters: a read must never wait behind another process's write lock for this row
+      // (it used to, for up to the full busy timeout). A row skipped under contention is reported once per process.
+      let wrote = false;
+      this.bestEffortWrite(() => {
+        this.db
+          .prepare("INSERT INTO access_log (at, writer, tool, namespaces, query, results) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(
+            new Date().toISOString(),
+            currentWriter(),
+            e.tool.slice(0, 100),
+            [...namespaces].filter(Boolean).sort().join(",").slice(0, 500),
+            key ? encrypt(preview, key, ACCESS_AAD) : preview,
+            Math.max(0, Math.floor(results) || 0)
+          );
+        wrote = true;
+      });
+      if (!wrote && !Store.accessSkipReported) {
+        Store.accessSkipReported = true;
+        console.error("[monomem] read access log: a row was skipped because the database was busy (reads are never made to wait for it)");
+      }
     } catch {
       // The access log must never break a read.
     }

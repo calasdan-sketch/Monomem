@@ -52,8 +52,11 @@ export function receiptAdd(
 ): void {
   const days = accessLogDays();
   if (!r.sessionId || !r.shown.length || days === 0) return;
+  const db = store.captureDb();
+  // Session start must never wait behind another process's write lock for a receipt: fail fast, say so, keep going.
+  const prev = Number((db.prepare("PRAGMA busy_timeout").get() as Record<string, unknown> | undefined)?.timeout ?? 0);
   try {
-    const db = store.captureDb();
+    db.exec("PRAGMA busy_timeout = 0;");
     db.exec(SCHEMA);
     db.prepare("DELETE FROM memory_receipts WHERE at < ?").run(new Date(now - days * 86_400_000).toISOString());
     db.prepare("DELETE FROM memory_receipts WHERE session_id = ?").run(r.sessionId);
@@ -62,6 +65,12 @@ export function receiptAdd(
     r.shown.forEach((n, i) => ins.run(r.sessionId, n.id, r.namespace, r.client, at, i + 1, n.why, Math.max(0, Math.round(n.tokens))));
   } catch (e) {
     process.stderr.write(`monomem: receipt not saved (${(e as Error).message})\n`);
+  } finally {
+    try {
+      db.exec(`PRAGMA busy_timeout = ${prev};`);
+    } catch {
+      /* the connection is gone; nothing to restore */
+    }
   }
 }
 

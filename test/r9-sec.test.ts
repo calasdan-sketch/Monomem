@@ -186,3 +186,23 @@ test("ordinary command values are legitimate facts; instruction shapes are flagg
     assert.ok(flaggedFactValue(bad), bad);
   }
 });
+
+test("a read never waits behind another process's write lock to log itself", async () => {
+  const { Store } = await import("../src/store.js");
+  const { DatabaseSync } = await import("node:sqlite");
+  const { mkdtempSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const db = join(mkdtempSync(join(tmpdir(), "mm-lock-")), "s.db");
+  const s = new Store(db);
+  s.create({ title: "a", body: "hello" });
+  const lock = new DatabaseSync(db);
+  lock.exec("BEGIN IMMEDIATE");
+  lock.prepare("UPDATE notes SET rev = rev WHERE id = 1").run();
+  const t = Date.now();
+  s.logAccess({ tool: "state_search", query: "hello", results: 1 });
+  assert.ok(Date.now() - t < 1000, `logAccess waited ${Date.now() - t} ms`);
+  lock.exec("ROLLBACK");
+  lock.close();
+  s.close();
+});
