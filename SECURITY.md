@@ -74,7 +74,8 @@ content as untrusted input to your agents** — see "Memory safety" below.
 
 ## Writer trust (1.4.0, hardened in 1.4.1)
 
-A note's `written_by` is stamped by the server from the authenticated token; an admin can put a writer on a
+A note's `written_by` is stamped by the server from the authenticated token for REST and MCP-over-HTTP callers (for a
+local stdio app it is a label from that app's config, `MONOMEM_CLIENT`, which is not authenticated); an admin can put a writer on a
 per-namespace distrust list that every read path honours (through one gate, with a guard test), and a JSON export
 made with `--attest` / `?attest=1` carries Ed25519 attestations so a server you chose to trust can vouch for a
 note's original author. Read [docs/trust.md](./docs/trust.md) for exactly what this proves and does not.
@@ -169,6 +170,14 @@ prompt-injection / "memory poisoning"** channel. Layers:
 These protect memory from agents that reach it through MCP or REST. **An agent with a shell tool can run the `monomem`
 CLI itself, so none of them stops an agent that can run commands.**
 
+- **Operator gate on the CLI.** These commands lower protection, so they refuse to run unless both standard input and
+  output are a terminal, and then ask for a typed `yes`; there is no `--yes` for them: `unpin`, `approve-first <ns> off`,
+  `resume`, `quarantine approve`, `trust undistrust`, `trust attester-add`, `trust attester-unrevoke` and `token add`.
+  Raising protection (`pin`, `approve-first on`, `trust distrust`, `token remove`) stays scriptable. This raises the bar
+  against an agent that runs the CLI through a non-interactive shell tool (it gets a clear refusal and nothing changes).
+  It is **not a guarantee**: a tool that allocates a pseudo-terminal can pass the terminal check and type the word, and
+  an agent that can edit the database file or `tokens.json` directly does not need the CLI at all. Other CLI commands are
+  not gated, including ones that weaken protection (`encrypt disable`) or destroy data (`delete --yes`).
 - **Approve-first namespaces** (`monomem approve-first`): writes that do not come from the local CLI are held in the
   quarantine queue until approved. An admin REST token is treated like any other REST caller, so it is held too.
 - **Pinned notes** (`monomem pin`): only the CLI can edit, forget, restore, replace or delete them. An admin token can

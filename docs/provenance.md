@@ -11,7 +11,7 @@ whole truth: who sets each, when it changes, and whether a distrust rule or `not
 
 | Field | Question it answers | Set by | Changes when | Distrust rule / `not_written_by` |
 |---|---|---|---|---|
-| `written_by` | who last changed the **content** (title or body)? | the server, from the token label or process marker | every content edit (not tags, status, archive); a merge | yes (current writer) |
+| `written_by` | who last changed the **content** (title or body)? | the server: from the token label for token callers; for a local stdio app, a label set in that app's config (`MONOMEM_CLIENT`, not authenticated); for a CLI or server job, a fixed marker | every content edit (not tags, status, archive); a merge | yes (current writer) |
 | `created_by` | who first wrote it? | the server | never | no, on its own (kept for display and audit) |
 | `writer_id` | which database minted that label? `<server_id>/<written_by>` | derived | with `written_by` | the id form of a rule uses it |
 | `merged_from_writers` | whose hands has the content passed through? (the **taint set**) | the server: merge sources, every earlier content writer, claimed names from an import | **only grows**; survives edits and exports | yes: any listed name matches |

@@ -14,7 +14,7 @@ import { setProcessWriter } from "./actor.js";
 /** Every command main() accepts, for the unknown-command check and the "did you mean" hint. */
 const COMMANDS = [
   "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
-  "consolidate", "rebuild-edges", "relevant", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
+  "consolidate", "rebuild-edges", "relevant", "search", "token", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
   "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality",
   "encrypt", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "audit",
   "help", "--help", "-h", "--version", "-v", "version",
@@ -58,7 +58,7 @@ function shortUsage(): void {
       "  mcp                     Run the MCP server over stdio (what your apps launch)",
       "",
       "Daily",
-      "  relevant \"message\"      Show the notes that relate to a sentence",
+      "  relevant \"message\"      Show the notes that relate to a sentence (search \"words\" does the same)",
       "  changes                 What changed while you were away",
       "  history <id>            A note's earlier versions (history restore <id> <version> puts one back)",
       "  pin <id> | unpin <id>   Pin a note so agents can read it but not change it",
@@ -67,6 +67,7 @@ function shortUsage(): void {
       "  quarantine              Review writes that were held (by the linter or an approve-first namespace)",
       "  approve-first           Hold every agent write to a namespace until you approve it",
       "  trust                   Distrust a writer; decide which other servers' exports to believe",
+      "  token                   Make, list or remove access tokens for your apps (add needs a terminal)",
       "  rollback --writer w --since 2h   Undo what one writer did (shows a plan first)",
       "  access                  Who read memory, and when",
       "",
@@ -137,7 +138,7 @@ function usage(all = false): void {
       "            progress to stderr. Reports {created, removed} edge",
       "            counts. O(n^2) — maintenance, not interactive.",
       "            When: after a bulk import, or after changing the threshold.",
-      "  relevant \"some natural language message\" [--limit 5] [--namespace ns] [--written-by w] [--not-written-by w] [--include-distrusted]",
+      "  relevant|search \"some natural language message\" [--limit 5] [--namespace ns] [--written-by w] [--not-written-by w] [--include-distrusted]",
       "            Extract keywords from a message and show the relevant notes.",
       "            Prints the keywords used alongside the results.",
       "            When: you have a vague message and want the memory it touches.",
@@ -185,6 +186,10 @@ function usage(all = false): void {
       "         | export-key --out file | rotate] [--json]   (monomem trust --help)",
       "            The trust policy: writers whose notes are left out of every read (and never run),",
       "            and the other servers whose signed exports an import will believe. See docs/trust.md.",
+      "  token add --label <name> --scope read|write|admin [--namespace ns] | token list | token remove <label>",
+      "            Make a random access token for an app and save it in tokens.json (shown once; restart a running server after).",
+      "            list shows labels and scopes only. Commands that lower protection (token add, trust undistrust/attester-add/",
+      "            attester-unrevoke, quarantine approve, unpin, approve-first off, resume) need a real terminal and a typed yes.",
       "  sync --git <repo-folder> [--remote name] [--encrypt] [--key-file f] [--dry-run] [--no-push] [--yes]",
       "            Keep your notes in step across your own computers through a PRIVATE git repository you own: fetch, merge,",
       "            three-way merge into the database, write back, commit, push. No Monomem server. --encrypt seals every",
@@ -265,6 +270,24 @@ function usage(all = false): void {
 const DOCTOR_MAX_DATA_BYTES = 1e9;
 const DOCTOR_MAX_BACKLOG = 10_000;
 
+/** doctor: settings that weaken protection, plus a data folder a cloud-sync client may copy. Warnings only. */
+async function doctorSecurityChecks(dataDir: string, bindHost: string, warn: (m: string) => void): Promise<void> {
+  const { lintPolicy } = await import("./lint.js");
+  const policy = lintPolicy();
+  if (policy.secret === "warn" || policy.injection === "warn") {
+    warn(`MONOMEM_LINT="${process.env.MONOMEM_LINT}" stores notes the memory linter would otherwise hold or refuse (secrets: ${policy.secret}, injection: ${policy.injection}). Remove it unless you chose this.`);
+  }
+  if (process.env.MONOMEM_STDIO_ADMIN_TOOLS === "1") {
+    warn("MONOMEM_STDIO_ADMIN_TOOLS=1 lets an agent on the stdio server use the admin tools (approve its own quarantined writes, unpin, delete). Unset it unless you want that.");
+  }
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(bindHost)) {
+    warn(`MONOMEM_BIND=${bindHost} is not a loopback address: anything that can reach this machine on the network can reach the API, so it must be behind your own authenticated tunnel (INFRA.md).`);
+  }
+  if (/(?:^|[\\/])(?:OneDrive[^\\/]*|Dropbox[^\\/]*|iCloud Drive[^\\/]*|iCloudDrive|Google Drive[^\\/]*|GoogleDrive[^\\/]*|Mobile Documents)(?:[\\/]|$)/i.test(dataDir)) {
+    warn(`data dir ${dataDir} is inside a cloud-sync folder (OneDrive, Dropbox, iCloud or Google Drive): the sync client uploads the database and token, and can corrupt a live SQLite file. See SECURITY.md; set MONOMEM_HOME to a local folder.`);
+  }
+}
+
 async function doctor(): Promise<void> {
   const {
     DB_PATH,
@@ -282,7 +305,7 @@ async function doctor(): Promise<void> {
   const { resolve: resolvePath } = await import("node:path");
   const { Store } = await import("./store.js");
   // Colour only for a person at a terminal: not when piped, and not when NO_COLOR is set (no-color.org).
-  const colour = process.stdout.isTTY && !process.env.NO_COLOR;
+  const colour = (process.stdout.isTTY || process.env.FORCE_COLOR) && !process.env.NO_COLOR;
   const tag = (t: string, code: number) => (colour ? `\x1b[${code}m${t}\x1b[0m` : t);
   const ok = (m: string) => console.log("  " + tag("[ok]", 32) + "   " + m);
   const warn = (m: string) => console.log("  " + tag("[warn]", 33) + " " + m);
@@ -350,6 +373,7 @@ async function doctor(): Promise<void> {
     const s = new Store(DB_PATH);
     const r = s.list({ limit: 1 });
     const edges = s.edgeCount();
+    const sample = edges === 0 && r.total >= 2 ? s.list({ limit: 60 }).notes : [];
     distrustCount = s.distrustRules().length;
     const { meterStats, meterLine } = await import("./meter.js");
     const footprint = meterLine(meterStats(s));
@@ -359,7 +383,14 @@ async function doctor(): Promise<void> {
     // Migration v4 adds the similarity-edge table but does not score
     // existing notes: a store upgraded from 1.0.0 has notes and no edges
     // until a one-time rebuild.
-    if (r.total >= 2 && edges === 0) {
+    // A new store of unrelated notes also has no edges, so warn only when two notes ARE similar enough
+    // to have been linked. ponytail: looks at the 60 newest notes only; widen if old stores slip through.
+    const { cosineSimilarity } = await import("./consolidate.js");
+    const { EDGE_SIMILARITY_THRESHOLD } = await import("./store.js");
+    const similarPair = sample.some((a, i) =>
+      sample.slice(i + 1).some((b) => a.namespace === b.namespace && cosineSimilarity(`${a.title} ${a.body}`, `${b.title} ${b.body}`) >= EDGE_SIMILARITY_THRESHOLD)
+    );
+    if (similarPair) {
       warn(
         "notes but no similarity edges (store created before 1.1?) — run " +
           "`monomem rebuild-edges` once to link existing notes"
@@ -369,6 +400,8 @@ async function doctor(): Promise<void> {
     dbProblem = true;
     warn("database problem: " + (e as Error).message);
   }
+
+  await doctorSecurityChecks(DATA_DIR, BIND_HOST, warn);
 
   // Pre-upgrade copies (`<db>.pre-v*-backup`) hold the notes as they were before an upgrade, outside
   // retention, deletes and at-rest encryption. Say that they exist, how big and how old, and how to remove them.
@@ -1780,6 +1813,7 @@ async function trustCmd(): Promise<void> {
               `${matched === 0 ? " - none yet: check the spelling against the written_by of a note (`monomem recall --include-distrusted`): labels are exact and case-sensitive" : ""}).`
           );
         } else {
+          await requireOperator(`trust undistrust ${writer} [${ns}]`);
           const removed = store.distrustRemove(ns!, writer);
           show({ removed }, removed ? `No longer distrusting "${writer}" in [${ns}].` : `"${writer}" was not on the list for [${ns}].`);
         }
@@ -1791,6 +1825,7 @@ async function trustCmd(): Promise<void> {
           console.error("Usage: monomem trust attester-add <public-key> --server-id <id> [--label <text>] [--not-after <ISO time>] [--any-server]   (a key starting with \"-\": --public-key <key>)");
           process.exit(1);
         }
+        await requireOperator("trust attester-add");
         const r = store.attesterAdd({
           public_key: key,
           server_id: str(flags["server-id"]),
@@ -1832,6 +1867,7 @@ async function trustCmd(): Promise<void> {
           console.error("Usage: monomem trust attester-unrevoke <key-id>");
           process.exit(1);
         }
+        await requireOperator(`trust attester-unrevoke ${id}`);
         const removed = store.attesterUnrevoke(id);
         show({ removed }, removed ? `Key ${id} is no longer revoked (add it with attester-add if you want to trust it).` : `Key ${id} was not on the revocation list.`);
         return;
@@ -1848,6 +1884,40 @@ async function trustCmd(): Promise<void> {
     throw e;
   } finally {
     store.close();
+  }
+}
+
+// `monomem token add --label <name> --scope read|write|admin [--namespace ns] | list | remove <label>`: edits tokens.json.
+// `add` hands out access, so it needs the operator gate; `list` and `remove` lower nothing.
+async function tokenCmd(): Promise<void> {
+  const { DATA_DIR } = await import("./config.js");
+  const { addToken, listTokens, removeToken, TokenFileError, tokensPath } = await import("./token-file.js");
+  const { flags, rest } = parseFlags(process.argv.slice(3), { values: ["label", "scope", "namespace"], bools: [] });
+  const action = rest[0];
+  try {
+    if (action === "add") {
+      const label = str(flags.label);
+      const scope = str(flags.scope);
+      if (!label || !scope) throw new TokenFileError("Usage: monomem token add --label <name> --scope read|write|admin [--namespace ns]");
+      await requireOperator(`token add (${scope} token "${label}")`);
+      const row = addToken(DATA_DIR, label, scope, str(flags.namespace));
+      console.log(`Added token "${row.label}" (${row.scope}${row.namespace ? `, pinned to namespace "${row.namespace}"` : ""}) to ${tokensPath(DATA_DIR)}.`);
+      console.log(`\n  ${row.token}\n`);
+      console.log("This is shown ONCE and cannot be shown again: copy it into the app that will use it now. Anyone holding it has that access.");
+      console.log("A running server reads tokens.json at start-up: restart it for the new token to work.");
+    } else if (action === "list" && rest.length === 1) {
+      const rows = listTokens(DATA_DIR);
+      if (!rows.length) console.log(`No tokens in ${tokensPath(DATA_DIR)} (the primary token is not listed here).`);
+      for (const r of rows) console.log(`${r.label}  ${r.scope}${r.namespace ? `  namespace=${r.namespace}` : ""}`);
+    } else if (action === "remove" && rest.length === 2) {
+      console.log(removeToken(DATA_DIR, rest[1]) ? `Removed token "${rest[1]}". Restart a running server for it to stop working.` : `No token labelled "${rest[1]}" in ${tokensPath(DATA_DIR)}.`);
+    } else {
+      throw new TokenFileError("Usage: monomem token add --label <name> --scope read|write|admin [--namespace ns] | token list | token remove <label>");
+    }
+  } catch (e) {
+    if (!(e instanceof TokenFileError)) throw e;
+    console.error(e.message);
+    process.exit(1);
   }
 }
 
@@ -1889,6 +1959,7 @@ async function quarantineCmd(): Promise<void> {
       console.log(`Rejected quarantined write #${id}.`);
       return;
     }
+    await requireOperator(`quarantine approve ${id}`);
     const note = store.approveQuarantine(id);
     await maybeEmbed(store, note);
     console.log(`Approved #${id} -> note #${note.id} "${note.title}"`);
@@ -1919,6 +1990,7 @@ async function approveFirstCmd(): Promise<void> {
       console.log(list.length ? `Approve-first namespaces: ${list.join(", ")}` : "No namespace is approve-first.");
       return;
     }
+    if (state === "off") await requireOperator(`approve-first off for "${ns.trim()}"`);
     store.setApproveFirst(ns, state === "on");
     console.log(
       state === "on"
@@ -1979,6 +2051,7 @@ async function floodCmd(resume: boolean): Promise<void> {
   const store = new Store(DB_PATH);
   try {
     if (resume) {
+      await requireOperator(`resume ${label.trim()}`);
       console.log(store.resumeWriter(label) ? `Resumed "${label.trim()}": its writes are accepted again.` : `"${label.trim()}" was not paused.`);
       return;
     }
@@ -2245,6 +2318,7 @@ async function supersedeCmd(kind: "supersede" | "history" | "pin" | "unpin" | "r
   const store = new Store(DB_PATH);
   try {
     const args = process.argv.slice(3);
+    if (kind === "unpin") await requireOperator(`unpin ${args[0] ?? ""}`.trim());
     process.exitCode =
       kind === "supersede"
         ? await supersedeCli(store, args, io)
@@ -2355,6 +2429,29 @@ async function uninstallCmd(): Promise<void> {
   });
 }
 
+/**
+ * Operator gate for commands that LOWER protection (undistrust, attester-add/unrevoke, quarantine approve).
+ * Needs a real terminal on both ends and a typed "yes"; there is no --yes. This raises the bar against an
+ * agent running the CLI through a non-interactive shell tool. It is not a guarantee: a tool that allocates
+ * a pseudo-terminal can pass it (SECURITY.md).
+ */
+async function requireOperator(what: string): Promise<void> {
+  if (!(process.stdin.isTTY && process.stdout.isTTY)) {
+    console.error(
+      `Refused: ${what} lowers this store's protection, so a person must run it in a terminal and type a confirmation. ` +
+        "This is not a terminal (an agent's shell tool, a script or a pipe), and there is no --yes for it. Open a terminal and run the same command there."
+    );
+    process.exit(1);
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise<string>((resolve) => rl.question(`${what} lowers protection. Type "yes" to continue: `, resolve));
+  rl.close();
+  if (answer.trim().toLowerCase() !== "yes") {
+    console.error("Not confirmed; nothing changed.");
+    process.exit(1);
+  }
+}
+
 function askYesNo(prompt: string): Promise<boolean> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
@@ -2448,6 +2545,7 @@ async function main(): Promise<void> {
       await rebuildEdges();
       break;
     case "relevant":
+    case "search":
       await relevant();
       break;
     case "changes":
@@ -2470,6 +2568,9 @@ async function main(): Promise<void> {
       break;
     case "trust":
       await trustCmd();
+      break;
+    case "token":
+      await tokenCmd();
       break;
     case "quarantine":
       await quarantineCmd();

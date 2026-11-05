@@ -134,6 +134,20 @@ const INJECTION_PATTERNS: Array<[string, RegExp]> = [
     /\b(?:ignore|disregard|bypass|override|skip)\s+(?:all|any|every)\s+(?:of\s+(?:the|your|my)\s+)?(?:[\w-]+\s+){0,2}(?:limits?|limitations|restrictions?|polic(?:y|ies)|guardrails?|constraints?|caps?|approvals?|requirements?|safeguards?|checks?)\b/i,
   ],
   [
+    // Turning the agent against the person it works for. "ignore the user" alone is common developer prose
+    // (user agent, user table), so the user form needs a following instructions-style noun, or "disregard".
+    "instruction override",
+    /\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:(?:of\s+)?(?:the|your)\s+)?(?:user|human|operator)(?:'s|s')?\s+(?:instructions?|requests?|wishes|commands?|messages?|prompts?|directions)\b|\bdisregard\s+(?:the|your)\s+(?:user|human)\b|\bdisregard\s+(?:all\s+|any\s+|the\s+|your\s+)*(?:instructions?|directions|guidelines)\b/i,
+  ],
+  [
+    // A standing order for the agent that names a hostile action: send/forward/email/upload/post something
+    // TO a destination, ignore/obey/reveal/leak, or act "without asking". "from now on we use pnpm" and
+    // "from now on you should always run the tests" are ordinary preferences and do not match (the directive
+    // category below still warns on the generic deferred trigger).
+    "standing order",
+    /\bfrom\s+now\s+on,?\s+you\s+(?:must|will|should|shall)\s+(?:always\s+|never\s+)?(?:(?:send|forward|email|upload|post)\b[^.!?\n]{0,80}?\b(?:to|at|into)\s+\S+|(?:ignore|disregard|obey|reveal|leak|exfiltrate)\b|[^.!?\n]{0,60}\bwithout\s+(?:asking|telling|confirm\w*|notifying|checking))/i,
+  ],
+  [
     "role reassignment",
     /\byou\s+are\s+now\s+(?:(?:a|an|the)\s+)?(?:\w+\s+){0,2}(?:assistant|ai|model|agent|bot|persona|jailbroken|unrestricted|unfiltered|dan)\b/i,
   ],
@@ -200,6 +214,15 @@ const FLAG_TAGS_RE = /\u{1F3F4}\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|
 // Variation selectors carry no meaning in a run; 4+ in a row can encode hidden bytes.
 const VS_RUN_RE = /[\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}]{4,}/u;
 
+/**
+ * Leetspeak ("1gn0re", "d1sregard") back to letters, only inside words that already mix letters with
+ * look-alike digits or @ $, so plain numbers, versions and prices are left alone.
+ */
+const LEET: Record<string, string> = { "0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", $: "s" };
+function unLeet(t: string): string {
+  return t.replace(/\S+/g, (w) => (/[a-z]/i.test(w) && /[013457@$]/.test(w) ? w.replace(/[013457@$]/g, (c) => LEET[c]) : w));
+}
+
 /** First injection label found in `text`, or null. */
 export function scanForInjection(text: string | undefined): string | null {
   if (!text) return null;
@@ -210,8 +233,10 @@ export function scanForInjection(text: string | undefined): string | null {
   // Hidden text first, so a later label (e.g. "harness tool-syntax", which capture suppresses) cannot mask it.
   // Any TAG char is invisible; only the three subdivision flags are exempt.
   if (/[\u{E0000}-\u{E007F}]/u.test(text.replace(FLAG_TAGS_RE, "")) || VS_RUN_RE.test(text.replace(/\p{Cf}/gu, ""))) return "hidden Unicode tag text";
+  const unleeted = unLeet(prose);
   for (const [label, re] of INJECTION_PATTERNS) {
     if (re.test(label === "system-prompt marker" ? prose : t)) return label;
+    if (unleeted !== prose && label !== "system-prompt marker" && re.test(unleeted)) return label;
   }
   return null;
 }

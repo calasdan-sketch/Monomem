@@ -260,7 +260,14 @@ describe("approve-first namespaces", () => {
       r = cli();
       assert.match(r.stdout, /Approve-first namespaces: team/);
       assert.equal(cli("team", "maybe").status, 1);
-      assert.equal(cli("team", "off").status, 0);
+      // Lowering protection needs a terminal and a typed yes: from a script it is refused and nothing changes.
+      const off = cli("team", "off");
+      assert.equal(off.status, 1);
+      assert.match(off.stderr, /person must run it in a terminal/);
+      assert.match(cli().stdout, /Approve-first namespaces: team/);
+      const s2 = new Store(db);
+      s2.setApproveFirst("team", false); // the store method itself is unchanged
+      s2.close();
       assert.match(cli().stdout, /No namespace is approve-first/);
     } finally {
       rmSync(dir, { recursive: true, force: true });

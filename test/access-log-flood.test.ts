@@ -193,9 +193,14 @@ describe("read access log", () => {
       assert.match(r.stdout, /stdio\s+state_search\s+3 result\(s\)\s+team\s+"deploy window"/);
       assert.match(r.stdout, /Paused by the flood guard: stdio/);
       assert.match(cli("flood").stdout, /Paused: stdio/);
+      // Lifting a pause lowers protection: from a script (no terminal) it is refused and the pause stays.
       r = cli("resume", "stdio");
-      assert.equal(r.status, 0, r.stderr);
-      assert.match(r.stdout, /Resumed "stdio"/);
+      assert.equal(r.status, 1);
+      assert.match(r.stderr, /person must run it in a terminal/);
+      assert.match(cli("flood").stdout, /Paused: stdio/);
+      const s2 = new Store(db);
+      assert.equal(s2.resumeWriter("stdio"), true);
+      s2.close();
       assert.match(cli("flood").stdout, /No writer is paused/);
       assert.equal(cli("resume").status, 1);
     } finally {
