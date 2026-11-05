@@ -76,6 +76,28 @@ const ACTIONS: readonly LintAction[] = ["block", "quarantine", "warn"];
 
 let warnedBadPolicy = false;
 
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+const LINT_WORDS = ["block", "quarantine", "warn", "secrets", "injection", "entropy", "pii", "directive"];
+
+/** "did you mean quarantine?" for each unrecognised word within edit distance 2 of a real one (a rough guess, not a parser). */
+export function lintDidYouMean(raw: string): string {
+  const hints: string[] = [];
+  for (const w of raw.toLowerCase().split(/[,=s]+/).filter(Boolean)) {
+    if (LINT_WORDS.includes(w)) continue;
+    const best = LINT_WORDS.map((c) => [c, editDistance(w, c)] as const).sort((x, y) => x[1] - y[1])[0];
+    if (best && best[1] <= 2) hints.push(`"${w}": did you mean ${best[0]}?`);
+  }
+  return hints.length ? ` ${hints.join(" ")}` : "";
+}
+
 /**
  * Parse MONOMEM_LINT. Unknown values fall back to the default (with one
  * stderr warning) -- a typo must never silently disable the linter.
@@ -86,7 +108,7 @@ export function lintPolicy(raw: string | undefined = process.env.MONOMEM_LINT): 
     warnedBadPolicy = true;
     console.error(
       `[monomem] MONOMEM_LINT="${raw}" has unrecognized parts; using ` +
-        `secrets=${policy.secret}, injection=${policy.injection}`
+        `the default for them (currently secrets=${policy.secret}, injection=${policy.injection}).${lintDidYouMean(String(raw))}`
     );
   }
   return policy;

@@ -173,7 +173,7 @@ monomem conflicts   # possible disagreements between writers
 monomem receipts    # which notes the last session start showed, and why
 ```
 
-`conflicts` only flags: it matches exact facts and keys, so a disagreement that is reworded is missed, and it never changes a note. `health` opens your store (an older database file is upgraded once) and writes one small row noting how long the audit log was, so the next run can see lines removed. These are local commands with no cloud call.
+`conflicts` only flags: it matches exact facts and keys, so a disagreement that is reworded is missed, and it never changes a note. `health` opens your store (an older database file is upgraded once) and writes one small row noting how long the audit log was, so the next run can see lines removed. These are local commands: `drill` and `health` run the drill with embeddings forced off, so they make no embedding call (and no call to any other machine; the drill talks only to a temporary server on 127.0.0.1) even when `MONOMEM_EMBEDDINGS` and a remote `MONOMEM_EMBED_URL` are set (`health` only reports that such a URL is configured).
 
 In Claude Code you can also install Monomem as a plugin instead of running `setup` ([what the plugin does and does not do](./docs/plugin.md)):
 

@@ -64,7 +64,7 @@ const CLOUD_SYNC = /(?:^|[\\/])(?:OneDrive[^\\/]*|Dropbox[^\\/]*|iCloud Drive[^\
 
 /** The settings that weaken protection: the one list `monomem doctor` and `monomem health` both use. Each finding counts separately. */
 export async function securityFindings(dataDir: string, bindHost: string): Promise<SecurityFinding[]> {
-  const { lintPolicy, lintPolicyUnrecognised } = await import("./lint.js");
+  const { lintPolicy, lintPolicyUnrecognised, lintDidYouMean } = await import("./lint.js");
   const out: SecurityFinding[] = [];
   const p = lintPolicy();
   const policy = `secrets: ${p.secret}, injection: ${p.injection}`;
@@ -118,7 +118,7 @@ export async function securityFindings(dataDir: string, bindHost: string): Promi
     out.push({ id: "runner-legacy", label: "legacy runner heartbeats", status: "warn", short: "MONOMEM_RUNNER_ACCEPT_LEGACY accepts runner heartbeats with no writer marker", detail: "MONOMEM_RUNNER_ACCEPT_LEGACY lets a runner heartbeat with no server-stamped writer count as alive, so any writer that can post a note can fake a healthy runner. Upgrade the runner (1.3.4 or later) and remove it." });
   }
   if (lintPolicyUnrecognised()) {
-    out.push({ id: "lint-typo", label: "MONOMEM_LINT not understood", status: "warn", short: `MONOMEM_LINT="${printable(process.env.MONOMEM_LINT ?? "", 40)}" is not recognised, using the safe default`, detail: `MONOMEM_LINT="${printable(process.env.MONOMEM_LINT ?? "", 80)}" is not recognised (or only partly), so the safe default applies to the parts that were not understood. Check the spelling: values are block, quarantine, warn, or secrets=/injection=/entropy=/pii=/directive= each set to one of those.` });
+    out.push({ id: "lint-typo", label: "MONOMEM_LINT not understood", status: "warn", short: `MONOMEM_LINT="${printable(process.env.MONOMEM_LINT ?? "", 40)}" is not recognised, using the default for it (secrets=${p.secret}, injection=${p.injection})`, detail: `MONOMEM_LINT="${printable(process.env.MONOMEM_LINT ?? "", 80)}" is not recognised (or only partly), so the safe default applies to the parts that were not understood. Check the spelling: values are block, quarantine, warn, or secrets=/injection=/entropy=/pii=/directive= each set to one of those.${lintDidYouMean(process.env.MONOMEM_LINT ?? "")}` });
   }
   return out;
 }

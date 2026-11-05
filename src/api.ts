@@ -157,10 +157,18 @@ function requiredScope(method: string | undefined, path: string): Scope {
 // written_by / created_by are accepted and ignored: the server stamps the writer from the token.
 const POST_NOTE_FIELDS = ["namespace", "title", "body", "tags", "source", "created_at", "forget_after", "confidence", "facts", "written_by", "created_by"];
 const PUT_NOTE_FIELDS = ["namespace", "title", "body", "tags", "source", "forget_after", "confidence", "if_rev", "written_by", "created_by"];
+// Fields of a note the server returns. A client that GETs a note and PUTs it back whole sends these; they are ignored (never applied).
+// `rev` is ignored too: use `if_rev` for compare-and-swap.
+const PUT_READ_ONLY_FIELDS = [
+  "id", "rev", "created_at", "updated_at", "written_by", "created_by", "writer_id", "imported_written_by", "imported_created_by",
+  "imported_unverified", "attested_writer", "attested_by", "attested_writer_id", "merged_from_writers", "distrusted", "confidence_claimed_by",
+  "status", "superseded_by", "superseded_at", "superseded_by_writer", "access_count", "last_accessed", "expires_at", "archived_at",
+  "pinned", "session_id", "obs_type", "stale", "ageDays", "staleWarning", "unreadable", "encrypted", "neighbors", "history", "files", "score", "breakdown",
+];
 /** A 400 message naming the unknown top-level fields of a note body, or null when there are none. */
-export function unknownNoteFields(body: unknown, allowed: readonly string[]): string | null {
+export function unknownNoteFields(body: unknown, allowed: readonly string[], ignored: readonly string[] = []): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
-  const bad = Object.keys(body).filter((k) => !allowed.includes(k));
+  const bad = Object.keys(body).filter((k) => !allowed.includes(k) && !ignored.includes(k));
   return bad.length ? `unknown field${bad.length === 1 ? "" : "s"}: ${bad.map((k) => printable(k, 40)).join(", ")} (allowed: ${allowed.join(", ")})` : null;
 }
 
@@ -660,7 +668,8 @@ export function createApiServer(
           sendJson(res, 400, { error: "invalid JSON body" });
           return;
         }
-        const badPut = unknownNoteFields(parsed, PUT_NOTE_FIELDS);
+        const badPut = unknownNoteFields(parsed, PUT_NOTE_FIELDS, PUT_READ_ONLY_FIELDS);
+        if (!badPut && parsed && typeof parsed === "object") for (const k of PUT_READ_ONLY_FIELDS) delete (parsed as Record<string, unknown>)[k];
         if (badPut) {
           sendJson(res, 400, { error: badPut });
           return;

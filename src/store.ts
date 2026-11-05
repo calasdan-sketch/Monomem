@@ -1556,7 +1556,7 @@ export class Store {
    */
   private ensureArchiveLog(): void {
     try {
-      // Already there: write nothing (opening a database to read it must leave the file byte-for-byte alone).
+      // Already there: write nothing. Only the FIRST open of an older database adds the table and trigger (a one-time write); later opens leave the file alone.
       if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'notes_archive_log_ad'").get()) return;
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS archive_log (
