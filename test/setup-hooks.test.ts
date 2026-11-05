@@ -5,12 +5,13 @@ import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { applyOps } from "../src/jsonc-edit.js";
 import { CAPTURE_HOOKS, DEFAULT_OPTIONS, planHooks, runSetup, type SetupEnv, type SetupIO, type SetupOptions } from "../src/setup.js";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.js");
+// A fixed path that names the tool: hook detection looks for monomem/onememory/claude-bridge in the CLI path, so the test
+// must not depend on what the checkout folder happens to be called. planHooks never opens it.
+const CLI = "/opt/monomem/dist/src/cli.js";
 const roots: string[] = [];
 afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true });

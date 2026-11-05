@@ -1,6 +1,6 @@
 // `monomem drill`: replays the poisoning attacks on a COPY of the user's store with the user's own settings.
 import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
-import { test, describe } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,6 +9,16 @@ import { spawnSync } from "node:child_process";
 import { PROJECT_ROOT } from "../src/config.js";
 import { Store } from "../src/store.js";
 import { drillMain, renderDrill, runDrill } from "../src/drill.js";
+
+// The leftover check scans the temp folder for monomem-drill-* copies. In a full run other test files (other processes)
+// share that folder, so give this file a private one: os.tmpdir() reads these variables on every call.
+const privateTmp = mkdtempSync(join(tmpdir(), "drill-tmproot-"));
+const savedTmp = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP };
+before(() => void Object.assign(process.env, { TMPDIR: privateTmp, TMP: privateTmp, TEMP: privateTmp }));
+after(() => {
+  for (const [k, v] of Object.entries(savedTmp)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  rmSync(privateTmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
 
 const tidy = (p: string): void => rmSync(p, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 const leftovers = (): string[] => readdirSync(tmpdir()).filter((f) => f.startsWith("monomem-drill-"));

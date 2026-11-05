@@ -171,26 +171,31 @@ describe("3: REST/MCP validation", () => {
 });
 
 describe("4: auth tarpit", () => {
-  test("AuthTarpit: free failures are instant, later ones escalate and are capped", async () => {
+  test("AuthTarpit: free failures are instant, later ones escalate and are capped", async (ctx) => {
+    // Fake clock: exact delays instead of wall-clock budgets, so machine load cannot change the result.
+    ctx.mock.timers.enable({ apis: ["setTimeout", "Date"] });
     const t = new AuthTarpit(2, 40, 100);
-    const time = async () => {
+    const time = async (ip = "ip"): Promise<number> => {
       const t0 = Date.now();
-      await t.failed("ip");
+      let done = false;
+      void t.failed(ip).then(() => (done = true));
+      while (!done) {
+        await new Promise((r) => setImmediate(r)); // let promise callbacks run; the fake clock does not move by itself
+        if (!done) ctx.mock.timers.tick(1);
+      }
       return Date.now() - t0;
     };
-    assert.ok((await time()) < 30);
-    assert.ok((await time()) < 30);
-    assert.ok((await time()) >= 35, "3rd failure waits ~40ms");
-    assert.ok((await time()) >= 75, "4th waits ~80ms");
-    assert.ok((await time()) < 400, "capped at 100ms");
-    const other = Date.now();
-    await t.failed("other-ip");
-    assert.ok(Date.now() - other < 30, "per-IP tracking");
+    assert.equal(await time(), 0, "1st failure is free");
+    assert.equal(await time(), 0, "2nd failure is free");
+    assert.equal(await time(), 40, "3rd failure waits 40ms");
+    assert.equal(await time(), 80, "4th waits 80ms");
+    assert.equal(await time(), 100, "5th would wait 120ms, capped at 100ms");
+    assert.equal(await time("other-ip"), 0, "per-IP tracking");
   });
 
   test("REST: wrong tokens get slower, a valid token is never delayed", async () => {
     const prev = process.env.MONOMEM_TARPIT_STEP_MS;
-    process.env.MONOMEM_TARPIT_STEP_MS = "60";
+    process.env.MONOMEM_TARPIT_STEP_MS = "200";
     const store = new Store(join(dir, "state.db"));
     const server = createApiServer(store, [{ token: TOK, scope: "admin", label: "r" }]);
     if (prev === undefined) delete process.env.MONOMEM_TARPIT_STEP_MS;
@@ -205,12 +210,13 @@ describe("4: auth tarpit", () => {
         assert.equal(r.status, 401);
         times.push(Date.now() - t0);
       }
-      assert.ok(times[8] >= 150, `9th failure delayed (${times.join(",")})`);
-      assert.ok(times[0] < 100);
+      assert.ok(times[8] >= 750, `9th failure delayed (${times.join(",")})`); // (9-5) steps of 200 ms, minus timer slop
+      assert.ok(times[0] < times[8], `1st failure is not delayed like the 9th (${times.join(",")})`);
       const t0 = Date.now();
       const ok = await fetch(`${base}/notes`, { headers: { Authorization: `Bearer ${TOK}` } });
       assert.equal(ok.status, 200);
-      assert.ok(Date.now() - t0 < 100, "valid token not delayed");
+      const okMs = Date.now() - t0;
+      assert.ok(okMs < times[8], `valid token not delayed (${okMs} ms vs ${times[8]} ms for the 9th wrong one)`);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
       store.close();
