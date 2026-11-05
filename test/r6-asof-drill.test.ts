@@ -89,6 +89,12 @@ describe("MONOMEM_LINT typo", () => {
     assert.match(lintDidYouMean("secrets=wran,injection=block"), /did you mean warn\?/);
     assert.equal(lintDidYouMean("zzzzzzzz"), "");
   });
+
+  test("correctly spelled values give no hint", () => {
+    for (const ok of ["secrets=block,injection=quarantine", "pii=quarantine", "secrets=warn, injection=warn", "quarantine", "entropy=warn,directive=quarantine"]) {
+      assert.equal(lintDidYouMean(ok), "", ok);
+    }
+  });
 });
 
 describe("REST PUT of a whole note", () => {

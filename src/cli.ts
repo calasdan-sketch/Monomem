@@ -224,9 +224,9 @@ function usage(all = false): void {
       "            Runs through the memory linter.",
       "  quarantine [list | approve <id> | reject <id>]",
       "            Review writes the memory linter held (MONOMEM_LINT) or an approve-first namespace held.",
-      "  approve-first [<namespace> on|off]",
+      "  approve-first [<namespace> on|off | --all on|off]",
       "            Hold every agent write to a namespace in the quarantine queue until you approve it.",
-      "            No arguments: list the namespaces with it on. Writes from monomem commands are not held.",
+      "            --all on|off: the same for every namespace, including ones created later. No arguments: list the namespaces with it on, and the --all switch. Writes from monomem commands are not held.",
       "  access [--since 24h|ISO] [--writer label] [--limit 100] [--json]",
       "            Who read memory: time, writer label, tool or route, result count, namespaces and a short",
       "            redacted query preview (never note text). Kept MONOMEM_ACCESS_LOG_DAYS (30; 0 = off).",
@@ -2046,7 +2046,7 @@ async function approveFirstCmd(): Promise<void> {
   const { Store } = await import("./store.js");
   const [ns, state] = process.argv.slice(3);
   if (ns !== undefined && (!ns.trim() || (state !== "on" && state !== "off"))) {
-    console.error("Usage: monomem approve-first [<namespace> on|off]");
+    console.error("Usage: monomem approve-first [<namespace> on|off | --all on|off]");
     process.exit(1);
   }
   const store = new Store(DB_PATH);
@@ -2054,6 +2054,17 @@ async function approveFirstCmd(): Promise<void> {
     if (ns === undefined) {
       const list = store.approveFirstNamespaces();
       console.log(list.length ? `Approve-first namespaces: ${list.join(", ")}` : "No namespace is approve-first.");
+      console.log(`All namespaces: ${store.approveFirstAll() ? "on" : "off"}`);
+      return;
+    }
+    if (ns === "--all") {
+      if (state === "off") await requireOperator("approve-first off for all namespaces");
+      store.setApproveFirstAll(state === "on");
+      console.log(
+        state === "on"
+          ? "Approve-first is on for every namespace, including ones created later: agent writes wait in `monomem quarantine`."
+          : "Approve-first is off for all namespaces (any per-namespace setting still applies). Writes already held stay in `monomem quarantine`."
+      );
       return;
     }
     if (state === "off") await requireOperator(`approve-first off for "${ns.trim()}"`);

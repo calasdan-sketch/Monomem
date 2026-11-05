@@ -916,14 +916,26 @@ export function createApiServer(
       if (path === "/approve-first" && (req.method === "GET" || req.method === "PUT")) {
         if (req.method === "GET") {
           const all = store.approveFirstNamespaces();
-          sendJson(res, 200, { namespaces: nsCtx.active ? all.filter((n) => n === nsCtx.ownNamespace) : all });
+          sendJson(res, 200, { namespaces: nsCtx.active ? all.filter((n) => n === nsCtx.ownNamespace) : all, all: store.approveFirstAll() });
           return;
         }
-        let body: { namespace?: unknown; on?: unknown };
+        let body: { namespace?: unknown; on?: unknown; all?: unknown };
         try {
-          body = JSON.parse((await readBody(req)) || "{}") as { namespace?: unknown; on?: unknown };
+          body = JSON.parse((await readBody(req)) || "{}") as { namespace?: unknown; on?: unknown; all?: unknown };
         } catch {
           sendJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        if (body?.all === true) {
+          // Store-wide switch: a namespace-pinned token may not touch it.
+          if (typeof body.on !== "boolean") {
+            sendJson(res, 400, { error: "expected { all: true, on: boolean }" });
+          } else if (nsCtx.active) {
+            sendJson(res, 403, { error: "this token is limited to one namespace and cannot set approve-first for all" });
+          } else {
+            store.setApproveFirstAll(body.on);
+            sendJson(res, 200, { all: true, approve_first: body.on });
+          }
           return;
         }
         const ns = typeof body?.namespace === "string" ? body.namespace.trim() : "";

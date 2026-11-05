@@ -90,7 +90,7 @@ const LINT_WORDS = ["block", "quarantine", "warn", "secrets", "injection", "entr
 /** "did you mean quarantine?" for each unrecognised word within edit distance 2 of a real one (a rough guess, not a parser). */
 export function lintDidYouMean(raw: string): string {
   const hints: string[] = [];
-  for (const w of raw.toLowerCase().split(/[,=s]+/).filter(Boolean)) {
+  for (const w of raw.toLowerCase().split(/[,=\s]+/).filter(Boolean)) {
     if (LINT_WORDS.includes(w)) continue;
     const best = LINT_WORDS.map((c) => [c, editDistance(w, c)] as const).sort((x, y) => x[1] - y[1])[0];
     if (best && best[1] <= 2) hints.push(`"${w}": did you mean ${best[0]}?`);

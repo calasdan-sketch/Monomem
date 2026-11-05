@@ -163,11 +163,24 @@ An operator can make a namespace hold **every** agent write, flagged or not:
 monomem approve-first team on     # agent writes to "team" now wait here
 monomem approve-first             # list namespaces with it on
 monomem approve-first team off    # writes already held stay queued
+monomem approve-first --all on    # every namespace, including ones created later
+monomem approve-first --all off   # lowers protection: needs a terminal and a typed yes
 ```
 
-Over REST (admin token): `GET /approve-first` returns `{ namespaces }`, and
-`PUT /approve-first` with `{ "namespace": "team", "on": true }` sets it. A
-namespace-pinned admin sees and sets its own namespace only. No MCP tool
+`--all on` is for when you do not want to list namespaces one by one. It is a
+separate switch from the per-namespace list: turning it off leaves any
+namespace you set individually as it was. `monomem approve-first` with no
+arguments shows both.
+
+Turning approve-first off (one namespace or `--all`) lowers protection, so it
+asks you to type yes in a terminal. Turning it on works from a script.
+
+Over REST (admin token): `GET /approve-first` returns `{ namespaces, all }`, and
+`PUT /approve-first` with `{ "namespace": "team", "on": true }` sets it, or
+`{ "all": true, "on": true }` for every namespace. A namespace-pinned admin
+sees and sets its own namespace only, and cannot use `all`. REST cannot tell an
+operator from an agent holding an admin token, so the typed-yes gate applies
+to the command line only. No MCP tool
 changes it.
 
 A held write goes into the same queue with the reason

@@ -171,11 +171,11 @@ export function asOfFields(h: AsOfNote, decorate: (n: NoteRecord) => object = (n
 export function asOfHeader(view: AsOfView): string {
   const since = view.archiveSince;
   const arch = since && Date.parse(since) <= view.when.getTime()
-    ? "Archive and restore times are recorded from before this time."
-    : `Archive and restore times are recorded only since ${since ? localTimeOffset(since) : "(unknown)"}: a note archived and restored before then shows as live.`;
+    ? "Archive and restore history covers this time."
+    : `Archive and restore history only starts at ${since ? localTimeOffset(since) : "(unknown)"}, so a note archived and restored before then shows as live.`;
   const archived = view.archivedThen ? `
 ${view.archivedThen} ${view.archivedThen === 1 ? "note was" : "notes were"} archived or replaced then and ${view.archivedThen === 1 ? "is" : "are"} not shown.` : "";
-  return `Memory as of ${localTimeOffset(view.when)} (reconstructed from history; ${view.notKept} notes' text from that time is no longer kept)${archived}
+  return `Memory as of ${localTimeOffset(view.when)} (reconstructed from history${view.notKept ? `; ${view.notKept} ${view.notKept === 1 ? "note's text" : "notes' text"} from that time is no longer kept` : ""})${archived}
 Notes deleted for good are not shown: a hard delete leaves no text to rebuild.
 ${arch}`;
 }
