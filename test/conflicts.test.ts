@@ -112,3 +112,13 @@ describe("precision and recall on a ~200-note mixed store", () => {
     store.close();
   });
 });
+
+test("a planted 250k-character line with a long whitespace run is skipped in milliseconds, not minutes", () => {
+  const s = new Store(":memory:");
+  mk(s, "alice", "x", "deploy: x" + " ".repeat(250_000) + "x");
+  mk(s, "bob", "Deploy target: Render", "y");
+  const t = Date.now();
+  findConflicts(s);
+  assert.ok(Date.now() - t < 500, `took ${Date.now() - t} ms`);
+  s.close();
+});

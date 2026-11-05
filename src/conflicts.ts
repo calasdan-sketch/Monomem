@@ -37,6 +37,9 @@ function family(value: string): number {
 }
 
 function stmtFrom(line: string, fromTitle: boolean): Stmt[] {
+  // A match needs a key of <= 40 chars and a value of <= 60, so a longer line can never match. Skipping it also keeps a
+  // planted line with a long whitespace run from making the lazy regex below quadratic (it froze the server for minutes).
+  if (line.length > 200) return [];
   const out: Stmt[] = [];
   const m = /^\s*(?:[-*]\s+)?\**([A-Za-z][\w .\/-]{1,40}?)\**\s*(?::|=|->|→)\s*(?!\/\/)(.+?)\s*$/.exec(line);
   let rest = line.trim();
