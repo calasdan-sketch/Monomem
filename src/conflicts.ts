@@ -98,6 +98,9 @@ const group = <T extends { n: NoteRecord }>(m: Map<string, T[]>, key: string, it
   (m.get(key) ?? m.set(key, []).get(key)!).push(item);
 };
 
+/** At most this many pairs: many notes sharing one key would otherwise make n^2 pairs and exhaust memory. */
+export const MAX_CONFLICTS = 500;
+
 export function findConflicts(store: Store, opts: { namespaces?: string[]; notes?: NoteRecord[] } = {}): Conflict[] {
   const { namespaces } = opts;
   const all = opts.notes ?? store.exportAll({ live: true }); // gate-ok: admin-only report
@@ -108,7 +111,7 @@ export function findConflicts(store: Store, opts: { namespaces?: string[]; notes
 
   const facts = new Map<string, Array<{ n: NoteRecord; v: string }>>();
   for (const n of notes) for (const [k, v] of noteFacts(n.tags)) group(facts, `${n.namespace}\u0000${k}`, { n, v });
-  for (const [gk, g] of facts) {
+  factLoop: for (const [gk, g] of facts) {
     const key = gk.split("\u0000")[1];
     for (let i = 0; i < g.length; i++) {
       for (let j = i + 1; j < g.length; j++) {
@@ -116,6 +119,7 @@ export function findConflicts(store: Store, opts: { namespaces?: string[]; notes
         if (writerOf(p.n) === writerOf(q.n) || normFact(p.v) === normFact(q.v)) continue;
         done.add(`${p.n.id}-${q.n.id}`);
         out.push({ namespace: p.n.namespace, a: brief(p.n), b: brief(q.n), key, values: [normFact(p.v), normFact(q.v)], shown: [p.v, q.v], tier: "fact", confidence: "exact" });
+        if (out.length >= MAX_CONFLICTS) break factLoop;
       }
     }
   }
@@ -130,7 +134,8 @@ export function findConflicts(store: Store, opts: { namespaces?: string[]; notes
       group(groups, k, { n, s });
     }
   }
-  for (const g of groups.values()) {
+  textLoop: for (const g of groups.values()) {
+    if (out.length >= MAX_CONFLICTS) break;
     for (let i = 0; i < g.length; i++) {
       for (let j = i + 1; j < g.length; j++) {
         const [p, q] = oldestFirst(g[i], g[j]);
@@ -144,6 +149,7 @@ export function findConflicts(store: Store, opts: { namespaces?: string[]; notes
         if (!both && !same) continue;
         done.add(pair);
         out.push({ namespace: p.n.namespace, a: brief(p.n), b: brief(q.n), key: p.s.key.replace(/^use \d+/, "use").trim(), values: [p.s.value, q.s.value], shown: [p.s.shown, q.s.shown], tier: "possible", confidence: both ? "high" : "medium" });
+        if (out.length >= MAX_CONFLICTS) break textLoop;
       }
     }
   }

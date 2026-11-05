@@ -2763,7 +2763,7 @@ export class Store {
   liveFactNotes(namespace: string, key: string, exceptId: number): NoteRecord[] {
     const pattern = `%"fact:${key.replace(/_/g, "\\_")}=%`;
     const rows = this.db
-      .prepare("SELECT * FROM notes WHERE archived_at IS NULL AND namespace = ? AND id <> ? AND tags LIKE ? ESCAPE '\\'")
+      .prepare("SELECT * FROM notes WHERE archived_at IS NULL AND superseded_at IS NULL AND namespace = ? AND id <> ? AND tags LIKE ? ESCAPE '\\'")
       .all(namespace, exceptId, pattern) as unknown as NoteRow[];
     return this.filterVisible(rows.map((r) => this.rec(r)));
   }

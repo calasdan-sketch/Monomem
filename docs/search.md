@@ -52,7 +52,7 @@ Day boundaries are computed in your timezone: set `MONOMEM_TIMEZONE`
 
 ## Time travel (`--as-of`)
 
-`monomem search "deploy region" --as-of 7d` (or an ISO time, `2h`, `2026-10-01`) shows memory as it stood then. With no words it lists the notes. The MCP tool `state_search` takes the same thing as `as_of`. It only reads; nothing is written.
+`monomem search "deploy region" --as-of 7d` (or an ISO time, `2h`, `2026-10-01`) shows memory as it stood then. With no words it lists the notes. The MCP tool `state_search` takes the same thing as `as_of`, for an admin token only: a past view brings back earlier versions (which can hold text that was taken out on purpose) and notes that were forgotten since, the same reason note history is admin-only. It only reads; nothing is written.
 
 It is rebuilt from what Monomem already keeps: creation time, archive and replace times, and the note's saved earlier versions (`note_history`). A note made after that time is absent. A note archived or replaced after it is shown as live. A note archived or replaced before it is hidden. A note edited since shows the version that was current then.
 

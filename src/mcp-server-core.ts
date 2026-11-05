@@ -710,7 +710,9 @@ export function createMcpServer(
           if (mode !== undefined || when !== undefined || explain !== undefined || written_by || not_written_by || include_superseded !== undefined) {
             return errorResult("as_of cannot be combined with mode, when, explain, written_by, not_written_by or include_superseded");
           }
-          const denied = denyIfUnder("read");
+          // Admin only, like note history: a past version can hold text that was taken out on purpose, and a
+          // forgotten note comes back in a past view.
+          const denied = denyIfUnder("admin");
           if (denied) return errorResult(denied);
           if (limit !== undefined && limit < 1) return errorResult("limit must be an integer >= 1");
           const { parseAsOf, asOfView, asOfSearch } = await import("./asof.js");
