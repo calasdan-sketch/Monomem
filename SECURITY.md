@@ -172,15 +172,18 @@ CLI itself, so none of them stops an agent that can run commands.**
 
 - **Operator gate on the CLI.** These commands lower protection, so they refuse to run unless both standard input and
   output are a terminal, and then ask for a typed `yes`; there is no `--yes` for them: `unpin`, `approve-first <ns> off`,
-  `resume`, `quarantine approve`, `trust undistrust`, `trust attester-add`, `trust attester-unrevoke` and `token add`.
+  `resume`, `quarantine approve`, `trust undistrust`, `trust attester-add`, `trust attester-unrevoke` and `token add`. The same gate applies to a **pinned** note: `archive`, `restore`, `delete` (with or
+  without `--yes`), `supersede` (its `--old` notes and `supersede undo`) and `history restore` / `history purge` on a note you
+  pinned need the terminal and the typed `yes`. Also gated: `merge --yes` when any note in a group is pinned. Not gated, even on pinned notes: `rollback`, `decay --purge`, `import`,
+  and anything that calls the library directly (the gate is in the CLI, not the store).
   Raising protection (`pin`, `approve-first on`, `trust distrust`, `token remove`) stays scriptable. This raises the bar
   against an agent that runs the CLI through a non-interactive shell tool (it gets a clear refusal and nothing changes).
   It is **not a guarantee**: a tool that allocates a pseudo-terminal can pass the terminal check and type the word, and
   an agent that can edit the database file or `tokens.json` directly does not need the CLI at all. Other CLI commands are
-  not gated, including ones that weaken protection (`encrypt disable`) or destroy data (`delete --yes`).
+  not gated, including ones that weaken protection (`encrypt disable`) or destroy data (`delete --yes` on a note that is not pinned).
 - **Approve-first namespaces** (`monomem approve-first`): writes that do not come from the local CLI are held in the
   quarantine queue until approved. An admin REST token is treated like any other REST caller, so it is held too.
-- **Pinned notes** (`monomem pin`): only the CLI can edit, forget, restore, replace or delete them. An admin token can
+- **Pinned notes** (`monomem pin`): only the CLI can edit, forget, restore, replace or delete them, and the CLI asks for the terminal and a typed `yes` first (see the operator gate above). An admin token can
   unpin a note over REST and then change it.
 - **Flood guard**: a writer label that makes too many writes in an hour is paused until `monomem resume`. The label is
   self-declared, so this stops runaway loops, not a hostile app that changes its label.

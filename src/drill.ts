@@ -1,11 +1,12 @@
 // `monomem drill`: replay the known memory-poisoning attacks (bench suite E, plus one self-poisoning case) on a COPY
 // of your own store, with your own settings (MONOMEM_LINT and the rest), and say which ones reached the agent.
 // It reuses the benchmark engine and adapter; the only new things are the copy, the scenario below and the verdicts.
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { DB_PATH } from "./config.js";
+import { keyPath } from "./crypto.js";
 import { Store } from "./store.js";
 import { defaultScenarioDir } from "./bench/index.js";
 import { loadKnownGaps, loadScenarios, runScenario } from "./bench/engine.js";
@@ -77,20 +78,35 @@ export interface DrillReport {
   elapsed_ms: number;
 }
 
-/** Copy `dbPath` (VACUUM INTO, read-only source), run every attack against the copy, delete the copy. */
+/**
+ * Copy `dbPath` (plain file copy of the database, its -wal and the encryption key: the real folder is only read, so no -shm/-wal is
+ * created beside the real store), run every attack against the copy, delete the copy (also on Ctrl-C / SIGTERM / exit).
+ * ponytail: a copy taken while another process is mid-write can be slightly behind; a drill needs the shape of the store, not the last write.
+ */
 export async function runDrill(opts: { dbPath: string; dir?: string; seed?: number }): Promise<DrillReport> {
   if (!existsSync(opts.dbPath)) throw new Error(`no store at ${opts.dbPath}`);
   const started = Date.now();
   const tmp = mkdtempSync(join(tmpdir(), "monomem-drill-"));
   const copy = join(tmp, "copy.db");
   const adapter = new MonomemAdapter(copy);
+  const cleanup = (): void => rmSync(tmp, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
+  const onSignal = (sig: NodeJS.Signals): void => {
+    cleanup();
+    process.exit(sig === "SIGINT" ? 130 : 143);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  process.once("exit", cleanup);
   try {
-    const src = new DatabaseSync(opts.dbPath, { readOnly: true });
+    copyFileSync(opts.dbPath, copy);
+    if (existsSync(opts.dbPath + "-wal")) copyFileSync(opts.dbPath + "-wal", copy + "-wal");
+    const realKey = keyPath(dirname(opts.dbPath));
+    if (existsSync(realKey)) copyFileSync(realKey, join(tmp, ".key")); // encrypted stores need their key beside the copy
+    const flat = new DatabaseSync(copy);
     try {
-      src.exec("PRAGMA busy_timeout = 5000;");
-      src.prepare("VACUUM INTO ?").run(copy);
+      flat.exec("PRAGMA busy_timeout = 5000; PRAGMA wal_checkpoint(TRUNCATE);"); // fold the copied -wal into the copy
     } finally {
-      src.close();
+      flat.close();
     }
     const counter = new Store(copy);
     const notes = counter.countAll();
@@ -108,7 +124,10 @@ export async function runDrill(opts: { dbPath: string; dir?: string; seed?: numb
     return { notes, attacks: rows.length, rows, reached, unexpected, ok: unexpected.length === 0, elapsed_ms: Date.now() - started };
   } finally {
     await adapter.close().catch(() => undefined);
-    rmSync(tmp, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
+    cleanup();
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    process.off("exit", cleanup);
   }
 }
 

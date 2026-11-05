@@ -1,5 +1,6 @@
 // 1.2.1 core fixes: encryption lifecycle, row-bound ciphertext (AAD), sealed
 // quarantine, FTS scrub, key-path resolution, schema guard.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";

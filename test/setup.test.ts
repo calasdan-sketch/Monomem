@@ -1,4 +1,5 @@
 // `monomem setup`: every test runs against a temporary HOME / APPDATA. No real configuration is ever read or written.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, lstatSync } from "node:fs";

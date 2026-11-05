@@ -1,5 +1,6 @@
 // Replacing a memory (1.6.0): the two-step flow, its one-time code, the trust guard, undo, and the warning text.
 // These tests talk to the service layer (supersede.ts) the way every surface (REST, MCP, CLI) does.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { Store, StaleWriteError, ValidationError, type NoteRecord } from "../src/store.js";

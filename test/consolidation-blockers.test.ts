@@ -1,4 +1,5 @@
 // Regression tests for the auto-consolidation panel blockers #4, #6, #7, #8.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { Store, ValidationError } from "../src/store.js";

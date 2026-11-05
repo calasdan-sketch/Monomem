@@ -1,5 +1,6 @@
 // setup for Codex CLI, Gemini CLI, Muse, VS Code and Zed: fresh install, idempotent re-run, foreign content kept, --undo
 // restores the exact bytes, and the capture hooks for the agents that have hooks. Everything runs in a temp HOME.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

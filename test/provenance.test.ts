@@ -1,6 +1,7 @@
 // "Who wrote this?" (1.3.3): server-stamped written_by / created_by on notes.
 // The client-asserted `source` stays an advisory claim; written_by comes from
 // the authenticated connection and can never be set from a request body.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";

@@ -3,6 +3,7 @@
 // into the same Store used by the HTTP API tests. This is not a mock --
 // state_write really inserts into the store, state_read/search/list really
 // query it back.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

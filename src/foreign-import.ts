@@ -27,7 +27,7 @@ import { DatabaseSync } from "node:sqlite";
 import { MODEL_WRITTEN_TAG } from "./reserved-tags.js";
 import { chunkBody, looksLikeCredential, MAX_FILE_BYTES, parseFrontmatter, readHeld, writeHeld } from "./claude-import.js";
 import { lintContent } from "./lint.js";
-import { LIMITS } from "./security.js";
+import { LIMITS, printable } from "./security.js";
 import type { SetupEnv, SetupIO } from "./setup.js";
 
 export const FOREIGN_SOURCES = ["claude-mem", "mem0", "basic-memory", "mcp-memory"] as const;
@@ -420,7 +420,7 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
       }
     }
     io.out("");
-    for (const [name, g] of groups) io.out(`  ${name.slice(0, 60).padEnd(30)} ${g.n} item(s): ${g.create} new, ${g.same} already imported, ${g.secrets} skipped (secret)`);
+    for (const [name, g] of groups) io.out(`  ${printable(name, 60).padEnd(30)} ${g.n} item(s): ${g.create} new, ${g.same} already imported, ${g.secrets} skipped (secret)`);
     const t = [...groups.values()].reduce((a, g) => ({ n: a.n + g.n, c: a.c + g.create, s: a.s + g.same, x: a.x + g.secrets }), { n: 0, c: 0, s: 0, x: 0 });
     io.out(`\n${t.n} item(s): ${t.c} new, ${t.s} already imported, ${t.x} skipped because they look like a secret.`);
     if (t.x) io.out("  Skipped items are not stored and not shown. Take the secret out at the source (or keep it in a password manager) and run again.");
@@ -434,7 +434,11 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
       io.out("\nNothing to import.");
       return 0;
     }
-    if (!opts.yes && io.interactive) {
+    if (!opts.yes && !io.interactive) {
+      io.err("Not an interactive terminal, so I cannot ask: nothing was written. Re-run with --yes to import, or --dry-run to only look.");
+      return 1;
+    }
+    if (!opts.yes) {
       const a = (await io.ask(`\nImport ${todo.length} note(s) into ${opts.dbPath}? Type y to continue: `)).trim().toLowerCase();
       if (a !== "y" && a !== "yes") {
         io.out("Cancelled. Nothing was written.");
@@ -476,7 +480,8 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
   }
 }
 
-const clip = (t: string, n: number): string => (t.length > n ? t.slice(0, n - 1) + "..." : t);
+// Untrusted text: control characters and bidi marks neutralised before it reaches the terminal.
+const clip = (t: string, n: number): string => printable(t, n);
 const PREVIEW_ENTITIES = 10;
 
 /** Dry run of an MCP memory file: what each entity would become (name and first observation), what was dropped, what the linter may hold. */
@@ -490,6 +495,6 @@ function previewMcp(io: SetupIO, todo: Candidate[], stats: McpStats): void {
   const flagged = todo.filter((c) => c.flags.length);
   if (flagged.length) {
     io.out(`${flagged.length} new note(s) would probably be held by the memory linter for your review:`);
-    for (const c of flagged.slice(0, PREVIEW_ENTITIES)) io.out(`  ${clip(c.title, 40)}: ${c.flags.join(", ")}`);
+    for (const c of flagged.slice(0, PREVIEW_ENTITIES)) io.out(`  ${clip(c.title, 40)}: ${printable(c.flags.join(", "))}`);
   }
 }

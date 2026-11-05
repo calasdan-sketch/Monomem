@@ -3,6 +3,7 @@
 // pages as reusable: the deleted title and body stay readable with any hex
 // viewer or `strings t.db` until something happens to overwrite them.
 // Measured 2026-11-02: create + edit + delete left the text in the file.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";

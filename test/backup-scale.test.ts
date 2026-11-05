@@ -8,6 +8,7 @@
 //      once (~3x the backup size in memory). Now streamed page-by-page.
 //   3. importNotes rebuilt the similarity graph inline: O(n^2), measured at
 //      88-97% of bulk-restore runtime. Now deferred above a threshold.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

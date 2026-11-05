@@ -1,4 +1,5 @@
 // `monomem import --from claude-mem|mem0|basic-memory|mcp-memory`
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

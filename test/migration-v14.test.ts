@@ -1,5 +1,6 @@
 // Schema v14 (1.4.0): upgrade from the real v11, v12 and v13 shapes (plain and
 // encrypted), the one pre-upgrade backup, idempotent reopen, rollback.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync, copyFileSync, readdirSync } from "node:fs";

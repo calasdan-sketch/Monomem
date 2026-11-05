@@ -11,6 +11,7 @@
 // true), and must return nothing when only one assistant was wired, so setup
 // never claims a cross-assistant result the user cannot reproduce.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 

@@ -1,5 +1,6 @@
 // 1.3.0 infra fixes: backup, audit rotation, waiter caps, graceful shutdown,
 // change-log purge timer, `watch`.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, statSync, readdirSync, readFileSync, writeFileSync } from "node:fs";

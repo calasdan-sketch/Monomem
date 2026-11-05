@@ -3,11 +3,11 @@
 // does not offer (merging duplicates), the MCP tool `memory_consolidate` over an in-memory MCP connection.
 // Nothing here reads or writes the SQLite file directly.
 import { randomBytes } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Store } from "../store.js";
@@ -127,7 +127,11 @@ export class MonomemAdapter implements MemoryAdapter {
       // One folder per server: the signing key lives beside the database, and two servers must not share one.
       const folder = join(this.dir, name);
       mkdirSync(folder, { recursive: true });
-      if (this.seedDb && name === "main") copyFileSync(this.seedDb, join(folder, "state.db"));
+      if (this.seedDb && name === "main") {
+        copyFileSync(this.seedDb, join(folder, "state.db"));
+        const seedKey = join(dirname(this.seedDb), ".key"); // an encrypted store's key travels with its copy
+        if (existsSync(seedKey)) copyFileSync(seedKey, join(folder, ".key"));
+      }
       const store = new Store(join(folder, "state.db"));
       const http = createApiServer(store, tokens, this.serverOpts());
       await new Promise<void>((resolve, reject) => {
@@ -506,7 +510,7 @@ export class MonomemAdapter implements MemoryAdapter {
     let storedText = "";
     if (row) {
       const open = (text: string, enc: string | null, which?: "input"): string => {
-        if (!text) return "";
+        if (!text && !enc) return ""; // an encrypted row keeps its text in the _enc column
         try {
           return this.srv(a).store.openCapture(text, enc, captureAad(row.seq, session, which));
         } catch {

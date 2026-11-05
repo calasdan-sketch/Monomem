@@ -1,5 +1,6 @@
 // Staleness detection: isStale() thresholds, warning text, config parsing,
 // search-ranking penalty, and the MCP/API annotation surface.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { DatabaseSync } from "node:sqlite";

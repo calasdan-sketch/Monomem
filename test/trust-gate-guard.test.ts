@@ -2,6 +2,7 @@
 // the SQL predicate for sets). This file fails when a new read route or a new raw store read appears
 // that nobody has classified, so a future route cannot quietly bypass the gate (the 1.4.0 review found
 // four such routes: tags-only update echo, task replay, the janitor and the vault export).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";

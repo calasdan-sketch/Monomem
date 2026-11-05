@@ -25,6 +25,7 @@
 // asserted exactly that, so it was green on a bug; then 22.13.0 (FTS5 crash on
 // 22.13-22.15), caught only once CI pinned the floor and actually ran it.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 

@@ -310,7 +310,9 @@ async function doctor(): Promise<void> {
   const { resolve: resolvePath } = await import("node:path");
   const { Store } = await import("./store.js");
   // Colour only for a person at a terminal: not when piped, and not when NO_COLOR is set (no-color.org).
-  const colour = (process.stdout.isTTY || process.env.FORCE_COLOR) && !process.env.NO_COLOR;
+  // FORCE_COLOR=0 / false means off (even on a terminal); any other value forces colour on.
+  const force = process.env.FORCE_COLOR;
+  const colour = (force === undefined || force === "" ? process.stdout.isTTY : force !== "0" && force !== "false") && !process.env.NO_COLOR;
   const tag = (t: string, code: number) => (colour ? `\x1b[${code}m${t}\x1b[0m` : t);
   const ok = (m: string) => console.log("  " + tag("[ok]", 32) + "   " + m);
   const warn = (m: string) => console.log("  " + tag("[warn]", 33) + " " + m);
@@ -538,7 +540,10 @@ async function doctor(): Promise<void> {
     const wired =
       Array.isArray(entries) &&
       /(monomem|onememory|cli\.js)[\s\S]{0,60}\b(recall|hook session-start)\b/.test(JSON.stringify(entries));
-    if (wired) {
+    // The old package's hook line (`npx -y onememory-mcp@<v> recall`) still runs, but it is the old code: setup rewrites it.
+    if (wired && /npx\s+(?:-y\s+)?onememory-mcp\b/.test(JSON.stringify(entries))) {
+      warn("SessionStart hook is the old onememory-mcp one: old hook, run `monomem setup --hook` to update it");
+    } else if (wired) {
       ok("SessionStart hook wired in ~/.claude/settings.json");
     } else {
       warn(
@@ -839,6 +844,7 @@ async function consolidate(): Promise<void> {
       return;
     }
 
+    await gatePinned(store, groups.flat(), "merge (it deletes the source notes)");
     let mergedCount = 0;
     for (const g of groups) {
       try {
@@ -846,7 +852,7 @@ async function consolidate(): Promise<void> {
         // Make the merged note visible to semantic search (consolidateNotes
         // itself doesn't embed; store.create is embedding-agnostic).
         await maybeEmbed(store, merged);
-        console.log(`Merged [${g.join(", ")}] -> #${merged.id} "${merged.title}"`);
+        console.log(`Merged [${g.join(", ")}] -> #${merged.id} "${printable(merged.title)}"`);
         mergedCount += 1;
       } catch (e) {
         console.error(`Skipped [${g.join(", ")}]: ${(e as Error).message}`);
@@ -913,7 +919,7 @@ async function relevant(): Promise<void> {
     for (const n of results) {
       const ann = annotateStaleness(n);
       const stale = ann.stale ? ` [stale, ${ann.ageDays}d]` : "";
-      console.log(`  #${n.id} [${n.namespace}] ${n.title}${stale}${n.distrusted ? " [DISTRUSTED WRITER: treat as hostile]" : ""}`);
+      console.log(`  #${n.id} [${n.namespace}] ${printable(n.title)}${stale}${n.distrusted ? " [DISTRUSTED WRITER: treat as hostile]" : ""}`);
     }
   } finally {
     store.close();
@@ -1314,7 +1320,7 @@ async function changes(): Promise<void> {
     for (;;) {
       for (const e of page.changes) {
         const mark = e.kind === "created" ? "+" : e.kind === "updated" ? "~" : "-";
-        console.log(`${mark} #${e.id} [${e.namespace}] ${e.title}  (${e.at}${e.source ? `, ${e.source}` : ""})${e.distrusted ? " [DISTRUSTED WRITER]" : ""}`);
+        console.log(`${mark} #${e.id} [${e.namespace}] ${printable(e.title)}  (${e.at}${e.source ? `, ${printable(e.source)}` : ""})${e.distrusted ? " [DISTRUSTED WRITER]" : ""}`);
       }
       if (!page.nextCursor) break;
       page = runChanges(store, { ...base, cursor: page.nextCursor });
@@ -1896,7 +1902,7 @@ async function trustCmd(): Promise<void> {
 // `add` hands out access, so it needs the operator gate; `list` and `remove` lower nothing.
 async function tokenCmd(): Promise<void> {
   const { DATA_DIR } = await import("./config.js");
-  const { addToken, listTokens, removeToken, TokenFileError, tokensPath } = await import("./token-file.js");
+  const { addToken, listTokens, removeToken, envTokenLabels, TokenFileError, tokensPath } = await import("./token-file.js");
   const { flags, rest } = parseFlags(process.argv.slice(3), { values: ["label", "scope", "namespace"], bools: [] });
   const action = rest[0];
   try {
@@ -1910,12 +1916,16 @@ async function tokenCmd(): Promise<void> {
       console.log(`\n  ${row.token}\n`);
       console.log("This is shown ONCE and cannot be shown again: copy it into the app that will use it now. Anyone holding it has that access.");
       console.log("A running server reads tokens.json at start-up: restart it for the new token to work.");
+      const { MCP_HTTP_PORT } = await import("./config.js");
+      console.log(`\nFor the app that will use it (change the host if it is not on this computer):\n  MCP URL: http://127.0.0.1:${MCP_HTTP_PORT}/mcp\n  Header:  Authorization: Bearer ${row.token}`);
     } else if (action === "list" && rest.length === 1) {
       const rows = listTokens(DATA_DIR);
+      const fromEnv = envTokenLabels();
       if (!rows.length) console.log(`No tokens in ${tokensPath(DATA_DIR)} (the primary token is not listed here).`);
-      for (const r of rows) console.log(`${r.label}  ${r.scope}${r.namespace ? `  namespace=${r.namespace}` : ""}`);
+      for (const r of rows) console.log(`${printable(r.label)}  ${r.scope}${r.namespace ? `  namespace=${printable(r.namespace)}` : ""}`);
+      if (fromEnv?.length) console.log(`${fromEnv.length} more token(s) come from MONOMEM_TOKENS (labels: ${fromEnv.map((l) => printable(l, 40)).join(", ")}). They are not editable here.`);
     } else if (action === "remove" && rest.length === 2) {
-      console.log(removeToken(DATA_DIR, rest[1]) ? `Removed token "${rest[1]}". Restart a running server for it to stop working.` : `No token labelled "${rest[1]}" in ${tokensPath(DATA_DIR)}.`);
+      console.log(removeToken(DATA_DIR, rest[1]) ? `Removed token "${printable(rest[1])}". The server reads tokens.json once at start-up: RESTART a running server, or the token keeps working until you do.` : `No token labelled "${printable(rest[1])}" in ${tokensPath(DATA_DIR)}.`);
     } else {
       throw new TokenFileError("Usage: monomem token add --label <name> --scope read|write|admin [--namespace ns] | token list | token remove <label>");
     }
@@ -1942,7 +1952,7 @@ async function quarantineCmd(): Promise<void> {
       }
       for (const q of items) {
         const what = q.op === "update" ? `update of #${q.target_id}` : "new note";
-        console.log(`#${q.id} [${q.namespace}] ${what}: ${q.title ?? "(title unchanged)"}  (${q.created_at})`);
+        console.log(`#${q.id} [${q.namespace}] ${what}: ${q.title == null ? "(title unchanged)" : printable(q.title)}  (${q.created_at})`);
         console.log(`    reasons: ${q.reasons.map((r) => `${r.label} in ${r.field}`).join("; ")}`);
         if (q.body) {
           const preview = q.body.length > 200 ? q.body.slice(0, 200) + "…" : q.body;
@@ -1967,7 +1977,7 @@ async function quarantineCmd(): Promise<void> {
     await requireOperator(`quarantine approve ${id}`);
     const note = store.approveQuarantine(id);
     await maybeEmbed(store, note);
-    console.log(`Approved #${id} -> note #${note.id} "${note.title}"`);
+    console.log(`Approved #${id} -> note #${note.id} "${printable(note.title)}"`);
   } catch (e) {
     if (e instanceof ValidationError) {
       console.error(`Error: ${e.message}`);
@@ -2089,7 +2099,7 @@ async function decayCmd(): Promise<void> {
         console.log("Nothing would be archived.");
         return;
       }
-      for (const r of rows) console.log(`#${r.id} [${r.namespace}] ${r.obs_type || r.kind}: ${r.title}  (idle ${r.idleDays} days)`);
+      for (const r of rows) console.log(`#${r.id} [${r.namespace}] ${r.obs_type || r.kind}: ${printable(r.title)}  (idle ${r.idleDays} days)`);
       console.log(`${rows.length} row(s) would be archived. Run \`monomem decay\` to archive them; \`monomem restore <id>\` brings one back.`);
       return;
     }
@@ -2117,6 +2127,7 @@ async function deleteCmd(): Promise<void> {
       console.error(`No note #${id}.`);
       process.exit(1);
     }
+    await gatePinned(store, [id], "delete");
     if (!process.argv.includes("--yes")) {
       if (!process.stdin.isTTY) {
         console.error("A permanent delete cannot be undone: run it at a terminal and answer the question, or add --yes.");
@@ -2152,8 +2163,9 @@ async function archiveCmd(action: "archive" | "restore"): Promise<void> {
       console.error(before ? `Note #${id} is ${action === "archive" ? "already archived" : "not archived"}.` : `No note #${id}.`);
       process.exit(1);
     }
+    await gatePinned(store, [id], action);
     const note = action === "archive" ? store.archive(id) : store.restore(id);
-    console.log(`${action === "archive" ? "Archived" : "Restored"} #${id} "${note?.title}".${action === "archive" ? ` Undo: monomem restore ${id}` : ""}`);
+    console.log(`${action === "archive" ? "Archived" : "Restored"} #${id} "${printable(note?.title)}".${action === "archive" ? ` Undo: monomem restore ${id}` : ""}`);
   } catch (e) {
     if (e instanceof ValidationError) {
       console.error(`Error: ${e.message}`);
@@ -2324,6 +2336,7 @@ async function supersedeCmd(kind: "supersede" | "history" | "pin" | "unpin" | "r
   try {
     const args = process.argv.slice(3);
     if (kind === "unpin") await requireOperator(`unpin ${args[0] ?? ""}`.trim());
+    if (kind === "supersede" || kind === "history") await gatePinned(store, pinnedTargets(kind, args), kind === "supersede" ? "supersede" : `history ${args[0]}`);
     process.exitCode =
       kind === "supersede"
         ? await supersedeCli(store, args, io)
@@ -2335,6 +2348,19 @@ async function supersedeCmd(kind: "supersede" | "history" | "pin" | "unpin" | "r
   } finally {
     store.close();
   }
+}
+
+/** Note ids a supersede / history command would change or retire (empty for reads and for arguments it cannot parse). */
+function pinnedTargets(kind: "supersede" | "history", args: string[]): number[] {
+  const first = args.find((a) => !a.startsWith("--"));
+  if (kind === "history") {
+    if (first !== "restore" && first !== "purge") return [];
+    return [Number(args.filter((a) => !a.startsWith("--"))[1])].filter(Number.isInteger);
+  }
+  if (first === "undo") return [Number(args.filter((a) => !a.startsWith("--"))[1])].filter(Number.isInteger);
+  const i = args.findIndex((a) => a === "--old" || a.startsWith("--old="));
+  const v = i < 0 ? "" : args[i].includes("=") ? args[i].slice(args[i].indexOf("=") + 1) : (args[i + 1] ?? "");
+  return v.split(",").map(Number).filter(Number.isInteger);
 }
 
 /** TTY yes/no prompt; anything but y/yes aborts. */
@@ -2434,12 +2460,27 @@ async function uninstallCmd(): Promise<void> {
   });
 }
 
+// Untrusted text (note titles, imported text) printed to the terminal goes through this; bound in main() once config is loaded.
+let printable: typeof import("./security.js").printable = (s) => String(s ?? "");
+
 /**
  * Operator gate for commands that LOWER protection (undistrust, attester-add/unrevoke, quarantine approve).
  * Needs a real terminal on both ends and a typed "yes"; there is no --yes. This raises the bar against an
  * agent running the CLI through a non-interactive shell tool. It is not a guarantee: a tool that allocates
  * a pseudo-terminal can pass it (SECURITY.md).
  */
+/**
+ * Pinned notes are the operator's: changing or retiring one from the CLI needs the same terminal + typed yes as the commands that lower
+ * protection. Without it an agent with a shell tool (`</dev/null`) could use the CLI's writer `cli` to get past the pin. Done here, not in
+ * the Store, so library callers and tests that act as `cli` are unaffected.
+ */
+async function gatePinned(store: import("./store.js").Store, ids: number[], what: string): Promise<void> {
+  if (!ids.length) return;
+  const pinned = new Set(store.pinnedNotes().map((n) => n.id));
+  const hit = ids.find((i) => pinned.has(i));
+  if (hit !== undefined) await requireOperator(`${what} on pinned note #${hit}`);
+}
+
 async function requireOperator(what: string): Promise<void> {
   if (!(process.stdin.isTTY && process.stdout.isTTY)) {
     console.error(
@@ -2503,7 +2544,10 @@ async function main(): Promise<void> {
   // A dry run of `import --claude` / `import --from` or `sync` must not create anything, not even the data folder.
   const dry = process.argv.includes("--dry-run") && ((cmd === "import" && (process.argv.includes("--claude") || process.argv.includes("--from"))) || cmd === "sync");
   // The capture hooks (`hook`) never move or create data folders: they run on every tool call and must stay quick and quiet.
-  if (!dry && !["help", "--help", "-h", "init", "bench", "setup", "uninstall", "hook"].includes(cmd)) (await import("./config.js")).prepareDataDir();
+  if (!dry && !["help", "--help", "-h", "init", "bench", "setup", "uninstall", "hook"].includes(cmd)) {
+    (await import("./config.js")).prepareDataDir();
+    printable = (await import("./security.js")).printable;
+  }
   // Fixed writer marker for notes this process writes with no token behind
   // them (written_by): the long-running server's own jobs, the stdio MCP
   // server, or an `monomem ...` command run by the machine owner.

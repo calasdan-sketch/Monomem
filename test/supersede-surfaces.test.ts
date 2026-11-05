@@ -1,4 +1,5 @@
 // Replacing a memory on every surface (1.6.0): REST, MCP and the command line all go through the same two steps.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

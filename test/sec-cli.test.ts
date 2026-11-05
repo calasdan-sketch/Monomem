@@ -1,5 +1,6 @@
 // Round 2 security + CLI hardening: operator gate, token command, doctor security warnings, search alias, linter additions.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

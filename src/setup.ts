@@ -88,6 +88,8 @@ export interface SetupOptions {
   command: "auto" | "node" | "npx";
   /** Replace a config file that exists but is completely empty (0 bytes), which may be a half-written one. */
   forceEmpty: boolean;
+  /** Remove an old (`onememory` / `claude-bridge`) entry that sits beside a `monomem` one. Only ever set after a typed yes. */
+  removeOld?: boolean;
 }
 
 export const DEFAULT_OPTIONS: SetupOptions = { dryRun: false, yes: false, undo: false, hook: "ask", project: false, noTestNote: false, noDoctor: false, command: "auto", forceEmpty: false };
@@ -413,7 +415,7 @@ function serversKey(id: ClientId, text: string): string {
 const appLabel = (id: ClientId): string => (id === "project" ? "claude-code" : id);
 
 /** Codex CLI: one [mcp_servers.monomem] table in ~/.codex/config.toml (command/args/env), everything else untouched. */
-function planToml(e: SetupEnv, opts: SetupOptions, target: ClientTarget, text: string | null, shared: { dbs: Set<string> }): { change: FileChange | null; already: string[]; conflicts: string[]; warnings: string[] } {
+function planToml(e: SetupEnv, opts: SetupOptions, target: ClientTarget, text: string | null, shared: { dbs: Set<string>; dupOld?: number }): { change: FileChange | null; already: string[]; conflicts: string[]; warnings: string[] } {
   if (text !== null && hasServer(text, "monomem")) {
     const already = { change: null, already: [`${target.label}: "monomem" is already set up`], conflicts: [], warnings: [] };
     if (/MONOMEM_CLIENT/.test(text)) return already;
@@ -439,7 +441,7 @@ function planToml(e: SetupEnv, opts: SetupOptions, target: ClientTarget, text: s
   return { change: { client: target.id, label: target.label, file: target.file, before: text, ops, lines, inverse: [{ op: "remove", path: ["mcp_servers"], key: "monomem" }], allowEmpty: opts.forceEmpty, format: "toml" }, already: [], conflicts: [], warnings: [] };
 }
 
-export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, shared: { dbs: Set<string> }): { change: FileChange | null; already: string[]; conflicts: string[]; warnings: string[] } {
+export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, shared: { dbs: Set<string>; dupOld?: number }): { change: FileChange | null; already: string[]; conflicts: string[]; warnings: string[] } {
   const text = readTextFile(target.file);
   if (text === "" && !opts.forceEmpty) return { change: null, already: [], conflicts: [EMPTY_FILE_MSG(target.file)], warnings: [] };
   if (target.id === "codex") return planToml(e, opts, target, text, shared);
@@ -489,8 +491,15 @@ export function planFile(e: SetupEnv, opts: SetupOptions, target: ClientTarget, 
     if (kind !== "legacy") continue;
     // An existing "monomem" next to the old one: do not merge two things by guesswork.
     const sibling = servers.some((x) => x.name === "monomem" && x.path.join("\u0000") === s.path.join("\u0000"));
+    if (sibling && opts.removeOld) {
+      ops.push({ op: "remove", path: s.path, key: s.name });
+      inverse.unshift({ op: "set", path: s.path, key: s.name, value: entry });
+      lines.push(`remove the old "${s.name}" entry${where}; the "monomem" entry beside it stays and your data is not touched`);
+      continue;
+    }
     if (sibling) {
-      conflicts.push(`${target.label}: both "${s.name}" and "monomem" exist${where}; remove the one you do not want, then run setup again`);
+      shared.dupOld = (shared.dupOld ?? 0) + 1;
+      conflicts.push(`${target.label}: both "${s.name}" and "monomem" exist${where}; remove the one you do not want, then run setup again (run it at a terminal and it offers to remove the old one)`);
       continue;
     }
     const m = migrateEntry(e, opts, entry, withType);
@@ -717,6 +726,11 @@ const SECRET_LINE = /("[^"\n]*(?:TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUT
 // Paths, ports and Monomem's own non-secret switches and labels print as they are; every other ALL_CAPS value is masked.
 const PLAIN_ENV_KEY = /_(PATH|HOME|DIR|FILE|PORT|HOST|BIND|TIMEZONE)$|^MONOMEM_(CLIENT|TOOLS|CAPTURE|LINT|EMBEDDINGS|SPACES?|PROFILE)$/;
 const ENV_STYLE_LINE = /("([A-Z][A-Z0-9_]{2,})"\s*:\s*)"[^"\n]*"/g;
+// Command-line style secrets: an "args" array element after --token / --api-key / --key / --password / --secret (next element or --flag=value),
+// and secret-named URL query parameters.
+const ARG_NEXT = /("--?(?:token|api[-_]?key|key|password|passwd|secret|auth(?:orization)?|bearer)"\s*,\s*)"[^"\n]*"/gi;
+const ARG_EQ = /("--?(?:token|api[-_]?key|key|password|passwd|secret|auth(?:orization)?|bearer)=)[^"\n]*"/gi;
+const QUERY_SECRET = /([?&](?:api[_-]?key|access[_-]?token|token|key|secret|password)=)[^&\s"'#]+/gi;
 const URL_CREDS = /(\b\w{1,20}:\/\/[^\s:@/"]{1,100}:)[^\s@/"]{1,200}@/g;
 
 /** Hide values that could be secrets in a diff shown on screen: secret-looking keys, any ALL_CAPS env value that is not a plain path/port/etc., and user:pass@ in URLs. */
@@ -724,7 +738,10 @@ export function redact(s: string): string {
   return s
     .replace(SECRET_LINE, '$1"***"')
     .replace(ENV_STYLE_LINE, (m, pre: string, key: string) => (PLAIN_ENV_KEY.test(key) ? m : `${pre}"***"`))
-    .replace(URL_CREDS, "$1***@");
+    .replace(URL_CREDS, "$1***@")
+    .replace(ARG_NEXT, '$1"***"')
+    .replace(ARG_EQ, '$1***"')
+    .replace(QUERY_SECRET, "$1***");
 }
 
 type DiffOp = readonly [" " | "-" | "+", string];
@@ -760,6 +777,13 @@ export function lineDiff(before: string, after: string, file: string): string[] 
     ...middleOps(a.slice(head, a.length - tail), b.slice(head, b.length - tail)),
     ...a.slice(a.length - tail).map((l): DiffOp => [" ", l]),
   ];
+  // An args array has the secret on the line AFTER "--token": mask whole files (line count unchanged), then look each line up.
+  const masked = new Map<string, string>();
+  for (const arr of [a, b]) {
+    const m = redact(arr.join("\n")).split("\n");
+    arr.forEach((l, i) => m[i] !== l && masked.set(l, m[i]));
+  }
+  const red = (l: string): string => masked.get(l) ?? redact(l);
   const ctx = 2;
   const first = ops.findIndex((o) => o[0] !== " ");
   const last = ops.length - 1 - [...ops].reverse().findIndex((o) => o[0] !== " ");
@@ -773,14 +797,14 @@ export function lineDiff(before: string, after: string, file: string): string[] 
       while (run < ops.length && run <= last && ops[run][0] === " ") run++;
       // An unchanged stretch between two changes: its first and last 2 lines, the rest elided.
       if (k > first && run <= last && run - k > 2 * ctx + 1) {
-        for (let x = k; x < k + ctx; x++) out.push("  " + redact(ops[x][1]));
+        for (let x = k; x < k + ctx; x++) out.push("  " + red(ops[x][1]));
         out.push("  ...");
-        for (let x = run - ctx; x < run; x++) out.push("  " + redact(ops[x][1]));
+        for (let x = run - ctx; x < run; x++) out.push("  " + red(ops[x][1]));
         k = run - 1;
         continue;
       }
     }
-    out.push(`${c} ` + redact(l));
+    out.push(`${c} ` + red(l));
   }
   return out;
 }
@@ -1097,9 +1121,11 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
   }
   io.out("");
 
-  const plan: SetupPlan = { nodeOk: true, found, changes: [], dbs: [], warnings: [], already: [], conflicts: [], };
-  const shared = { dbs: new Set<string>() };
-  try {
+  let plan: SetupPlan = { nodeOk: true, found, changes: [], dbs: [], warnings: [], already: [], conflicts: [], };
+  let shared: { dbs: Set<string>; dupOld?: number } = { dbs: new Set<string>() };
+  const planApps = (): void => {
+    plan = { nodeOk: true, found, changes: [], dbs: [], warnings: [], already: [], conflicts: [] };
+    shared = { dbs: new Set<string>() };
     for (const t of found) {
       if (opts.only && !opts.only.includes(t.id)) continue;
       const asked = !!opts.only?.includes(t.id) || (t.id === "project" && opts.project);
@@ -1109,6 +1135,16 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
       plan.conflicts.push(...r.conflicts);
       plan.warnings.push(...r.warnings);
       if (r.change) plan.changes.push(r.change);
+    }
+  };
+  let offeredRemoval = false;
+  try {
+    planApps();
+    // An old entry beside a "monomem" one: at a terminal (or a dry run) plan its removal so the diff shows it; it is applied only after a typed yes.
+    if (shared.dupOld && !opts.yes && (io.interactive || opts.dryRun)) {
+      opts = { ...opts, removeOld: true };
+      planApps();
+      offeredRemoval = true;
     }
   } catch (err) {
     io.err(`I could not read a configuration file safely, so I stopped before changing anything:\n  ${(err as Error).message}`);
@@ -1165,6 +1201,7 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
     }
   }
   const anyHook = hookPlans.size > 0;
+  const hookReplacesOld = [...hookPlans.values()].some((c) => c.lines.some((l) => l.startsWith("replace the start-of-session hook")));
   const anyCapture = capturePlans.size > 0;
 
   if (plan.changes.length === 0 && !anyHook && !anyCapture) {
@@ -1206,6 +1243,7 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
   }
 
   if (opts.dryRun) {
+    if (offeredRemoval) io.out("(The removal of the old entry above is only done if you say yes when you run setup for real.)");
     io.out("Dry run: nothing was changed. No file was written, and no database was created or upgraded.");
     if ((anyHook && !wantHook) || (anyCapture && !wantCapture)) io.out("(The hooks above are only added if you say yes to them, or pass --hook / --capture.)");
     return 0;
@@ -1222,8 +1260,15 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
       io.out("Cancelled. Nothing was changed.");
       return 0;
     }
+    if (offeredRemoval) {
+      const r = (await io.ask("The old entry(ies) shown with - above sit beside your Monomem one. Remove them? Type y, or press Enter to cancel everything: ")).trim().toLowerCase();
+      if (r !== "y" && r !== "yes") {
+        io.out("Cancelled. Nothing was changed. Remove the old entry yourself, or run setup again and answer y.");
+        return 0;
+      }
+    }
     if (anyHook && opts.hook === "ask") {
-      const h = (await io.ask("Also install the start-of-session hook (Claude sees your recent notes when a session starts)? Type y or n: ")).trim().toLowerCase();
+      const h = (await io.ask(`Also install the start-of-session hook (Claude sees your recent notes when a session starts)${hookReplacesOld ? ". This REPLACES your old onememory-mcp hook with the current Monomem one" : ""}? Type y or n: `)).trim().toLowerCase();
       wantHook = h === "y" || h === "yes";
     }
     // Asked only after a yes to the start-of-session hook (or when it is already there): a no to that is a no to both.

@@ -1,5 +1,6 @@
 // Per-app stdio attribution: setup names each app in its MCP entry (MONOMEM_CLIENT), the stdio server stamps
 // written_by "stdio:<app>", and filters / the distrust list tell the apps apart while "stdio" still covers them all.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

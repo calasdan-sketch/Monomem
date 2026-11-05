@@ -1,4 +1,5 @@
 // Aggregation questions ("how many ...") widen k and soft-cap hits per capture session; results carry a compact date.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/store.js";

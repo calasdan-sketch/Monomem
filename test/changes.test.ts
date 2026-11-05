@@ -1,6 +1,7 @@
 // Change feed: Store.changes (tombstones, grouping, cursor paging), the
 // changes.ts service ("since" parsing, the per-consumer "last" marker), the
 // memory_since MCP tool (scope + namespace gating) and REST GET /changes.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

@@ -1,6 +1,7 @@
 // At-rest encryption: AES-256-GCM envelope round-trip, key management, and
 // the store integration (body sealed to body_enc, FTS index left plaintext,
 // decryption at the read chokepoint).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, statSync } from "node:fs";

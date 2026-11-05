@@ -1,6 +1,7 @@
 // Plain-file sync: deterministic Markdown export, front-matter round-trip,
 // three-way merge on import (file wins / store wins / conflicts preserved),
 // cross-store identity, pruning, and the linter on the import path.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
