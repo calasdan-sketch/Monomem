@@ -46,6 +46,9 @@ describe("monomem drill", () => {
       assert.deepEqual(r.unexpected, []);
       assert.equal(r.ok, true);
       assert.ok(r.rows.some((x) => x.verdict === "warned"));
+      const v = (id: string): string => r.rows.find((x) => x.id === id)?.verdict ?? "";
+      assert.equal(v("E01"), "held", "quarantined = held");
+      assert.equal(v("E07"), "blocked", "a blocked secret is not quarantine");
       assert.match(renderDrill(r), /Poison reached the agent: 2 of 20 attacks \(known misses: E16 reworded override, self-poisoning\)/);
       assert.equal(statSync(db).size, before.size);
       assert.ok(readFileSync(db).equals(before.bytes), "the real database file is byte-for-byte unchanged");

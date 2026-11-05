@@ -159,6 +159,48 @@ def remove_stroke(path: Path, origin: tuple[int, int], scale: float, fill) -> No
     print(f"{path}: thin stroke removed")
 
 
+# The cut above leaves the inner horn's tip squared off: a small notch where it should taper to a point.
+# This repaints the missing taper as a triangle, in banner pixels. The top edge is flat at y = 131.55 (read
+# off the pixels); the bottom edge continues the horn's own lower edge, which rises 1 px for every 1.35 px
+# of x through (207, 137.5). Drawn with 4x4 supersampling, over whatever is there, so the edge stays smooth.
+TIP = [(205.0, 131.55), (205.0, 137.9), (215.6, 131.55)]
+TIP_SAMPLE = (195, 138)  # a banner pixel well inside the horn: its colour is the mark's colour
+
+
+def _inside(px: float, py: float) -> bool:
+    (ax, ay), (bx, by), (cx, cy) = TIP
+    d = [(bx - ax) * (py - ay) - (by - ay) * (px - ax), (cx - bx) * (py - by) - (cy - by) * (px - bx), (ax - cx) * (py - cy) - (ay - cy) * (px - cx)]
+    return all(v >= 0 for v in d) or all(v <= 0 for v in d)
+
+
+def add_tip(path: Path, origin: tuple[int, int], scale: float, fill) -> None:
+    image = Image.open(path).convert("RGBA" if fill is None else "RGB")
+    px = image.load()
+    sx = int(origin[0] + (TIP_SAMPLE[0] - 120) * scale)
+    sy = int(origin[1] + (TIP_SAMPLE[1] - 80) * scale)
+    colour = px[sx, sy][:3]
+    n = 4
+    x0, x1 = int(origin[0] + (200 - 120) * scale), int(origin[0] + (220 - 120) * scale) + 1
+    y0, y1 = int(origin[1] + (125 - 80) * scale), int(origin[1] + (140 - 80) * scale) + 1
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            hits = sum(
+                _inside(120 + (x + (i + 0.5) / n - origin[0]) / scale, 80 + (y + (j + 0.5) / n - origin[1]) / scale)
+                for i in range(n)
+                for j in range(n)
+            )
+            cov = hits / (n * n)
+            if not cov:
+                continue
+            old = px[x, y]
+            if fill is None:
+                px[x, y] = (*colour, max(old[3], round(255 * cov)))
+            else:
+                px[x, y] = tuple(round(o + (c - o) * cov) for o, c in zip(old, colour))
+    image.save(path)
+    print(f"{path}: inner tip tapered")
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     for target in TARGETS:
@@ -169,6 +211,7 @@ def main() -> None:
         redraw_tagline(root / line["path"], line)
     for path, origin, scale, fill in MARKS:
         remove_stroke(root / path, origin, scale, fill)
+        add_tip(root / path, origin, scale, fill)
 
 
 if __name__ == "__main__":

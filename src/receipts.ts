@@ -114,10 +114,10 @@ export function renderCard(t: MeterTotals): string {
     `<rect width="640" height="360" rx="18" fill="#0B2E45"/>` +
     `<text x="40" y="70" font-size="30" font-weight="700" fill="#F0C171">Monomem</text>` +
     `<text x="40" y="100" font-size="15" fill="#FFFFFF">What local memory saved my agents</text>` +
-    stat(40, t.sessions, "sessions") +
+    stat(40, t.sessions, Number(t.sessions) === 1 ? "session" : "sessions") +
     stat(230, t.injected_tokens, "tokens injected") +
     stat(430, t.saved_tokens, "est. tokens saved") +
-    `<text x="40" y="268" font-size="13" fill="#FFFFFF">estimate, ~4 chars/token. Saved = captured work the injected memory stood in for, minus the tokens injected.</text>` +
+    `<text x="40" y="262" font-size="13" fill="#FFFFFF"><tspan x="40">estimate, ~4 chars/token. Saved = captured work the injected memory</tspan><tspan x="40" dy="18">stood in for, minus the tokens injected.</tspan></text>` +
     `<text x="40" y="330" font-size="15" font-weight="600" fill="#F0C171">No network calls by Monomem by default</text>` +
     `</svg>\n`
   );
@@ -148,6 +148,22 @@ export async function meterCmd(args: string[]): Promise<void> {
   }
 }
 
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+/** "2026-11-05 14:03" in the reader's local time; the stored ISO string if it does not parse. */
+export function localTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+/** `{files,kw 3d}` -> "files, kw; 3 days old"; `{recent 0d}` -> "recent; today". Anything else is shown as stored. */
+export function whyText(why: string): string {
+  const m = /^\{(?:(.*?) )?(\d+)d\}$/.exec(why);
+  if (!m) return why;
+  const days = Number(m[2]);
+  const age = days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} old`;
+  return `${m[1] ? m[1].split(",").join(", ") + "; " : ""}${age}`;
+}
+const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? "" : "s"}`;
+
 /** `monomem receipts [session-id] [--json]` */
 export async function receiptsCmd(args: string[]): Promise<void> {
   const store = await openStore();
@@ -161,14 +177,15 @@ export async function receiptsCmd(args: string[]): Promise<void> {
         process.exit(1);
       }
       if (json) return console.log(JSON.stringify(r, null, 2));
-      console.log(`session ${printable(r.session_id)}  ${r.at}  ${printable(r.client || "-")}  ns=${printable(r.namespace || "-")}  ~${r.tokens} tok`);
-      for (const n of r.notes) console.log(`  ${n.rank}. #${n.id} ${n.why} ~${n.tokens} tok  ${n.state === "ok" ? printable(n.title) : "(deleted, archived or hidden since)"}`);
+      console.log(`session ${printable(r.session_id)}  ${localTime(r.at)}  ${printable(r.client || "-")}${r.namespace ? `  namespace ${printable(r.namespace)}` : ""}`);
+      console.log(`  ${plural(r.notes.length, "note")} shown, ~${r.tokens} tokens of note text (the whole injection is a little larger: it adds headers and a footer; see \`monomem meter\`)`);
+      for (const n of r.notes) console.log(`  ${n.rank}. #${n.id} ~${n.tokens} tokens, why: ${whyText(n.why)}  ${n.state === "ok" ? printable(n.title) : "(deleted, archived or hidden since)"}`);
       return;
     }
     const list = receiptList(store);
     if (json) return console.log(JSON.stringify(list, null, 2));
     if (!list.length) return console.log("No receipts yet: they are written by the next session the SessionStart hook runs for.");
-    for (const s of list) console.log(`${printable(s.session_id)}  ${s.at}  ${s.notes} note(s)  ~${s.tokens} tok  ${printable(s.client || "-")}`);
+    for (const s of list) console.log(`${printable(s.session_id)}  ${localTime(s.at)}  ${plural(s.notes, "note")}, ~${s.tokens} tokens of note text  ${printable(s.client || "-")}`);
   } finally {
     store.close();
   }

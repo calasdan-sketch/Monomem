@@ -85,10 +85,12 @@ export const DASHBOARD_HTML = `<!doctype html>
   .badge-bad{display:inline-block;background:var(--danger-bg);color:var(--danger-fg);border-radius:6px;
     padding:0 7px;font-size:11px;font-weight:700;margin-left:6px;vertical-align:middle}
   #runner div+div{margin-top:4px}
-  label.chk{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
+  label.chk{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px;white-space:nowrap}
   .scroll{overflow-x:auto}
   /* Phones: the note text comes before its action buttons. */
   @media (max-width:600px){
+    header h1{order:-2}
+    header label.chk{order:-1;margin-left:auto} /* the checkbox shares the title's row instead of wrapping alone */
     .card{display:flex;flex-direction:column}
     .cardhead{display:contents}
     .cardhead>div:first-child{order:1;flex:none}
@@ -166,7 +168,12 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){
 function $(id){ return document.getElementById(id); }
 
 // A small coloured chip per writer: a stable hash of the label picks the hue (the label itself is escaped text).
-function hue(s){ var h = 0; s = String(s); for(var i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; } return 30 + (h % 300); } // skip red hues: red reads as danger next to delete
+var HUES = [30,195,96,261,162,327,63,228,129,294], hueOf = {}; // ten hues in an order where neighbours are far apart, none red (red reads as danger next to delete)
+function hue(s){ s = String(s); if(hueOf[s] !== undefined) return hueOf[s];
+  var h = 0; for(var i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; }
+  var used = {}; for(var k in hueOf) used[hueOf[k]] = 1;
+  for(var j = 0; j < HUES.length; j++){ var c = HUES[(h + j) % HUES.length]; if(!used[c]){ return (hueOf[s] = c); } }
+  return (hueOf[s] = HUES[h % HUES.length]); } // the stable hash picks a start; a hue another writer already has is skipped (past ten writers they repeat)
 function shownWriter(w){ return w === "primary" ? "admin (setup)" : w; } // display only: the stored label stays "primary"
 function chip(label){ return "<span class='chip' style='--h:"+hue(label)+"'>"+esc(shownWriter(label))+"</span>"; }
 function acts(html){ return "<div class='acts'>"+html+"</div>"; }

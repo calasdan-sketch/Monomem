@@ -16,14 +16,35 @@ export MONOMEM_BIND=0.0.0.0                    # only if the server must listen 
 monomem start                                  # dashboard + REST on :8790, MCP over HTTP on :8791 (/mcp)
 ```
 
+On Windows PowerShell:
+
+```powershell
+$env:MONOMEM_TOKEN = -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })   # the admin token, yours
+$env:MONOMEM_BIND = "0.0.0.0"     # only if the server must listen beyond this machine
+monomem start
+```
+
+(`Get-Random` is fine for a first setup; for a long-lived token use `openssl rand -hex 32` if you have it.)
+
 By default the server listens on `127.0.0.1` only. It refuses to bind to anything else unless `MONOMEM_TOKEN` is set.
 Do not put the plain port on the internet. Put an authenticated tunnel or a TLS proxy in front of it; the three checks
 and the Cloudflare Access setup are in [INFRA.md](../INFRA.md).
 
 ## 2. One token per person
 
-Give each person their own token, so the writer name on a note is that person. Add them to
-`~/.monomem/tokens.json` (the folder `monomem doctor` reports; set `MONOMEM_TOKENS` instead if you run in Docker):
+Give each person their own token, so the writer name on a note is that person. The easy way is to let Monomem make it:
+
+```bash
+monomem token add --label alice --scope write --namespace team
+```
+
+It makes a strong random token, adds it to `~/.monomem/tokens.json` (the folder `monomem doctor` reports) and shows the token once. It has to be run by a
+person in a terminal (it asks you to type `yes`), so an agent running commands without a terminal cannot add one; anyone
+who can edit `tokens.json` directly still can. The server reads the file once at startup, so a new token works, and a
+removed one stops working, only after a restart. Repeat for `bob`, and for a read-only
+person use `--scope read`. `monomem token list` shows labels and scopes, never the tokens. If you run in Docker, set `MONOMEM_TOKENS` instead.
+
+The alternative is to write the file yourself. It looks like this:
 
 ```json
 [
@@ -33,18 +54,14 @@ Give each person their own token, so the writer name on a note is that person. A
 ]
 ```
 
-Make each token with `openssl rand -hex 32`; Monomem ignores tokens shorter than 32 characters. The server reads this
-file once at startup, so restart it after a change. Each person then points their assistant at
+Make each token with `openssl rand -hex 32` (in PowerShell, the one-liner above, run once per token); Monomem ignores tokens shorter than 32 characters.
+The server reads this file once at startup, so restart it after a change. Each person then points their assistant at
 `https://<your host>/mcp` and sends their token as `Authorization: Bearer <token>`. Details for each client are in
 [INSTALL.md](../INSTALL.md); n8n and other HTTP callers are in [INFRA.md](../INFRA.md).
 
-> Or let Monomem write the file: `monomem token add --label alice --scope write --namespace team` makes a strong
-> random token, adds it and shows it once. It has to be run by a person in a terminal (it asks you to type `yes`), so
-> an agent running commands without a terminal cannot add one; anyone who can edit `tokens.json` directly still can. The server reads `tokens.json` once at startup, so a new token works, and a removed one stops working, only after a restart. `monomem token list` shows labels and scopes, never the tokens.
-
 `read` can only read, `write` can read and write, `admin` can also approve held writes and change policy. The
-label becomes the note's `written_by`, which the server stamps itself; nobody can write as someone else
-([docs/provenance.md](./provenance.md)).
+label becomes the note's `written_by`. The server stamps it from the token, so a caller with your token is you and a request body cannot
+change it ([docs/provenance.md](./provenance.md)).
 
 ## 3. Namespaces: who sees what
 
@@ -75,7 +92,7 @@ anyone's session: `monomem trust distrust alice --namespace team` ([docs/trust.m
 
 ## 5. Keeping copies
 
-**Backups of the server.** `monomem backup --out ~/om-backup` makes a consistent copy while the server runs. If you
+**Backups of the server.** `monomem backup --out ~/monomem-backup` (in PowerShell: `monomem backup --out $HOME\monomem-backup`) makes a consistent copy while the server runs. If you
 turned on encryption at rest, keep the key file apart from the backup. Detail: [INFRA.md](../INFRA.md#7-backups).
 
 **Without a server at all.** If your team is small and trusts a private git repository, each person can keep their

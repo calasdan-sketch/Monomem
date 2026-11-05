@@ -148,7 +148,7 @@ describe("token & footprint meter", () => {
     assert.equal(m.recent[0].session_id, "sess-1");
     assert.ok(m.db_bytes > 0);
     assert.deepEqual(Object.keys(m.recent[0]).sort(), ["injected_tokens", "injections", "llm_tokens", "namespace", "saved_tokens", "session_id", "updated_at"]);
-    assert.match(meterLine(m), /footprint: 1 session\(s\), ~\d+ tokens injected \(2 time\(s\)\)/);
+    assert.match(meterLine(m), /footprint: 1 session, 2 injections of ~\d+ tokens in total/);
     s.close();
   });
 

@@ -83,11 +83,14 @@ export function meterStats(store: Store, namespaces?: string[]): MeterStats {
   };
 }
 
-/** One line for `monomem doctor`. */
+const plural = (n: number, one: string, many = one + "s"): string => `${n} ${n === 1 ? one : many}`;
+
+/** One line for `monomem doctor`. "Injected" counts everything the hook added: note text plus index lines, legend and footer. */
 export function meterLine(m: MeterStats): string {
   const t = m.totals;
+  const standIn = t.saved_tokens > 0 ? `, standing in for ~${t.saved_tokens} tokens of captured work` : "";
   return (
-    `footprint: ${t.sessions} session(s), ~${t.injected_tokens} tokens injected (${t.injections} time(s)), ~${t.saved_tokens} tokens of captured work stood in for, ` +
-    `${t.llm_tokens} local-model tokens, ${m.capture_events} capture event(s), database ${(m.db_bytes / 1048576).toFixed(1)} MB`
+    `footprint: ${plural(t.sessions, "session")}, ${plural(t.injections, "injection")} of ~${t.injected_tokens} tokens in total (notes plus headers and footer)${standIn}, ` +
+    `${t.llm_tokens} local-model tokens, ${plural(m.capture_events, "capture event")}, database ${(m.db_bytes / 1048576).toFixed(1)} MB`
   );
 }
