@@ -718,7 +718,7 @@ export function createMcpServer(
           const denied = denyIfUnder("admin");
           if (denied) return errorResult(denied);
           if (limit !== undefined && limit < 1) return errorResult("limit must be an integer >= 1");
-          const { parseAsOf, asOfView, asOfSearch } = await import("./asof.js");
+          const { parseAsOf, asOfView, asOfSearch, asOfFields } = await import("./asof.js");
           let at: Date;
           try {
             at = parseAsOf(as_of);
@@ -734,7 +734,7 @@ export function createMcpServer(
             as_of: at.toISOString(),
             note: "Reconstructed from note history; hard-deleted notes cannot be shown.",
             not_kept: view.notKept,
-            results: hits.map((h) => ({ ...withWhen(h.note), text_kept: h.kept })),
+            results: hits.map((h) => asOfFields(h, withWhen)),
             searchedNamespaces: spaces ?? [],
           });
         }

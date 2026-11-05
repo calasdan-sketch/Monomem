@@ -1521,6 +1521,7 @@ export class Store {
     }
     if (found >= SCHEMA_VERSION) {
       this.ensureV14Extras();
+      this.ensureArchiveLog();
       this.cleanStoredLabels();
       Store.sweepStalePartials(this.dbPath); // an unfinished upgrade copy (a killed process) does not sit there forever
       return;
@@ -1533,6 +1534,7 @@ export class Store {
         this.migrate(v);
         this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
         this.ensureV14Extras();
+        this.ensureArchiveLog();
         this.cleanStoredLabels();
       }
       this.db.exec("COMMIT");
@@ -1544,6 +1546,80 @@ export class Store {
       }
       throw e;
     }
+  }
+
+  /**
+   * Archive/restore history for time travel (`--as-of`). notes only keeps the CURRENT archived_at, so a note archived and
+   * restored looked live the whole time. A trigger records every archived_at flip (archive, expiry/decay sweep, supersede,
+   * restore, supersede-undo): ids and times only, no text; deleting a note drops its rows. No schema bump: IF NOT EXISTS on
+   * every open. A read-only file goes without. It reaches back only to `archive_log_since` (_meta).
+   */
+  private ensureArchiveLog(): void {
+    try {
+      // Already there: write nothing (opening a database to read it must leave the file byte-for-byte alone).
+      if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'notes_archive_log_ad'").get()) return;
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS archive_log (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          note_id INTEGER NOT NULL,
+          at TEXT NOT NULL,
+          archived INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_archive_log_note ON archive_log(note_id);
+        CREATE TRIGGER IF NOT EXISTS notes_archive_log_au AFTER UPDATE OF archived_at ON notes
+        WHEN old.archived_at IS NOT new.archived_at
+        BEGIN
+          INSERT INTO archive_log (note_id, at, archived) VALUES (new.id, COALESCE(new.archived_at, ${SQL_NOW}), new.archived_at IS NOT NULL);
+        END;
+        CREATE TRIGGER IF NOT EXISTS notes_archive_log_ad AFTER DELETE ON notes
+        BEGIN
+          DELETE FROM archive_log WHERE note_id = old.id;
+        END;
+        INSERT OR IGNORE INTO _meta (key, value) VALUES ('archive_log_since', ${SQL_NOW});
+      `);
+    } catch {
+      /* read-only file: no archive history until a writer opens it */
+    }
+  }
+
+  /** When archive/restore recording began (ISO), or null when it never could (read-only file no writer has opened yet). */
+  archiveLogSince(): string | null {
+    try {
+      const r = this.db.prepare("SELECT value FROM _meta WHERE key = 'archive_log_since'").get() as { value: string } | undefined;
+      return r?.value ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Every recorded archive (true) / restore (false) event per note, oldest first. */
+  archiveEvents(): Map<number, Array<{ at: string; archived: boolean }>> {
+    const out = new Map<number, Array<{ at: string; archived: boolean }>>();
+    try {
+      for (const r of this.db.prepare("SELECT note_id, at, archived FROM archive_log ORDER BY seq").all() as Array<{ note_id: number; at: string; archived: number }>) {
+        const l = out.get(r.note_id) ?? [];
+        l.push({ at: r.at, archived: Number(r.archived) === 1 });
+        out.set(r.note_id, l);
+      }
+    } catch {
+      /* table absent */
+    }
+    return out;
+  }
+
+  /** supersede_log events per retired note (supersede = retired, undo = brought back), oldest first. */
+  supersedeEvents(): Map<number, Array<{ at: string; retired: boolean }>> {
+    const out = new Map<number, Array<{ at: string; retired: boolean }>>();
+    try {
+      for (const r of this.db.prepare("SELECT old_id, at, action FROM supersede_log ORDER BY seq").all() as Array<{ old_id: number; at: string; action: string }>) {
+        const l = out.get(r.old_id) ?? [];
+        l.push({ at: r.at, retired: r.action === "supersede" });
+        out.set(r.old_id, l);
+      }
+    } catch {
+      /* no supersede_log */
+    }
+    return out;
   }
 
   /**
