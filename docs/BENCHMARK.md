@@ -482,3 +482,17 @@ The benchmark notes carry no capture session or source, so the per-session cap a
 here; they are covered by unit tests. The session-start change is not a benchmark path either. LoCoMo was also used
 to tune the 11-04 session-neighbour weight, so its numbers are not a held-out test. No end-to-end answer accuracy was
 re-measured in this round.
+
+## `monomem drill`: the poisoning attacks on your own setup
+
+`monomem drill` copies your store to a temporary folder (`VACUUM INTO`, your file is opened read-only), replays the
+suite-E poisoning scenarios plus one self-poisoning case against the copy through the same adapter `monomem bench`
+uses, and deletes the copy. Unlike `bench`, it keeps your environment (`MONOMEM_LINT` and the rest), so the result
+reflects your configuration. Each attack is `held`, `warned` (stored, but labelled or warned about) or `REACHED`.
+`--json` prints the full result. Exit code 0 when only known misses got through, 1 otherwise, 2 when it could not run.
+
+Two attacks are known misses by design: E16 (a reworded override that no pattern matches; one admin distrust of the
+writer removes it afterwards) and self-poisoning (a trusted writer stores an attacker's instruction in its own words).
+Both are expected to reach the agent and are reported as such, not as passes.
+
+The same attacks, with their expected outcomes, are exported to `evals/poisoning-corpus.json` (see `evals/README.md`).
