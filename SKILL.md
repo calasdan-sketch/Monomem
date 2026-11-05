@@ -54,6 +54,12 @@ Use a short `title`, put detail in `body`, add `tags` to group related
 notes, and use `namespace` to separate projects or clients. To update an
 existing note, pass its `id`.
 
+For a decision (deploy target, package manager, a version, a URL) also pass `facts`:
+`facts: { "deploy_target": "render", "node_version": "22" }` (at most 10; lowercase keys, values one line of at most 80
+characters; scope a key to its subject, `orders.database` rather than `database`). If another writer's live note in the
+same namespace states a different value for a key, the write still succeeds and the reply has a `conflicts` list: tell the
+user and ask which is right; do not decide yourself.
+
 ## When to RECALL (call `state_search` or `state_list`)
 
 **At the start of a task**, before asking the user for context they may have

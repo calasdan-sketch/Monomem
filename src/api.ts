@@ -101,6 +101,7 @@ import { ackChanges, resolveSince } from "./changes.js";
 import { qualityReport } from "./quality.js";
 import { rollbackPreview, rollbackConfirm, embedRestored } from "./rollback.js";
 import { SupersedeError, supersedePreview, supersedeConfirm, supersedeUndo, noteHistory, restoreVersion, purgeNoteHistory, type Caller } from "./supersede.js";
+import { withFacts, writeConflicts } from "./facts.js";
 import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
 import { waitForChanges, parseWait, WaitBusyError } from "./change-wait.js";
 import type { LintFinding } from "./lint.js";
@@ -570,10 +571,14 @@ export function createApiServer(
           if (nsCtx.active) parsed.namespace = nsCtx.ownNamespace;
           assertPlainWriteTags(parsed.tags);
           assertReviewedTag(parsed.tags, undefined, isAdmin);
+          const { facts } = parsed as { facts?: unknown };
+          delete (parsed as { facts?: unknown }).facts;
+          parsed.tags = withFacts(parsed.tags, facts);
           const warnings: LintFinding[] = [];
           const note = store.create(parsed, { lintWarnings: warnings });
           await maybeEmbed(store, note);
-          sendJson(res, 201, warnings.length ? { note, warnings } : { note });
+          const conflicts = facts === undefined ? [] : writeConflicts(store, note);
+          sendJson(res, 201, { note, ...(warnings.length ? { warnings } : {}), ...(conflicts.length ? { conflicts } : {}) });
         } catch (e) {
           sendError(res, e);
         }
@@ -802,8 +807,10 @@ export function createApiServer(
               store,
               caller,
               { old_ids: b.old_ids, new_note: b.new_note as never, new_id: b.new_id },
-              "To go ahead, send POST /supersede/confirm with this code: {token}"
+              b.gui === true ? "Press Confirm to go ahead." : "To go ahead, send POST /supersede/confirm with this code: {token}"
             );
+            // The dashboard asks in plain words: the extra line for a red-flag replacement must not talk about request fields either.
+            if (b.gui === true) out.warning = out.warning.replace(/\n\(You must also say[^)]*\)/, "\n(Confirming also accepts the red flag above.)");
             sendJson(res, 200, out);
           } else if (step === "confirm") {
             const out = supersedeConfirm(store, caller, { token: b.token, new_note: b.new_note as never, acknowledge_risk: b.acknowledge_risk });

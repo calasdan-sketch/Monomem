@@ -87,6 +87,11 @@ export const DASHBOARD_HTML = `<!doctype html>
   #runner div+div{margin-top:4px}
   label.chk{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px;white-space:nowrap}
   .scroll{overflow-x:auto}
+  .msg{overflow-wrap:anywhere}
+  .cf{border-top:1px solid var(--line);padding:10px 0 2px}
+  .cf h3{margin:0 0 6px}
+  .cf .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .cf .acts button{max-width:100%;overflow-wrap:anywhere}
   /* Phones: the note text comes before its action buttons. */
   @media (max-width:600px){
     header h1{order:-2}
@@ -483,22 +488,42 @@ function loadQuality(){
         "<div class='meta'>"+esc(i.namespace)+" &middot; "+esc(i.fix)+(i.alt ? " &middot; or "+esc(i.alt) : "")+"</div></div>"+acts(btn)+"</div></div>";
     }).join("");
     var cf = j.conflicts || [];
-    var crow = cf.length ? "<div class='card'><h3>Possible conflicts ("+cf.length+")</h3><div class='meta'>Different writers, same key, different value. Flag only: pick Replace (supersede, asks first), pin, or distrust a writer.</div>"+
-      cf.map(function(c){ var a = Number(c.a.id), b = Number(c.b.id);
-        return "<div class='cardhead'><div><h3><span class='tag'>"+esc(c.confidence)+"</span>"+esc(c.key)+": "+esc(c.values[0])+" vs "+esc(c.values[1])+"</h3>"+
-          "<div class='meta'>#"+a+" "+esc(c.a.title)+" ("+esc(c.a.writer)+", "+esc(String(c.a.at).slice(0,10))+") &middot; #"+b+" "+esc(c.b.title)+" ("+esc(c.b.writer)+", "+esc(String(c.b.at).slice(0,10))+") &middot; "+esc(c.namespace)+"</div></div>"+
-          acts("<button onclick='qReplace("+a+","+b+")'>Replace #"+a+" with #"+b+"</button> <button class='ghost' onclick='qReplace("+b+","+a+")'>Replace #"+b+" with #"+a+"</button>")+"</div>"; }).join("")+"</div>" : "";
+    var crow = cf.length ? "<div class='card'><h3>Conflicts ("+cf.length+")</h3><div class='meta'>Different writers, same key, different value. Flag only: nothing changes until you press a button and confirm. Exact = both notes carry the same fact key. Possible = guessed from the text.</div>"+cf.map(cfRow).join("")+"</div>" : "";
     $("list").innerHTML = crow + rows || empty("No quality issues found. Duplicates, stale notes and held writes will be listed here.");
   }).catch(failList);
 }
+// One conflict: both sides stated plainly, then the buttons under it. Neither side is the default.
+function cfSide(n, v){
+  return "<div class='meta'><b>"+esc(v)+"</b> &middot; #"+Number(n.id)+" "+esc(n.title)+" &middot; "+esc(n.writer)+" ("+esc(n.kind)+") &middot; "+esc(String(n.at).slice(0,10))+(n.pinned ? " &middot; pinned" : "")+"</div>";
+}
+function cfRow(c){
+  var a = c.a, b = c.b, ai = Number(a.id), bi = Number(b.id), btns = [];
+  // Keeping one side replaces the other, and a pinned note can only be changed from the CLI.
+  if(!b.pinned){ btns.push("<button class='ghost' onclick='qReplace("+bi+","+ai+")'>Keep "+esc(c.shown[0])+"</button>"); }
+  if(!a.pinned){ btns.push("<button class='ghost' onclick='qReplace("+ai+","+bi+")'>Keep "+esc(c.shown[1])+"</button>"); }
+  [a, b].forEach(function(n){
+    if(!n.pinned){ btns.push("<button class='ghost' onclick='var x=this;arm(x,function(){qPin("+Number(n.id)+")})'>Pin #"+Number(n.id)+"</button>"); }
+    btns.push("<button class='ghost' data-ns='"+esc(c.namespace)+"' data-w='"+esc(n.writer)+"' onclick='var x=this;arm(x,function(){qDistrust(x)})'>Distrust "+esc(n.writer)+"</button>");
+  });
+  var pins = [a, b].filter(function(n){ return n.pinned; }).map(function(n){ return "#"+Number(n.id); });
+  return "<div class='cf'><h3><span class='tag'>"+esc(c.confidence)+"</span>"+esc(c.key)+"</h3>"+cfSide(a, c.shown[0])+cfSide(b, c.shown[1])+
+    "<div class='meta'>"+esc(c.namespace)+(pins.length ? " &middot; "+pins.join(", ")+" pinned: change it from the CLI" : "")+"</div>"+acts(btns.join(" "))+"</div>";
+}
 function qReplace(oldId, newId){
-  api("/supersede/preview", { method:"POST", body: JSON.stringify({ old_ids: [oldId], new_id: newId }) }).then(function(p){
+  // gui: the server words the question for a person (no request codes or POST instructions).
+  api("/supersede/preview", { method:"POST", body: JSON.stringify({ old_ids: [oldId], new_id: newId, gui: true }) }).then(function(p){
     ask(p.warning, "Confirm replace", function(){
       var body = { token: p.token };
       if(p.requires_acknowledgement){ body.acknowledge_risk = true; }
       api("/supersede/confirm", { method:"POST", body: JSON.stringify(body) }).then(loadQuality).catch(fail);
     });
   }).catch(fail);
+}
+function qPin(id){
+  api("/pinned", { method:"PUT", body: JSON.stringify({ id: id, pinned: true }) }).then(loadQuality).catch(fail);
+}
+function qDistrust(btn){
+  api("/trust/distrust", { method:"POST", body: JSON.stringify({ namespace: btn.getAttribute("data-ns"), writer: btn.getAttribute("data-w") }) }).then(loadQuality).catch(fail);
 }
 // The caller's button already asked ("Confirm archive?"); these just act.
 function qArchive(id){

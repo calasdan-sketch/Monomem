@@ -161,6 +161,38 @@ the trust rules.
 When two notes are about the same thing (very similar, as in "similar-note suggestions") and the older one is flagged stale, the older one now stays
 behind the newer one in search, even if it matches the words slightly better. It is still returned (and still flagged) so nothing disappears.
 
+## Conflicts between writers
+
+`monomem conflicts` (also in `monomem quality` and the dashboard's Quality view) lists live notes from different writers that
+disagree. It only flags: nothing is changed, hidden or merged. Notes from distrusted writers are left out. Each side shows
+the writer's label and what kind of label it is (a server-stamped marker such as `stdio`, or a token label from your config),
+so a label cannot pass as a peer by its spelling.
+
+- **Exact tier (`facts`).** An agent attaches `facts` when it writes (`state_write`, `POST /notes`): at most 10 keys, keys
+  `[a-z0-9_.-]{1,40}`, values one line of at most 80 characters. They are stored as the tags `fact:<key>=<value>` (no schema
+  change; the secret and injection scan runs on them like any tag). Two live notes in one namespace, from different writers,
+  with the same key and different values (case and extra spaces ignored) are flagged. When such a note is written, the write
+  succeeds and the reply carries `conflicts` so the agent can ask the user. Limit: the match is exact on the key, so one key
+  reused for two subjects is flagged; scope keys (`orders.database`, not `database`).
+- **Possible tier (no facts).** The older text rule: both titles state the same `key: value`, or the titles are identical
+  and the bodies hold different values for one key. Titles that merely differ ("Hosting" vs "Where the app runs") are not
+  matched: loosening that gate was measured and flooded the list with look-alike notes.
+
+Measured (test/conflicts-facts.test.ts; P = precision, R = recall; the realistic set is 20 true pairs with natural, different
+titles and 12 look-alikes that are not conflicts; the facts are the ones an agent following SKILL.md would attach):
+
+| Set | Exact tier (facts attached) | Possible tier (no facts) |
+|---|---|---|
+| Realistic pairs | P 1.00, R 1.00 (20/20) | P 0.00, R 0.00 (0/20; its one flag joins two unrelated notes both titled "Node version") |
+| Bench suite B, 7 contradictions | P 1.00, R 1.00 (7/7) | R 0.00 (0/7) |
+| Builder fixture (~200 notes, 15 true pairs) | P 1.00, R 1.00 (15/15) | P 1.00, R 0.80 (12/15) |
+
+Exact-tier precision is 1.00 here because the test keys are scoped per subject; it is a property of the match, not a promise
+about how agents name keys. Pairs written without facts get only the possible tier.
+
+In the dashboard each conflict shows both values, "Keep &lt;value&gt;" for each side (a replacement that asks first and can be
+undone), Pin, and Distrust writer. A pinned note cannot be replaced from the dashboard: change it from the CLI.
+
 ## Upgrading
 
 The first start on 1.6.0 upgrades the database to schema v15 (columns for confidence and the replaced link, and tables for history and

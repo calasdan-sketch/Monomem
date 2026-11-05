@@ -2757,6 +2757,18 @@ export class Store {
   }
 
   /**
+   * Live notes of a namespace whose tags carry the fact `fact:<key>=...` (facts.ts), minus `exceptId` and minus
+   * distrusted writers'. For the write-time conflict check; `key` must already be a valid fact key (a-z 0-9 _ . -).
+   */
+  liveFactNotes(namespace: string, key: string, exceptId: number): NoteRecord[] {
+    const pattern = `%"fact:${key.replace(/_/g, "\\_")}=%`;
+    const rows = this.db
+      .prepare("SELECT * FROM notes WHERE archived_at IS NULL AND namespace = ? AND id <> ? AND tags LIKE ? ESCAPE '\\'")
+      .all(namespace, exceptId, pattern) as unknown as NoteRow[];
+    return this.filterVisible(rows.map((r) => this.rec(r)));
+  }
+
+  /**
    * This note's similar neighbors with staleness fields attached (I-LOW-1).
    * The neighbor records are read untracked (internal reads never bump
    * access counters); only the staleness annotation is kept, so the payload
