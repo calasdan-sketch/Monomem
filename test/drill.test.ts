@@ -79,6 +79,8 @@ describe("monomem drill", () => {
         const r = await runDrill({ dbPath: db });
         assert.deepEqual(r.reached, [], `${mode}: approve-first holds every attacker write, even the two designed misses`);
         assert.equal(r.ok, true, mode);
+        assert.equal(r.approve_first, true, mode);
+        assert.match(renderDrill(r), /held because every write is held, not because the linter recognised them/, mode);
         assert.equal(r.rows.find((x) => x.id === "SELF")?.verdict, "held", mode);
         assert.notEqual(r.rows.find((x) => x.id === "E04")?.verdict, "reached", `${mode}: the attacker's write does not get through`);
       } finally {

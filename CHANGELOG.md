@@ -297,6 +297,9 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- With approve-first on, `drill` and `health` now say that attacks were held because every agent write waits for
+  review, not because the linter recognised them, and that approving a held write unread lets it in.
+
 - `monomem drill` failed and `health` graded C when `approve-first --all on` was set. The drill's own setup notes are
   now written as the operator; an attack that approve-first holds counts as held.
 - A token label such as `cli (x` could look like the `cli` marker in the start-of-session list; it no longer can.

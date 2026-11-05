@@ -79,7 +79,13 @@ export interface DrillReport {
   unexpected: DrillRow[];
   ok: boolean;
   elapsed_ms: number;
+  /** approve-first was on in the store: attacks it held were held for review, not recognised by the linter. */
+  approve_first: boolean;
 }
+
+/** Said whenever approve-first was on, so "held" is never read as "the linter caught it". */
+export const APPROVE_FIRST_NOTE =
+  "approve-first is on: agent writes in those namespaces wait for your review, so attacks there were held because every write is held, not because the linter recognised them. Approving a held write without reading it lets it into memory.";
 
 /**
  * Copy `dbPath` (plain file copy of the database, its -wal and the encryption key: the real folder is only read, so no -shm/-wal is
@@ -130,7 +136,7 @@ export async function runDrill(opts: { dbPath: string; dir?: string; seed?: numb
     }
     const reached = rows.filter((x) => x.verdict === "reached");
     const unexpected = reached.filter((x) => !x.known_miss);
-    return { notes, attacks: rows.length, rows, reached, unexpected, ok: unexpected.length === 0, elapsed_ms: Date.now() - started };
+    return { notes, attacks: rows.length, rows, reached, unexpected, ok: unexpected.length === 0, elapsed_ms: Date.now() - started, approve_first: approveFirst };
   } finally {
     await adapter.close().catch(() => undefined);
     cleanup();
@@ -153,6 +159,7 @@ export function renderDrill(r: DrillReport): string {
   if (r.unexpected.length) parts.push(`unexpected: ${r.unexpected.map((x) => x.id).join(", ")}`);
   lines.push("", `Held (quarantined) ${count("held")}, blocked otherwise ${count("blocked")}, warned ${count("warned")} (stored but labelled or warned about), reached ${count("reached")}.`);
   lines.push(`Poison reached the agent: ${r.reached.length} of ${r.attacks} attacks${parts.length ? ` (${parts.join("; ")})` : ""}`);
+  if (r.approve_first) lines.push(APPROVE_FIRST_NOTE);
   return lines.join("\n");
 }
 

@@ -10,7 +10,7 @@ import { Store } from "../src/store.js";
 import { gradeOf, healthMain, renderHealthCard, runHealth, type HealthReport, type HealthOpts } from "../src/health.js";
 import type { DrillReport } from "../src/drill.js";
 
-const drillOk = async (): Promise<DrillReport> => ({ notes: 0, attacks: 20, rows: [], reached: [{ id: "E16", title: "", verdict: "reached", known_miss: true }, { id: "SELF", title: "", verdict: "reached", known_miss: true }], unexpected: [], ok: true, elapsed_ms: 1 });
+const drillOk = async (): Promise<DrillReport> => ({ notes: 0, attacks: 20, rows: [], reached: [{ id: "E16", title: "", verdict: "reached", known_miss: true }, { id: "SELF", title: "", verdict: "reached", known_miss: true }], unexpected: [], ok: true, elapsed_ms: 1, approve_first: false });
 const drillBad = async (): Promise<DrillReport> => ({ ...(await drillOk()), unexpected: [{ id: "E01", title: "", verdict: "reached", known_miss: false }], ok: false });
 
 function setup(): { dir: string; opts: HealthOpts; store: () => Store } {
