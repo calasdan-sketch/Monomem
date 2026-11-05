@@ -71,6 +71,17 @@ describe("audit completeness and chain", () => {
     assert.equal(verifyAuditChain().ok, true, "the chain keeps going after a fork");
   });
 
+  test("a line without prev after the chain started is a break", () => {
+    audit({ op: "u1" });
+    const all = readFileSync(log, "utf8").trim().split("\n");
+    all.splice(all.length - 1, 0, JSON.stringify({ ts: new Date().toISOString(), op: "forged" }));
+    writeFileSync(log, all.join("\n") + "\n");
+    const r = verifyAuditChain();
+    assert.equal(r.ok, false);
+    writeFileSync(log, "");
+    audit({ op: "u2" });
+  });
+
   test("deleting a middle line is a break", () => {
     audit({ op: "d1" });
     audit({ op: "d2" });

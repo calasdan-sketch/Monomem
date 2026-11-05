@@ -587,7 +587,8 @@ function lastAuditLineHash(path: string): string {
  * a concurrent fork. A `prev` that matches one of the last FORK_WINDOW lines is counted as a fork, not a break. A
  * `prev` that matches none of them is a break: a line was edited or removed. Every break is counted, not just the
  * first. Limits: it cannot see truncation of the newest lines, deleted rotated files, or a full rewrite by someone
- * who can write the file (the hashes are not keyed); an edited line that only a fork pointed past can go unseen.
+ * who can write the file (the hashes are not keyed); a forged line INSERTED with a valid `prev` looks like a fork; an
+ * edited or removed line that only a fork pointed past can go unseen.
  * Lines written before the chain existed (no `prev`) are counted as unchained.
  */
 const FORK_WINDOW = 16;
@@ -609,6 +610,7 @@ export function verifyAuditChain(path: string = auditPath()): {
   let breaks = 0;
   let forks = 0;
   let unchained = 0;
+  let chained = false; // once a line carries `prev`, a later line without one was not written by this version: a break
   let brokenLine: number | undefined;
   let file: string | undefined;
   for (const f of files) {
@@ -622,12 +624,12 @@ export function verifyAuditChain(path: string = auditPath()): {
         rec = undefined;
       }
       if (!rec || typeof rec.prev !== "string") {
-        if (rec) unchained++;
+        if (rec && !chained) unchained++;
         else {
           breaks++;
           if (brokenLine === undefined) [brokenLine, file] = [n, f];
         }
-      } else if (recent.length > 0) {
+      } else if ((chained = true) && recent.length > 0) {
         if (rec.prev === recent[recent.length - 1]) {
           /* follows the line before it */
         } else if (recent.includes(rec.prev)) forks++;

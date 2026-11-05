@@ -162,7 +162,8 @@ function arm(btn, fn){
   btn.setAttribute("data-armed", "1");
   btn.textContent = "Confirm " + was.toLowerCase() + "?";
   var m = $("msg"); if(m){ m.className = "msg"; m.textContent = "Press " + was + " again within 4 seconds to confirm."; }
-  btn._t = setTimeout(function(){ btn.removeAttribute("data-armed"); btn.textContent = was; }, 4000);
+  var hint = m ? m.textContent : "";
+  btn._t = setTimeout(function(){ btn.removeAttribute("data-armed"); btn.textContent = was; if(m && m.textContent === hint) m.textContent = ""; }, 4000);
 }
 // Longer confirm with a server-written warning (supersede preview): text plus Confirm / Cancel on the status line.
 function ask(text, okLabel, fn){

@@ -41,8 +41,10 @@ content as untrusted input to your agents** — see "Memory safety" below.
   logged from inside the store, so every path (MCP, REST, CLI, background sweep) writes a line. Each line carries
   `prev`, the sha256 of the line before it (carried across rotation), and `monomem audit verify` walks the chain and
   counts every break. Several apps append to one log, so two can race and one line then names an earlier line as its
-  `prev`; verify counts that as a concurrent fork, not a break, and keeps going. This is **tamper-evident, not
-  tamper-proof**: it detects lines edited or removed *inside* the chain. The hashes are not keyed, so any program
+  `prev`; verify counts that as a fork, not a break, and keeps going. This is **tamper-evident, not
+  tamper-proof**: it detects lines edited or removed *inside* the chain. A forged line inserted with a valid `prev`
+  also looks like a fork, and after a real race the line nobody points to can be edited or removed unseen; forks are
+  reported, so a count you did not expect is worth a look. The hashes are not keyed, so any program
   running as you with a shell or file access (including an agent with a shell tool) can rewrite the whole chain or cut
   off its newest lines, and deleting rotated files is not detected. `audit verify` prints the head hash: note it
   somewhere else to catch a later rewrite. Lines written before this was added have no `prev` and are counted as

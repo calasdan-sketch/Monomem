@@ -10,7 +10,7 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Tamper-evident audit log.** Each audit line carries `prev`, the sha256 of the line before it (carried across
   rotation), and `monomem audit verify` counts every break and prints the head hash. Two apps writing at the same
-  moment are counted as a fork, not a break. It detects lines edited or removed inside the chain; it cannot detect the
+  moment are counted as a fork, not a break (an inserted line also looks like a fork, so forks are reported). It detects lines edited or removed inside the chain; it cannot detect the
   newest lines being cut off, rotated files being deleted, or the whole file being rewritten by anyone who can write
   it (an agent with a shell included). Lines written by older versions have no `prev` and are counted as unchained.
 - **Dashboard: a Held tab.** Reject is the main button, Approve the secondary one. Writes waiting for review are listed with their reasons ("instruction override",

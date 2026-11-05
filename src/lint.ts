@@ -209,7 +209,7 @@ export function scanForInjection(text: string | undefined): string | null {
   const prose = t.replace(/`[^`\n]*`/g, " ");
   // Hidden text first, so a later label (e.g. "harness tool-syntax", which capture suppresses) cannot mask it.
   // Any TAG char is invisible; only the three subdivision flags are exempt.
-  if (/[\u{E0000}-\u{E007F}]/u.test(text.replace(FLAG_TAGS_RE, "")) || VS_RUN_RE.test(text)) return "hidden Unicode tag text";
+  if (/[\u{E0000}-\u{E007F}]/u.test(text.replace(FLAG_TAGS_RE, "")) || VS_RUN_RE.test(text.replace(/\p{Cf}/gu, ""))) return "hidden Unicode tag text";
   for (const [label, re] of INJECTION_PATTERNS) {
     if (re.test(label === "system-prompt marker" ? prose : t)) return label;
   }

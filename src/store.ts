@@ -7160,7 +7160,7 @@ export class Store {
           sealCol("title", q.title ?? null),
           sealCol("body", q.body ?? null),
           sealCol("tags", q.tags === undefined ? null : JSON.stringify(q.tags)),
-          q.source ?? null,
+          q.source === undefined ? null : q.source.replace(/[\u{E0000}-\u{E007F}]/gu, ""),
           isoOrNull(q.createdAt),
           JSON.stringify(q.findings),
           new Date().toISOString(),

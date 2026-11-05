@@ -354,7 +354,7 @@ function finalizeResults(
   return notes;
 }
 
-/** Questions that add up or list across the history ("how many", "in total", "every"...): the answer is spread over several sessions. */
+/** Questions that add up or list across the history ("how many", "in total", "list all"...): the answer is spread over several sessions. */
 // Bare "each" / "every" / "total" are everyday words in coding talk ("every time I run tests"), so they are not enough.
 const AGGREGATE_QUERY = /\b(how many|in total|total (?:number|amount|cost|of)|list all|all the \w+ (?:i|we))\b/i;
 /** Most notes of one capture session kept in place on an aggregating question; the rest move behind the others. */
