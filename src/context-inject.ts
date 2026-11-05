@@ -18,7 +18,7 @@ import { execFile } from "node:child_process";
 import type { Store, NoteRecord } from "./store.js";
 import { NOTE_KINDS } from "./store.js";
 import { extractKeywords } from "./keywords.js";
-import { rrfScores, rankHits } from "./search-service.js";
+import { rrfScores, rankHits, anyKeywordHits } from "./search-service.js";
 import { buildSummary } from "./recall.js";
 import { TASK_TAG, HANDOFF_TAG, listTasks } from "./tasks.js";
 import { NEVER_SHOW_TAG, isModelWritten } from "./reserved-tags.js";
@@ -193,13 +193,15 @@ export async function rankContext(
     [words(signals.branch ?? ""), ...(signals.diffFiles ?? []).map(words), ...recentFiles.map(words), latestSummary ? latestSummary.title : ""].join(" ")
   );
   const pool = new Map<number, NoteRecord>((opts.includeDistrusted ? store.markDistrusted(recent.notes) : recent.notes).map((n) => [n.id, n]));
-  const bm25: number[][] = [];
-  for (const kw of keywords) {
-    const hits = store.searchRanked(kw, { namespace: ns, limit: 30, kinds: NOTE_KINDS, ...wf }).filter((h) => !skip(h.note));
-    for (const h of hits) mark(h.note.id, "kw");
-    for (const h of hits) if (!pool.has(h.note.id)) pool.set(h.note.id, opts.includeDistrusted ? store.markDistrusted([h.note])[0] : h.note);
-    bm25.push(hits.map((h) => h.note.id));
+  // One any-keyword search (bm25 x keyword coverage, as runSearch): a rare word outweighs a common one.
+  const hits = keywords.length
+    ? anyKeywordHits(store, keywords, 50, { namespace: ns, kinds: NOTE_KINDS, ...wf }).filter((h) => !skip(h.note))
+    : [];
+  for (const h of hits) {
+    mark(h.note.id, "kw");
+    if (!pool.has(h.note.id)) pool.set(h.note.id, opts.includeDistrusted ? store.markDistrusted([h.note])[0] : h.note);
   }
+  const bm25 = hits.map((h) => h.note.id);
   const overlap: number[] = [];
   const diff = (signals.diffFiles ?? []).slice(0, 50);
   if (diff.length) {
@@ -220,7 +222,7 @@ export async function rankContext(
   }
   const byRecency = [...pool.values()].sort((a, b) => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : b.id - a.id)).map((n) => n.id);
   for (const id of byRecency.slice(0, 10)) mark(id, "recent");
-  const fused = rrfScores([...bm25, overlap, byRecency]);
+  const fused = rrfScores([bm25, overlap, byRecency]);
   const ranked = rankHits(store, [...fused.entries()].map(([id, score]) => ({ note: pool.get(id)!, score })));
   return { ranked, total: store.list({ ...base, limit: 1 }).total, latestSummary, why };
 }

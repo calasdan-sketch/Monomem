@@ -345,11 +345,47 @@ function finalizeResults(
   store: Store,
   hits: Array<{ note: NoteRecord; score: number }>,
   limit: number,
-  staleCfg: StalenessConfig
+  staleCfg: StalenessConfig,
+  spread = false
 ): NoteRecord[] {
-  const notes = rankHits(store, hits, staleCfg).slice(0, limit);
+  const ranked = rankHits(store, hits, staleCfg);
+  const notes = (spread ? capPerSession(ranked) : ranked).slice(0, limit);
   bumpAccess(store, notes);
   return notes;
+}
+
+/** Questions that add up or list across the history ("how many", "in total", "every"...): the answer is spread over several sessions. */
+const AGGREGATE_QUERY = /\b(how many|total|in total|all the|each|every|list all)\b/i;
+/** Most notes of one capture session kept in place on an aggregating question; the rest move behind the others. */
+export const AGGREGATE_PER_SESSION = 2;
+
+/** Soft cap: a session's (or origin's) items past the cap go to the back, in their order (nothing is dropped). */
+export function capPerSessionBy<T>(items: T[], noteOf: (x: T) => NoteRecord, cap = AGGREGATE_PER_SESSION): T[] {
+  const seen = new Map<string, number>();
+  const front: T[] = [];
+  const back: T[] = [];
+  for (const x of items) {
+    const nt = noteOf(x);
+    const sid = nt.session_id || nt.source; // captured rows carry a session; imported notes name their origin
+    const c = sid ? (seen.get(sid) ?? 0) : 0;
+    if (sid) seen.set(sid, c + 1);
+    (c < cap ? front : back).push(x);
+  }
+  return [...front, ...back];
+}
+export const capPerSession = (notes: NoteRecord[], cap = AGGREGATE_PER_SESSION): NoteRecord[] => capPerSessionBy(notes, (n) => n, cap);
+
+/** Day-level age of a note's date for the reader: "2023-05-08, 5 months before 2023-10-02" (or "ago" without asOf). */
+export function describeWhen(created: string, now: Date = new Date(), relativeToAsOf = false): string {
+  const t = Date.parse(created);
+  if (!Number.isFinite(t)) return "";
+  const date = new Date(t).toISOString().slice(0, 10);
+  const days = Math.floor((now.getTime() - t) / 86_400_000);
+  if (days < 0) return date;
+  const plural = (n: number, u: string): string => `${n} ${u}${n === 1 ? "" : "s"}`;
+  const span = days < 1 ? "" : days < 14 ? plural(days, "day") : days < 60 ? plural(Math.round(days / 7), "week") : days < 730 ? plural(Math.round(days / 30.4), "month") : plural(Math.round(days / 365.25), "year");
+  if (!span) return `${date}, ${relativeToAsOf ? "same day as " + now.toISOString().slice(0, 10) : "today"}`;
+  return `${date}, ${span} ${relativeToAsOf ? "before " + now.toISOString().slice(0, 10) : "ago"}`;
 }
 
 /**
@@ -441,7 +477,8 @@ function finalizeExplained(
   store: Store,
   hits: Array<{ note: NoteRecord; score: number }>,
   limit: number,
-  staleCfg: StalenessConfig
+  staleCfg: StalenessConfig,
+  spread = false
 ): ExplainedHit[] {
   // Capture native relevance per id BEFORE any boost, so the breakdown can
   // report the true base rather than the post-boost score.
@@ -450,7 +487,7 @@ function finalizeExplained(
     ? demoteStaleTwins(store, applyStalePenalty(boostAndRank(hits), staleCfg), staleCfg)
     : { ranked: [...hits].sort((a, b) => b.score - a.score), behind: new Map<number, number>() };
   const ranked = demoted.ranked;
-  const top = ranked.slice(0, limit);
+  const top = (spread ? capPerSessionBy(ranked, (h) => h.note) : ranked).slice(0, limit);
   bumpAccess(store, top.map((h) => h.note));
 
   return top.map((h) => {
@@ -548,7 +585,10 @@ async function runSearchInner(
   // Clamp here too: the store methods clamp their own queries, but the hybrid
   // path slices fused ids by this value, so an unclamped 0/negative/NaN would
   // silently return [] or misorder despite real matches.
-  const limit = clampInt(opts.limit, 20, 1, 200);
+  const asked = clampInt(opts.limit, 20, 1, 200);
+  const aggregate = AGGREGATE_QUERY.test(query);
+  const limit = aggregate ? Math.min(asked * 2, 200) : asked; // widen: the answer is spread over several sessions
+  const fetchK = aggregate ? Math.min(limit * 2, 200) : limit; // spare candidates so the per-session cap has others to pull forward
   const mode: SearchMode = opts.mode ?? parseMode(undefined);
   const range = opts.timeRange;
   const writerOpts = {
@@ -584,12 +624,12 @@ async function runSearchInner(
   const win = range === undefined ? queryTimeWindow(query, opts.asOf) : null;
   const finalize = (
     hits: Array<{ note: NoteRecord; score: number }>
-  ): NoteRecord[] => finalizeResults(store, win ? boostTimeWindow(hits, win) : hits, limit, staleCfg);
+  ): NoteRecord[] => finalizeResults(store, win ? boostTimeWindow(hits, win) : hits, limit, staleCfg, aggregate);
 
-  if (mode === "keyword" || !embeddingsEnabled()) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : limit));
+  if (mode === "keyword" || !embeddingsEnabled()) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : fetchK));
 
   const qv = await embed(query);
-  if (!qv) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : limit)); // endpoint down / not embeddable -> graceful fallback
+  if (!qv) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : fetchK)); // endpoint down / not embeddable -> graceful fallback
 
   // Oversample (limit*5, capped at the 200 max) so the hybrid blend has a rich
   // candidate pool on both sides; the window is pushed into the vector SQL,
@@ -639,7 +679,9 @@ async function runSearchExplainedInner(
   query: string,
   opts: SearchOpts = {}
 ): Promise<ExplainedHit[]> {
-  const limit = clampInt(opts.limit, 20, 1, 200);
+  const aggregate = AGGREGATE_QUERY.test(query);
+  const limit = aggregate ? Math.min(clampInt(opts.limit, 20, 1, 200) * 2, 200) : clampInt(opts.limit, 20, 1, 200);
+  const fetchK = aggregate ? Math.min(limit * 2, 200) : limit;
   const mode: SearchMode = opts.mode ?? parseMode(undefined);
   const range = opts.timeRange;
   const writerOpts = {
@@ -672,12 +714,12 @@ async function runSearchExplainedInner(
 
   const win = range === undefined ? queryTimeWindow(query, opts.asOf) : null;
   const finalize = (hits: Array<{ note: NoteRecord; score: number }>): ExplainedHit[] =>
-    finalizeExplained(store, win ? boostTimeWindow(hits, win) : hits, limit, staleCfg);
+    finalizeExplained(store, win ? boostTimeWindow(hits, win) : hits, limit, staleCfg, aggregate);
 
-  if (mode === "keyword" || !embeddingsEnabled()) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : limit));
+  if (mode === "keyword" || !embeddingsEnabled()) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : fetchK));
 
   const qv = await embed(query);
-  if (!qv) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : limit));
+  if (!qv) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : fetchK));
 
   const poolLimit = clampInt(limit * 5, 100, 1, 200);
   const semHits = store.semanticSearch(qv, {

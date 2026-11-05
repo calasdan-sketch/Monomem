@@ -29,6 +29,17 @@ describe("session-start context", () => {
     s.close();
   });
 
+  test("a rare keyword outranks a common one (one any-keyword search, bm25 weighs rarity)", async () => {
+    const s = new Store(":memory:");
+    // The rare-word note is the oldest; the common-word notes are older than the 10 fillers that take the recency slots.
+    const rare = s.create({ title: "Zebra cache layout", body: "the zebra cache is keyed by tenant", created_at: daysAgo(40) }, { updatedAt: daysAgo(40) });
+    for (let i = 0; i < 8; i++) s.create({ title: `Deploy note ${i}`, body: "deploy deploy deploy pipeline step", created_at: daysAgo(30 - i) }, { updatedAt: daysAgo(30 - i) });
+    for (let i = 0; i < 12; i++) s.create({ title: `Filler ${i}`, body: "nothing relevant here", created_at: daysAgo(i) }, { updatedAt: daysAgo(i) });
+    const { ranked } = await rankContext(s, { signals: { branch: "feat/deploy-zebra", diffFiles: [] } });
+    assert.equal(ranked[0].id, rare.id, ranked.slice(0, 3).map((n) => n.title).join(" | "));
+    s.close();
+  });
+
   test("the budget is respected; summary first, then notes, then compact index lines and the savings footer", async () => {
     const s = new Store(":memory:");
     for (let i = 0; i < 80; i++) s.create({ title: `Observation number ${i}`, body: "x".repeat(400) }, { kind: "observation", sessionId: "s", obsType: "change" });

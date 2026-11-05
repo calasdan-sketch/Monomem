@@ -43,7 +43,7 @@ import { waitForChanges, parseWait, WAIT_MAX_SECONDS, WAIT_RECOMMENDED_SECONDS }
 import { type Scope, PACKAGE_VERSION } from "./config.js";
 export { PACKAGE_VERSION };
 import { scopeAllows, UNTRUSTED_BANNER, provenanceBanner, audit } from "./security.js";
-import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, SEARCH_MODES, type SearchOpts, type RelevantOpts, type ExplainedHit } from "./search-service.js";
+import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, describeWhen, SEARCH_MODES, type SearchOpts, type RelevantOpts, type ExplainedHit } from "./search-service.js";
 import {
   type ServerNamespaceOpts,
   canRead,
@@ -52,6 +52,9 @@ import {
 import { parseTimePhrase } from "./time-parse.js";
 import { TIME_ZONE } from "./config.js";
 import { annotateStaleness } from "./staleness.js";
+
+/** Staleness fields plus a compact `when` ("2023-05-08, 5 months ago") so the reader sees the note's date and age. */
+const withWhen = (n: NoteRecord) => ({ ...annotateStaleness(n), when: describeWhen(n.created_at) });
 import { meterStats } from "./meter.js";
 import {
   findCandidatesGuarded,
@@ -618,7 +621,7 @@ export function createMcpServer(
         if (!note) return errorResult(`no note with id ${id}`);
         // Round edge scores to 3 decimals for readability (stored raw in
         // SQLite), mirroring memory_consolidation_candidates.
-        const annotated = annotateStaleness(note);
+        const annotated = withWhen(note);
         const payload = note.neighbors
           ? {
               ...annotated,
@@ -717,7 +720,7 @@ export function createMcpServer(
               ? perNs[0].map((h) => h.note)
               : roundRobin(perNs.map((l) => l.map((h) => h.note)), clampInt(limit, 20, 1, 200));
           return untrustedResult({
-            results: merged.map((n) => ({ ...annotateStaleness(n), breakdown: byId.get(n.id) })),
+            results: merged.map((n) => ({ ...withWhen(n), breakdown: byId.get(n.id) })),
             timeRange: timePhrase ? timePhrase.label : null,
             searchedNamespaces: nsActive ? spaces : namespace ? [namespace] : [],
           });
@@ -744,7 +747,7 @@ export function createMcpServer(
               ...wf,
             });
             return untrustedResult({
-              results: results.map((n) => annotateStaleness(n)),
+              results: results.map((n) => withWhen(n)),
               timeRange: timePhrase ? timePhrase.label : null,
               searchedNamespaces: [hint],
             });
@@ -756,7 +759,7 @@ export function createMcpServer(
             ...wf,
           });
           return untrustedResult({
-            results: results.map((n) => annotateStaleness(n)),
+            results: results.map((n) => withWhen(n)),
             timeRange: timePhrase ? timePhrase.label : null,
             searchedNamespaces,
           });
@@ -769,7 +772,7 @@ export function createMcpServer(
           ...wf,
         });
         return untrustedResult({
-          results: results.map((n) => annotateStaleness(n)),
+          results: results.map((n) => withWhen(n)),
           timeRange: timePhrase ? timePhrase.label : null,
           searchedNamespaces: namespace ? [namespace] : [],
         });
@@ -839,7 +842,7 @@ export function createMcpServer(
       // outdated facts, so it gets the same staleness contract as search.
       const withStaleness = (r: { keywords: string[]; results: NoteRecord[] }) => ({
         keywords: r.keywords,
-        results: r.results.map((n) => annotateStaleness(n)),
+        results: r.results.map((n) => withWhen(n)),
       });
       if (nsActive) {
         // Same gating as state_search: the model-supplied namespace is an
