@@ -59,6 +59,7 @@ function shortUsage(): void {
       "",
       "Daily",
       "  relevant \"message\"      Show the notes that relate to a sentence (search \"words\" does the same)",
+      "  relevant \"message\" --as-of 7d   The same, as memory stood then (ISO time or 7d/2h; no message lists notes)",
       "  changes                 What changed while you were away",
       "  history <id>            A note's earlier versions (history restore <id> <version> puts one back)",
       "  pin <id> | unpin <id>   Pin a note so agents can read it but not change it",
@@ -147,8 +148,9 @@ function usage(all = false): void {
       "            progress to stderr. Reports {created, removed} edge",
       "            counts. O(n^2) — maintenance, not interactive.",
       "            When: after a bulk import, or after changing the threshold.",
-      "  relevant|search \"some natural language message\" [--limit 5] [--namespace ns] [--written-by w] [--not-written-by w] [--include-distrusted]",
+      "  relevant|search \"some natural language message\" [--limit 5] [--namespace ns] [--written-by w] [--not-written-by w] [--include-distrusted] [--as-of <ISO|7d|2h>]",
       "            Extract keywords from a message and show the relevant notes.",
+      "            --as-of: show memory as it stood then (rebuilt from note history; text no longer kept is marked). No message = list the notes.",
       "            Prints the keywords used alongside the results.",
       "            When: you have a vague message and want the memory it touches.",
       "  changes [--since 24h|ISO|last] [--consumer name] [--namespace ns] [--source s] [--limit 100]",
@@ -885,10 +887,13 @@ async function relevant(): Promise<void> {
   let writtenBy: string | undefined;
   let notWrittenBy: string | undefined;
   let includeDistrusted = false;
+  let asOfRaw: string | undefined;
   const parts: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === "--limit" && i + 1 < args.length) limit = Number(args[++i]);
+    if (a === "--as-of" && i + 1 < args.length) asOfRaw = args[++i];
+    else if (a.startsWith("--as-of=")) asOfRaw = a.slice("--as-of=".length);
+    else if (a === "--limit" && i + 1 < args.length) limit = Number(args[++i]);
     else if (a.startsWith("--limit=")) limit = Number(a.slice("--limit=".length));
     else if (a === "--namespace" && i + 1 < args.length) namespace = args[++i];
     else if (a.startsWith("--namespace=")) namespace = a.slice("--namespace=".length);
@@ -903,9 +908,34 @@ async function relevant(): Promise<void> {
     } else parts.push(a);
   }
   const message = parts.join(" ");
-  if (!message.trim()) {
-    console.error('Usage: monomem relevant "some natural language message" [--limit 5] [--namespace ns]');
+  if (!message.trim() && !asOfRaw) {
+    console.error('Usage: monomem relevant "some natural language message" [--limit 5] [--namespace ns] [--as-of <ISO|7d|2h>]');
     process.exit(1);
+  }
+  if (asOfRaw) {
+    if (writtenBy || notWrittenBy) {
+      console.error("--as-of cannot be combined with --written-by / --not-written-by (who wrote a note at that time is not reconstructed).");
+      process.exit(1);
+    }
+    const { parseAsOf, asOfView, asOfSearch, asOfHeader } = await import("./asof.js");
+    let when: Date;
+    try {
+      when = parseAsOf(asOfRaw);
+    } catch (e) {
+      console.error((e as Error).message);
+      process.exit(1);
+    }
+    const store = new Store(DB_PATH);
+    try {
+      const view = asOfView(store, when, { ...(namespace ? { namespace } : {}), ...(includeDistrusted ? { includeDistrusted: true } : {}) });
+      console.log(asOfHeader(view));
+      const hits = asOfSearch(view, message, limit ?? (message.trim() ? 5 : 20));
+      if (hits.length === 0) console.log(message.trim() ? "No matching notes at that time." : "No notes at that time.");
+      for (const h of hits) console.log(`  #${h.note.id} [${h.note.namespace}] ${printable(h.note.title)}${h.kept ? "" : " [edited since; old text gone]"}`);
+    } finally {
+      store.close();
+    }
+    return;
   }
   const store = new Store(DB_PATH);
   try {
