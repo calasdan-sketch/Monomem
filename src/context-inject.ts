@@ -37,6 +37,8 @@ function openToolName(): string {
   return on === null || on.has("memory_get") ? "memory_get" : "state_read";
 }
 import { meterAdd } from "./meter.js";
+import { receiptAdd } from "./receipts.js";
+import { currentWriter } from "./actor.js";
 import { nameIs, stdioFamily } from "./trust.js";
 
 export const DEFAULT_RECALL_TOKENS = 1500;
@@ -296,6 +298,8 @@ export async function injectContext(store: Store, opts: InjectOptions = {}): Pro
   if (opts.sessionId) {
     const injected = Math.ceil(out.length / CHARS_PER_TOKEN);
     meterAdd(store, opts.sessionId, ns ?? "", { injected, saved: Math.max(0, Math.ceil(fullChars / CHARS_PER_TOKEN) - injected) });
+    // Receipt: ids, why-tags, rank and size only (receipts.ts); titles and text stay in the store.
+    receiptAdd(store, { sessionId: opts.sessionId, namespace: ns ?? "", client: currentWriter(), shown: shown.map((n) => ({ id: n.id, why: tagOf(n), tokens: tokensOf(n) })) });
   }
   return out;
 }

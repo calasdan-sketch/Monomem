@@ -63,7 +63,7 @@ immediately visible through the others:
   `rev` for compare-and-swap, a provenance `source`, tags, and namespaces.
 - **`src/api.ts`** — a small HTTP/JSON API + a built-in web dashboard, on
   plain `node:http` (no framework).
-- **`src/mcp-server-core.ts`** — the transport-agnostic MCP server with thirty-three tools, nine of them registered by default (see MONOMEM_TOOLS),
+- **`src/mcp-server-core.ts`** — the transport-agnostic MCP server with thirty-four tools, nine of them registered by default (see MONOMEM_TOOLS),
   tools, shared by both MCP transports.
 - **`src/mcp-stdio.ts`** — stdio entry point for local Claude Code / Desktop
   / editors.
@@ -97,6 +97,7 @@ immediately visible through the others:
 | `state_list` | read | Newest-first page of notes |
 | `state_delete` | admin | Forget a note: archives it (restorable); permanent delete is dashboard/CLI only |
 | `memory_stats` | read | Totals, most-read notes, never-read and stale counts |
+| `memory_receipt` | read | Opt-in: which memories a session start showed and why (ids, ranks, why-tags; titles looked up live) |
 | `memory_since` | read | Change feed: what was created/updated/deleted since a time ([change-feed.md](./change-feed.md)) |
 | `task_put` | write | Create/update a task on the shared board (status, next_step, owner, priority, due, parent, blockers, `client_key`, `if_rev`; `command` + `target` queues a runner command) ([tasks.md](./tasks.md)) |
 | `task_get` | read | One task in full (notes, command, approval state, result) |

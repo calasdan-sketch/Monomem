@@ -16,7 +16,7 @@ const COMMANDS = [
   "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
   "consolidate", "rebuild-edges", "relevant", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
   "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality",
-  "encrypt", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "audit",
+  "encrypt", "meter", "receipts", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "audit",
   "help", "--help", "-h", "--version", "-v", "version",
 ];
 
@@ -120,6 +120,10 @@ function usage(all = false): void {
       "            Off switch: MONOMEM_CAPTURE=off. When: installed by `monomem setup --capture`.",
       "            file-context (PreToolUse on Read) lists what memory knows about the file, once per session; it never",
       "            blocks or changes the Read.",
+      "  receipts [session-id] [--json]",
+      "            List recent sessions, or show which memories one session start showed and why (ids and tags are stored, never note text).",
+      "  meter [--json] [--card [file.svg]]",
+      "            What Monomem costs, as numbers. --card writes a shareable SVG savings card (default monomem-card.svg).",
       "  never-show <id> [--undo]",
       "            Keep one note out of the session-start context for good (tags it never-show; it stays searchable).",
       "            When: a memory keeps being shown that does not help. The dashboard has the same button.",
@@ -2520,6 +2524,12 @@ async function main(): Promise<void> {
     case "encrypt":
       await encryptCmd();
       break;
+    case "receipts":
+    case "meter": {
+      const r = await import("./receipts.js");
+      await (cmd === "meter" ? r.meterCmd : r.receiptsCmd)(process.argv.slice(3));
+      break;
+    }
     case "never-show":
       await neverShowCmd();
       break;
