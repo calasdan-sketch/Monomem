@@ -2216,13 +2216,13 @@ async function qualityCmd(): Promise<void> {
       console.log(JSON.stringify(report, null, 2));
       return;
     }
-    const { conflictLines } = await import("./conflicts.js");
-    if (!report.issues.length && !report.conflicts.length) {
+    const { conflictLines, reportHeader } = await import("./conflicts.js");
+    if (!report.issues.length && !report.conflict_groups.length) {
       console.log("No quality issues found.");
       return;
     }
-    console.log(QUALITY_TYPES.map((t) => `${report.counts[t]} ${t}`).join(", ") + `, ${report.conflicts.length} possible conflicts`);
-    for (const l of conflictLines(report.conflicts)) console.log(l);
+    console.log(QUALITY_TYPES.map((t) => `${report.counts[t]} ${t}`).join(", ") + `, ${reportHeader({ groups: report.conflict_groups, total: report.conflict_total, capped: report.conflict_capped })}`);
+    for (const l of conflictLines(report.conflict_groups)) console.log(l);
     for (const i of report.issues) {
       console.log(`\n[${i.type}] [${i.namespace}] ${i.detail}`);
       console.log(`    fix: ${i.fix}${i.alt ? `   (or: ${i.alt})` : ""}`);

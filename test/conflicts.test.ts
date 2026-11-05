@@ -88,7 +88,7 @@ describe("surfaces", () => {
       s.close();
     }
     assert.match(DASHBOARD_JS, /<h3>Conflicts \(/);
-    assert.match(DASHBOARD_JS, /esc\(c\.shown\[0\]\)/);
+    assert.match(DASHBOARD_JS, /esc\(v\.value\)/);
   });
 });
 

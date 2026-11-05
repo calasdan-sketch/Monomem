@@ -2756,6 +2756,14 @@ export class Store {
     return notes.filter((n) => !matchesDistrust(rules, n, id));
   }
 
+  /** Live notes of a namespace that carry any `fact:` tag (up to 500), minus distrusted writers'. A cheap lookup for session start and key-drift hints. */
+  liveFactNotesIn(namespace: string): NoteRecord[] {
+    const rows = this.db
+      .prepare("SELECT * FROM notes WHERE archived_at IS NULL AND superseded_at IS NULL AND namespace = ? AND tags LIKE '%\"fact:%' LIMIT 500")
+      .all(namespace) as unknown as NoteRow[];
+    return this.filterVisible(rows.map((r) => this.rec(r)));
+  }
+
   /**
    * Live notes of a namespace whose tags carry the fact `fact:<key>=...` (facts.ts), minus `exceptId` and minus
    * distrusted writers'. For the write-time conflict check; `key` must already be a valid fact key (a-z 0-9 _ . -).

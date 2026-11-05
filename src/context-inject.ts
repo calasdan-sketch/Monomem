@@ -22,6 +22,7 @@ import { rrfScores, rankHits, anyKeywordHits } from "./search-service.js";
 import { buildSummary } from "./recall.js";
 import { TASK_TAG, HANDOFF_TAG, listTasks } from "./tasks.js";
 import { NEVER_SHOW_TAG, isModelWritten } from "./reserved-tags.js";
+import { disputedLines } from "./facts.js";
 import { enabledToolNames } from "./mcp-server-core.js";
 
 /**
@@ -241,6 +242,18 @@ export async function injectContext(store: Store, opts: InjectOptions = {}): Pro
   if (profile) {
     parts.push(profile);
     used += profile.length;
+  }
+  // Fact-tier disputes in this namespace: 0 tokens when none, at most 2 short lines otherwise. Never lets the hook fail.
+  if (opts.namespace !== undefined) {
+    try {
+      const disputed = disputedLines(store, opts.namespace);
+      if (disputed) {
+        parts.push(disputed);
+        used += disputed.length;
+      }
+    } catch {
+      /* a lookup problem must not cost the session its memory */
+    }
   }
   const now = Date.now();
   const tagOf = (n: NoteRecord): string => whyTag(n, why.get(n.id), now);
