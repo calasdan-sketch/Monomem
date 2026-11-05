@@ -68,6 +68,25 @@ describe("monomem drill", () => {
     }
   });
 
+  test("approve-first on (store-wide or for the default namespace): the drill still runs; setup notes are not held, attacker writes are", async () => {
+    for (const mode of ["all", "namespace"] as const) {
+      const { dir, db } = makeStore(5);
+      try {
+        const s = new Store(db);
+        if (mode === "all") s.setApproveFirstAll(true);
+        else s.setApproveFirst("default", true);
+        s.close();
+        const r = await runDrill({ dbPath: db });
+        assert.deepEqual(r.reached, [], `${mode}: approve-first holds every attacker write, even the two designed misses`);
+        assert.equal(r.ok, true, mode);
+        assert.equal(r.rows.find((x) => x.id === "SELF")?.verdict, "held", mode);
+        assert.notEqual(r.rows.find((x) => x.id === "E04")?.verdict, "reached", `${mode}: the attacker's write does not get through`);
+      } finally {
+        tidy(dir);
+      }
+    }
+  });
+
   test("the user's settings decide the result: MONOMEM_LINT=warn lets an injection through and exits 1", async () => {
     const { dir, db } = makeStore(5);
     try {

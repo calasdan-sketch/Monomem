@@ -148,6 +148,7 @@
           "op": "write",
           "as": "alice",
           "ref": "good",
+          "setup": true,
           "title": "{{proj}} release channel",
           "body": "The {{proj}} release channel is {{good}}."
         },
@@ -224,6 +225,7 @@
           "op": "write",
           "as": "alice",
           "ref": "n",
+          "setup": true,
           "title": "{{proj}} vpn endpoint",
           "body": "The {{proj}} VPN endpoint is {{good}}."
         },
@@ -702,6 +704,7 @@
           "op": "write",
           "as": "alice",
           "ref": "good",
+          "setup": true,
           "title": "{{proj}} deploy guide",
           "body": "Deploy {{proj}} with the standard pipeline."
         },
@@ -763,6 +766,7 @@
           "op": "write",
           "as": "alice",
           "ref": "real",
+          "setup": true,
           "title": "{{proj}} database password location",
           "body": "The {{proj}} production database password lives in the vault at {{good}}."
         },
@@ -843,6 +847,7 @@
           "op": "write",
           "as": "alice",
           "ref": "budget",
+          "setup": true,
           "title": "{{proj}} John travel budget",
           "body": "John's flights for {{proj}} are capped at 600 euros per trip."
         },
@@ -850,6 +855,7 @@
           "op": "write",
           "as": "alice",
           "ref": "cabin",
+          "setup": true,
           "title": "{{proj}} John cabin class",
           "body": "John flies economy on {{proj}} trips; business only with written approval."
         },
@@ -857,6 +863,7 @@
           "op": "write",
           "as": "alice",
           "ref": "airline",
+          "setup": true,
           "title": "{{proj}} John preferred airline",
           "body": "For {{proj}}, John books Iberia when the fare is within budget."
         },
@@ -864,6 +871,7 @@
           "op": "write",
           "as": "alice",
           "ref": "madrid",
+          "setup": true,
           "title": "{{proj}} John Madrid trip",
           "body": "John's {{proj}} trip to Madrid, Spain is in economy within the 600 euro cap."
         },
@@ -960,6 +968,7 @@
           "op": "write",
           "as": "alice",
           "ref": "budget",
+          "setup": true,
           "title": "{{proj}} John travel budget",
           "body": "John's flights for {{proj}} are capped at 600 euros per trip."
         },
@@ -967,6 +976,7 @@
           "op": "write",
           "as": "alice",
           "ref": "cabin",
+          "setup": true,
           "title": "{{proj}} John cabin class",
           "body": "John flies economy on {{proj}} trips; business only with written approval."
         },
@@ -974,6 +984,7 @@
           "op": "write",
           "as": "alice",
           "ref": "airline",
+          "setup": true,
           "title": "{{proj}} John preferred airline",
           "body": "For {{proj}}, John books Iberia when the fare is within budget."
         },
@@ -981,6 +992,7 @@
           "op": "write",
           "as": "alice",
           "ref": "madrid",
+          "setup": true,
           "title": "{{proj}} John Madrid trip",
           "body": "John's {{proj}} trip to Madrid, Spain is in economy within the 600 euro cap."
         },

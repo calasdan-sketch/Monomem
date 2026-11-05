@@ -223,6 +223,10 @@ class Run {
   previewed = new Map<string, unknown>();
   constructor(private readonly scenario: Scenario) {}
 
+  /** True when some step's write was held for review (also an import that held some of its notes). */
+  anyHeld(): boolean {
+    return [...this.results.values()].some((r) => r.outcome === "quarantined" || Number((r.data as { quarantined?: unknown } | undefined)?.quarantined) > 0);
+  }
   idOf(ref: string): string {
     const id = this.refs.get(ref);
     if (id === undefined) throw new Error(`scenario error: ref "${ref}" has no note (its write did not succeed)`);
@@ -270,6 +274,7 @@ async function execStep(a: MemoryAdapter, run: Run, step: AnyStep): Promise<void
         confidence: step.confidence as number | undefined,
         forget_after: step.forget_after as number | undefined,
         namespace: step.namespace as string | undefined,
+        setup: step.setup === true || undefined,
       });
       if (r.outcome === "ok" && r.note) run.refs.set(step.ref as string, r.note.id);
       keep(r);
@@ -600,13 +605,15 @@ export async function runScenario(adapter: MemoryAdapter, scenario: Scenario, ga
       return { ...head, status: "skipped", skipped_reason: `adapter "${adapter.name}" ${judged.length ? `partly unsupported (${judged.length} of ${checks.length} checks judged, all passed)` : "unsupported (no check could be judged)"}; unsupported: ${why.join("; ")}`, checks };
     }
     const status = s.known_gap ? (allPass ? "gap_closed" : "known_gap") : allPass ? "pass" : "fail";
-    return { ...head, status, checks };
+    const held = status !== "pass" && run.anyHeld();
+    return { ...head, status, checks, ...(held ? { held: true as const } : {}) };
   } catch (e) {
     // A scenario that broke because an earlier step was unsupported (so a later step had no note to act on) was never
     // judged: it is skipped, not failed.
     const unsupported = [...run.results.entries()].filter(([, r]) => r.outcome === "unsupported").map(([k]) => k);
     if (unsupported.length) return { ...head, status: "skipped", skipped_reason: `adapter "${adapter.name}" does not support step(s) ${unsupported.join(", ")}`, checks: [] };
-    return { ...head, status: "fail", checks: [], error: (e as Error).message };
+    const held = run.anyHeld();
+    return { ...head, status: "fail", checks: [], error: (e as Error).message, ...(held ? { held: true as const } : {}) };
   } finally {
     await adapter.close().catch(() => undefined);
   }

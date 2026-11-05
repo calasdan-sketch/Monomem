@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Store, ValidationError } from "../src/store.js";
 import { findConflicts, conflictLines, groupConflicts, conflictReport, reportHeader, MAX_CONFLICTS } from "../src/conflicts.js";
-import { factTags, withFacts, noteFacts, writeConflicts, similarKeys, disputedLines, factsTable, COMMON_FACT_KEYS } from "../src/facts.js";
+import { factTags, withFacts, noteFacts, writeConflicts, similarKeys, disputedLines, factsTable, similarHint, COMMON_FACT_KEYS } from "../src/facts.js";
 import { createMcpServer } from "../src/mcp-server-core.js";
 import { createApiServer } from "../src/api.js";
 import { DASHBOARD_JS } from "../src/dashboard.js";
@@ -415,10 +415,12 @@ describe("adoption wording, key drift, session start", () => {
     const client = new Client({ name: "t", version: "1.0.0" });
     await Promise.all([client.connect(c), server.connect(sv)]);
     const tool = (await client.listTools()).tools.find((t) => t.name === "state_write")!;
-    assert.ok(tool.description!.includes('ALSO pass `facts`, e.g. facts: {"deploy_target":"render"}. Other agents then read the exact value, and a disagreement is caught.'));
+    assert.ok(tool.description!.includes("When the note records a decision or setting, also pass `facts`: other agents then read the exact value, and a disagreement is caught."));
+    assert.ok(!tool.description!.includes("deploy_target"), "the example lives on the parameter, not the description");
+    assert.ok(tool.description!.endsWith(".") && !(tool.inputSchema.properties as any).facts.description.endsWith(" "), "no trailing space");
     const desc = (tool.inputSchema.properties as any).facts.description as string;
     assert.ok(!desc.includes("fact_warnings") && !/[^\x00-\x7f]/.test(desc + tool.description!), "ASCII only, no fact_warnings sentence");
-    assert.ok(desc.startsWith(`Example: {"package_manager":"pnpm","test_runner":"vitest"}. Keys: reuse one from similar_keys or this list: ${COMMON_FACT_KEYS.join(", ")}. Prefix a subject only when the project has several (api.deploy_target).`), desc);
+    assert.ok(desc.startsWith(`Settings as key/value pairs, e.g. {"package_manager":"pnpm","test_runner":"vitest"}. Use a common key when one fits: ${COMMON_FACT_KEYS.join(", ")}. Add a subject prefix only when the project has several (api.deploy_target).`), desc);
     client.close(); s.close();
   });
   test("SKILL.md and the docs repeat the same advice (common keys, subject prefix only when needed; no 'always scope')", async () => {
@@ -453,7 +455,7 @@ describe("adoption wording, key drift, session start", () => {
     mk(s, "alice", "a", "x", { hosting: "fly.io" });
     const hit = await call({ title: "b", body: "y", facts: { deploy_target: "render" } });
     assert.equal(hit.similar_keys.deploy_target[0].key, "hosting");
-    assert.equal(hit.hint, "hosting is already 'fly.io' (#1, alice). Use that key if it's the same setting.");
+    assert.equal(hit.hint, "hosting is already 'fly.io' (#1, alice), another spelling of deploy_target, the common key. Keep deploy_target.");
     assert.equal((await call({ title: "c", body: "y", facts: { hosting: "render" } })).similar_keys, undefined, "hosting is already known");
     assert.equal((await call({ title: "d", body: "y", facts: { unrelated_thing: "1" } })).similar_keys, undefined);
     client.close(); s.close();
@@ -596,6 +598,30 @@ describe("adoption wording, key drift, session start", () => {
     assert.deepEqual(by.test_runner.values[0].writers, ["alice", "bob"]);
     assert.equal(by.database.agreed, false);
     s.close();
+  });
+  test("factsTable: synonym keys share one row under the common key; agreement counts across spellings", () => {
+    const s = new Store(":memory:");
+    mk(s, "alice", "a", "x", { database: "postgres", hosting: "fly.io" });
+    mk(s, "bob", "b", "x", { db: "Postgres", deploy_target: "render" });
+    const t = factsTable(s.liveFactNotesIn(undefined)).default;
+    assert.deepEqual(t.map((r) => r.key), ["database", "deploy_target"], "no separate db or hosting rows");
+    const db = t[0];
+    assert.equal(db.agreed, true);
+    assert.deepEqual(db.values[0].writers, ["alice", "bob"]);
+    assert.deepEqual(db.spellings, ["db"]);
+    const dep = t[1];
+    assert.equal(dep.disputed, true, "opposing values sit side by side in one row");
+    assert.deepEqual(dep.values.map((v) => v.value).sort(), ["fly.io", "render"]);
+    assert.deepEqual(dep.spellings, ["hosting"]);
+    s.close();
+  });
+  test("similarHint always steers to the common key", () => {
+    const sk = (key: string): { key: string; value: string; id: number; writer: string } => ({ key, value: "v", id: 3, writer: "w" });
+    assert.match(similarHint({ database: [sk("db")] }), /Keep database\./, "common key used: never switch to db");
+    assert.doesNotMatch(similarHint({ database: [sk("db")] }), /Use (that key|db)/);
+    assert.match(similarHint({ db: [sk("database")] }), /Use that key/, "synonym used, common key exists");
+    assert.match(similarHint({ db: [sk("datastore")] }), /Use database if/, "two synonyms: point at the common key");
+    assert.match(similarHint({ colour: [sk("color")] }), /Use that key/);
   });
   test("monomem fact remove <id> <key>: drops only that fact, tags the note, refuses a missing fact; conflicts prints the command", async () => {
     const { DB_PATH } = await import("../src/config.js");

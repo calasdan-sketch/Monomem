@@ -421,11 +421,12 @@ function loadHeld(){
     setHeldCount(held.length);
     $("count").textContent = held.length + " held";
     $("list").innerHTML = held.length ? held.map(function(q){
-      var why = (q.reasons || []).map(function(r){ return "<span class='tag why'>"+esc(r.label)+(r.field ? " in "+esc(r.field) : "")+"</span>"; }).join("");
+      var why = (q.reasons || []).map(function(r){ return "<span class='tag why'>"+esc(r.label)+(r.field && String(r.label).indexOf(r.field) < 0 ? " in "+esc(r.field) : "")+"</span>"; }).join("");
+      var heldTags = (q.tags || []).map(function(t){ return "<span class='tag'>"+esc(t)+"</span>"; }).join("");
       var who = q.written_by ? byLine(q.written_by) : (q.source ? " &middot; claims "+esc(q.source) : "");
       return "<div class='card held'><div class='cardhead'><div><span class='stamp'>HELD &middot; NOT IN SHARED MEMORY</span><h3>"+esc(q.title || "(title unchanged)")+"</h3>"+
         "<div class='meta'>held #"+Number(q.id)+" &middot; "+(q.op === "update" ? "update of #"+Number(q.target_id) : "new note")+
-        " &middot; "+esc(q.namespace)+" &middot; "+when(q.created_at)+who+"</div>"+(why || "<span class='tag why'>held by policy</span>")+"</div>"+
+        " &middot; "+esc(q.namespace)+" &middot; "+when(q.created_at)+who+"</div>"+(why || "<span class='tag why'>held by policy</span>")+(heldTags ? "<div>"+heldTags+"</div>" : "")+"</div>"+
         acts("<button onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;reject&quot;)})'>Reject</button> "+
         "<button class='ghost' onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;approve&quot;)})'>Approve</button>")+"</div>"+
         (q.body ? "<div class='heldbody'>"+esc(q.body)+"</div>" : "")+"</div>";

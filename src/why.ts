@@ -3,7 +3,7 @@
 // Text rule: titles only (printed through printable()); a body only when the operator passes --body on the CLI.
 import { WRITER_MARKERS } from "./actor.js";
 import { accessLogDays, type NoteRecord, type Store } from "./store.js";
-import { describeWriter, printable } from "./security.js";
+import { describeWriter, printable, printableWords } from "./security.js";
 import { localTime, whyText } from "./receipts.js";
 
 export interface WhyEvent {
@@ -48,7 +48,7 @@ export function writerKind(w: string, claimed = false): string {
   return "token label, stamped by the server from the token";
 }
 
-const p = (v: unknown): string => printable(v, 80);
+const p = (v: unknown): string => printableWords(v, 80);
 const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? "" : "s"}`;
 /** A writer label in the same words the rest of Monomem uses (describeWriter), through printable(). */
 const who = (w: string): string => p(describeWriter(w));

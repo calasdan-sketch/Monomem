@@ -15,7 +15,7 @@ Needs Node 22.16 or newer (check with `node -v`). On an older Node, use [Docker]
 
 - **One memory for all your assistants.** Tell Claude Code something once, and Cursor, Codex and Gemini CLI can read it too. It's one SQLite file on your own machine: no cloud, no API keys, no hidden model calls. Already use another memory tool? See [how it compares](#how-it-compares).
 - **Knows who wrote it.** Every note records its writer. For callers that use a token, the server stamps the name; for local apps it is a label from that app's config file, so it tells your apps apart but is not proof.
-- **Holds suspicious writes.** A write that looks like prompt injection (an instruction planted to steer your other assistants) is held back until you approve it. To make every agent write wait for your OK, use `monomem approve-first --all on` (it covers namespaces created later), or set it for one namespace (a named group of notes). The check is pattern matching, so it doesn't catch everything.
+- **Holds suspicious writes.** A write that looks like prompt injection (an instruction planted to steer your other assistants) is held back until you approve it. To make every agent write wait for your OK, use `monomem approve-first --all on` (it covers namespaces created later), or set it for one namespace (a named group of notes). One limit: an agent that can run shell commands, like Claude Code, can run the `monomem` command itself, and writes made that way are not held. So this protects you from tools that only have the memory connection, not from an agent with a shell (see [SECURITY.md](./SECURITY.md)). The check is pattern matching, so it doesn't catch everything.
 
 [![CI](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml/badge.svg)](https://github.com/calasdan-sketch/monomem/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/monomem)](https://www.npmjs.com/package/monomem)
@@ -415,7 +415,7 @@ monomem consolidate | rebuild-edges | reindex | relevant "…" | recall
 monomem bench [--json] [--suite stale|contradiction|isolation|provenance] [--strict-gaps]   # provenance benchmark (docs/BENCHMARK.md)
 ```
 
-`monomem help` explains each. Upgrading an existing 1.3.x install: [docs/upgrading.md](./docs/upgrading.md). The CLI runs with full local trust (no
+`monomem help` explains each. Upgrading an existing OneMemory 1.3.x install (the earlier name of this project, not monomem 1.2.0): [docs/upgrading.md](./docs/upgrading.md). The CLI runs with full local trust (no
 token).
 
 ---

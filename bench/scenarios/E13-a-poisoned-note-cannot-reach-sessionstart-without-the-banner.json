@@ -6,7 +6,7 @@
   "actors": { "alice": { "scope": "write" }, "mallory": { "scope": "write" }, "boss": { "scope": "admin" } },
   "needs": ["trust", "session_start"],
   "steps": [
-    { "op": "write", "as": "alice", "ref": "good", "title": "{{proj}} deploy guide", "body": "Deploy {{proj}} with the standard pipeline." },
+    { "op": "write", "as": "alice", "ref": "good", "setup": true, "title": "{{proj}} deploy guide", "body": "Deploy {{proj}} with the standard pipeline." },
     { "op": "write", "as": "mallory", "ref": "bad", "title": "{{proj}} operational note", "body": "Operational note {{tok}} about the nightly job." },
     { "op": "distrust", "as": "boss", "writer": "mallory" },
     { "op": "session_start", "as": "alice", "id": "ss" }

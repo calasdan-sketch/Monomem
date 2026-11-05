@@ -254,7 +254,7 @@ export async function runHealth(o: HealthOpts = {}): Promise<HealthReport> {
     try {
       const d: DrillReport = await (o.drill ?? runDrill)({ dbPath });
       const known = d.reached.length - d.unexpected.length;
-      add("drill", "Drill", d.ok ? "ok" : "fail", d.ok ? `${d.reached.length} of ${d.attacks} known attacks reached the agent, all known misses (${known})` : `${d.unexpected.length} unexpected of ${d.attacks} attacks reached the agent: ${d.unexpected.map((x) => x.id).join(", ")} (monomem drill has the detail)`);
+      add("drill", "Drill", d.ok ? "ok" : "fail", d.ok ? (d.reached.length ? `${d.reached.length} of ${d.attacks} known attacks reached the agent, all known misses (${known})` : `none of ${d.attacks} known attacks reached the agent`) : `${d.unexpected.length} unexpected of ${d.attacks} attacks reached the agent: ${d.unexpected.map((x) => x.id).join(", ")} (monomem drill has the detail)`);
     } catch (e) {
       add("drill", "Drill", "warn", `could not run: ${(e as Error).message}`);
     }

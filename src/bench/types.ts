@@ -104,6 +104,8 @@ export interface WriteInput {
   forget_after?: number;
   /** A tenant the caller CLAIMS to be writing into. A system that confines the caller must ignore it. */
   namespace?: string;
+  /** Scenario setup (the honest "before" state), not part of the attack. `monomem drill` seeds it as the operator, so a store-wide approve-first does not hold it. */
+  setup?: boolean;
 }
 
 export interface UpdateInput {
@@ -345,4 +347,6 @@ export interface ScenarioResult {
   skipped_reason?: string;
   checks: CheckResult[];
   error?: string;
+  /** The run stopped because a write was held for review (approve-first), so a later step had nothing to act on. For `monomem drill` that means held. */
+  held?: true;
 }
