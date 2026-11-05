@@ -47,6 +47,7 @@ const EXPECTED_SITES: Record<string, string[]> = {
   ],
   "quality.ts": ["admin-only report"],
   "conflicts.ts": ["admin-only report"],
+  "why.ts": ["local shell command (why): the operator owns the database file"],
   "consolidate.ts": [
     "admin consolidation by ids: mixed trusted/distrusted sources are refused below",
     "candidate scan is filtered with store.filterVisible before use",
@@ -160,7 +161,7 @@ describe("B: one gate for reading a note", () => {
 
     const mcp = read("mcp-server-core.ts");
     const tools = new Set<string>([...mcp.matchAll(/server\.registerTool\(\s*"([a-z_]+)"/g)].map((m) => m[1]));
-    const NOTE_TOOLS = ["state_read", "state_search", "state_relevant", "state_list", "memory_stats", "memory_receipt", "memory_consolidation_candidates", "memory_since", "task_get", "task_list", "catch_up", "memory_ack", "memory_history", "memory_index", "memory_timeline", "memory_get", "session_list"];
+    const NOTE_TOOLS = ["state_read", "state_search", "state_relevant", "state_list", "memory_stats", "memory_receipt", "memory_why", "memory_consolidation_candidates", "memory_since", "task_get", "task_list", "catch_up", "memory_ack", "memory_history", "memory_index", "memory_timeline", "memory_get", "session_list"];
     const OTHER_TOOLS = ["state_write", "state_delete", "memory_consolidate", "memory_rebuild_edges", "task_put", "task_claim", "task_approve", "session_handoff", "memory_quarantine", "runner_status", "trust_policy", "memory_supersede_preview", "memory_supersede_confirm", "memory_supersede_undo", "memory_restore_version", "memory_history_purge", "memory_rollback"];
     assert.deepEqual([...tools].sort(), [...NOTE_TOOLS, ...OTHER_TOOLS].sort(), "an MCP tool was added: classify it here (and canary-test it below if it returns note content)");
   });

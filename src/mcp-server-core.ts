@@ -57,6 +57,7 @@ import { annotateStaleness } from "./staleness.js";
 const withWhen = (n: NoteRecord) => ({ ...annotateStaleness(n), when: describeWhen(n.created_at) });
 import { meterStats } from "./meter.js";
 import { receiptList, receiptGet } from "./receipts.js";
+import { noteWhy } from "./why.js";
 import {
   findCandidatesGuarded,
   resolveConsolidationNotes,
@@ -1049,6 +1050,40 @@ export function createMcpServer(
         if (!session_id) return untrustedResult({ sessions: receiptList(store, namespaces) });
         const r = receiptGet(store, session_id, namespaces);
         return r ? untrustedResult(r) : errorResult(`no receipt for session ${session_id}`);
+      } catch (e) {
+        return errorFor(e);
+      }
+    }
+  );
+
+  // Opt-in (MONOMEM_TOOLS=memory_why), not in DEFAULT_TOOLS, like memory_receipt. Titles only, never the body.
+  server.registerTool(
+    "memory_why",
+    {
+      title: "Why a memory is what it is",
+      annotations: { readOnlyHint: true },
+      description:
+        "Read-only: the story of one note in time order: who wrote it (server-stamped or a config label), its versions, what replaced it or it replaced, held edits, pin, which session starts were shown it and why, and its status. Titles only, never note text. A note from a distrusted writer reads as missing. Ends with what is NOT recorded (for example who read it)." +
+        (nsActive ? " Scoped to the namespaces this server may read." : ""),
+      inputSchema: {
+        id: z.number().int().describe("The note id."),
+        namespace: z.string().optional().describe(nsActive ? "Untrusted hint: restrict to this namespace. Ignored unless this server may read it." : "Restrict to this namespace."),
+      },
+    },
+    async ({ id, namespace }) => {
+      try {
+        const denied = denyIfUnder("read");
+        if (denied) return errorResult(denied);
+        let namespaces: string[] | undefined;
+        if (nsActive) {
+          const hint = trustedHint(namespace);
+          namespaces = hint ? [hint] : readable();
+        } else if (namespace) {
+          namespaces = [namespace];
+        }
+        const note = store.readVisible(id);
+        if (!note || (namespaces && !namespaces.includes(note.namespace))) return errorResult(`no note ${id}`);
+        return untrustedResult(noteWhy(store, note, { namespaces }));
       } catch (e) {
         return errorFor(e);
       }
