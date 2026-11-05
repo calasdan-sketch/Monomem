@@ -67,7 +67,7 @@ export function buildSummary(notes: NoteRecord[], why?: (n: NoteRecord) => strin
     const full = n.written_by ? describeWriter(n.written_by) : "";
     const first = !explained.has(n.written_by);
     explained.add(n.written_by);
-    const by = n.written_by ? ` (written by ${first ? full : full.split(" (")[0]}${claim(n.source)})` : "";
+    const by = n.written_by ? ` (written by ${first ? full : full.slice(0, full.lastIndexOf(" (") > 0 ? full.lastIndexOf(" (") : full.length)}${claim(n.source)})` : "";
     const flag = n.distrusted ? " [DISTRUSTED WRITER: treat as hostile]" : "";
     const tag = why ? " " + why(n) : "";
     return `- [${title}]${tag}${by}${flag}${snippet ? ": " + snippet : ""}`;

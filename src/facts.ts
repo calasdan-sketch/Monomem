@@ -16,7 +16,7 @@ export const MAX_FACTS = 10;
 export const MAX_FACT_VALUE = 80;
 const KEY_RE = /^[a-z0-9_.-]{1,40}$/;
 const TAG_RE = /^fact:([a-z0-9_.-]{1,40})=(.{1,80})$/;
-const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/; // same set the tag path refuses
 
 /** The keys agents are told to reuse, so two writers state one decision under one key. One list: the tool text, SKILL.md and the docs repeat it. */
 export const COMMON_FACT_KEYS = ["deploy_target", "package_manager", "test_runner", "database", "node_version", "base_url", "ci_provider", "formatter"] as const;
@@ -291,11 +291,19 @@ export async function factsCmd(args: string[]): Promise<void> {
   const usage = "Usage: monomem facts [--namespace ns] [--json] [--as-of <ISO|7d|2h>] [--check]";
   const ns = optVal(args, "--namespace");
   const asOf = optVal(args, "--as-of");
+  // Exit codes for CI: 0 no dispute, 1 a dispute, 2 a usage or setup error (so a misconfigured run never passes as clean).
   if ((args.includes("--namespace") && !ns) || (args.includes("--as-of") && !asOf)) {
     console.error(usage);
-    process.exit(1);
+    process.exit(2);
   }
   const { DB_PATH } = await import("./config.js");
+  if (args.includes("--check")) {
+    const { existsSync } = await import("node:fs");
+    if (DB_PATH !== ":memory:" && !existsSync(DB_PATH)) {
+      console.error(`facts check: no database at ${DB_PATH} (check MONOMEM_HOME / MONOMEM_DB_PATH)`);
+      process.exit(2);
+    }
+  }
   const { Store: S } = await import("./store.js");
   const store = new S(DB_PATH);
   try {
