@@ -16,7 +16,7 @@ const COMMANDS = [
   "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
   "consolidate", "rebuild-edges", "relevant", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
   "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality",
-  "encrypt", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "audit",
+  "encrypt", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "drill", "audit",
   "help", "--help", "-h", "--version", "-v", "version",
 ];
 
@@ -69,6 +69,7 @@ function shortUsage(): void {
       "  trust                   Distrust a writer; decide which other servers' exports to believe",
       "  rollback --writer w --since 2h   Undo what one writer did (shows a plan first)",
       "  access                  Who read memory, and when",
+      "  drill [--json]          Replay known memory-poisoning attacks on a copy of your store and your settings",
       "",
       "Maintenance",
       "  backup [--out <dir>]    Copy the database safely, even while the server runs",
@@ -2534,6 +2535,11 @@ async function main(): Promise<void> {
     case "rollback":
       await supersedeCmd(cmd);
       break;
+    case "drill": {
+      const { drillMain } = await import("./drill.js");
+      process.exitCode = await drillMain(process.argv.slice(3));
+      break;
+    }
     case "bench": {
       const args = process.argv.slice(3);
       if (args.includes("--longmemeval") || args.includes("--locomo")) {

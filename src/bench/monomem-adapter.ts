@@ -3,7 +3,7 @@
 // does not offer (merging duplicates), the MCP tool `memory_consolidate` over an in-memory MCP connection.
 // Nothing here reads or writes the SQLite file directly.
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -95,6 +95,9 @@ export class MonomemAdapter implements MemoryAdapter {
   private clock = { t: 0 };
   private prevEnv: Record<string, string | undefined> = {};
 
+  /** `seedDb`: a database file (a copy, never the real store) to start the "main" server from, for `monomem drill`. */
+  constructor(private readonly seedDb?: string) {}
+
   async open(world: WorldSpec): Promise<void> {
     await this.close();
     this.dir = mkdtempSync(join(tmpdir(), "monomem-bench-"));
@@ -124,6 +127,7 @@ export class MonomemAdapter implements MemoryAdapter {
       // One folder per server: the signing key lives beside the database, and two servers must not share one.
       const folder = join(this.dir, name);
       mkdirSync(folder, { recursive: true });
+      if (this.seedDb && name === "main") copyFileSync(this.seedDb, join(folder, "state.db"));
       const store = new Store(join(folder, "state.db"));
       const http = createApiServer(store, tokens, this.serverOpts());
       await new Promise<void>((resolve, reject) => {
