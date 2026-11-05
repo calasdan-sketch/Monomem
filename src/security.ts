@@ -169,6 +169,8 @@ const CONFUSABLE_RE = new RegExp(`[${Object.keys(CONFUSABLES).join("")}]`, "gu")
 export function normalizeForScan(text: string): string {
   return text
     .normalize("NFKC")
+    // Unicode TAG chars render as nothing but encode ASCII: decode them so hidden text is scanned.
+    .replace(/[\u{E0020}-\u{E007E}]/gu, (c) => String.fromCharCode(c.codePointAt(0)! - 0xe0000))
     .replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]+/gu, "")
     .replace(CONFUSABLE_RE, (c) => CONFUSABLES[c])
     .replace(/\s+/g, (m) => (m.includes("\n") ? "\n" : " "));
