@@ -427,7 +427,7 @@ describe("RV6-b: the pre-upgrade copy is required, read-only directories get a r
     assert.doesNotMatch(up, /refuses to start/);
     assert.doesNotMatch(readFileSync(join(root, "docs", "trust.md"), "utf8"), /refuses to start/);
     assert.doesNotMatch(readFileSync(join(root, "docs", "file-sync.md"), "utf8"), /with `--prune`/);
-    const help = cli(tmp("om-rv6-h-"), ["help"]);
+    const help = cli(tmp("om-rv6-h-"), ["help", "--all"]);
     assert.match(help.stdout, /dated copies/);
     void statSync;
   });

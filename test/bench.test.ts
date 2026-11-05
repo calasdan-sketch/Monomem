@@ -709,7 +709,7 @@ describe("the command line", () => {
     const h = spawnSync(process.execPath, [cli, "bench", "--help"], { env: env(), encoding: "utf8", timeout: 60000 });
     assert.equal(h.status, 0);
     assert.match(h.stdout, /provenance benchmark/);
-    const main = spawnSync(process.execPath, [cli, "help"], { env: env(), encoding: "utf8", timeout: 60000 });
+    const main = spawnSync(process.execPath, [cli, "help", "--all"], { env: env(), encoding: "utf8", timeout: 60000 });
     assert.match(main.stdout, /\n  bench /);
   });
 

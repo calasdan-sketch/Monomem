@@ -11,7 +11,80 @@ import { setProcessWriter } from "./actor.js";
 //   monomem init      print the config snippet to wire it into your agent
 //   monomem help      show help
 
-function usage(): void {
+/** Every command main() accepts, for the unknown-command check and the "did you mean" hint. */
+const COMMANDS = [
+  "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
+  "consolidate", "rebuild-edges", "relevant", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
+  "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality",
+  "encrypt", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench",
+  "help", "--help", "-h", "--version", "-v", "version",
+];
+
+/** Plain edit distance; the command list is tiny, so the simple version is fine. */
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** The closest known command, or undefined when nothing is plausibly what the person meant. */
+function suggestCommand(cmd: string): string | undefined {
+  let best: string | undefined;
+  let bestDistance = 3; // 1 or 2 edits; farther is a guess, not a hint
+  for (const c of COMMANDS.filter((x) => !x.startsWith("-"))) {
+    const d = editDistance(cmd.toLowerCase(), c);
+    if (d < bestDistance) {
+      best = c;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+function shortUsage(): void {
+  console.log(
+    [
+      "monomem <command>      (the most-used commands; 'monomem help --all' lists every one)",
+      "",
+      "Get started",
+      "  setup [--dry-run]       Connect Monomem to the AI apps on this computer (shows the changes, asks first)",
+      "  doctor                  Check Node, the database, the token and the setup",
+      "  import --claude         Bring in what Claude Code already remembers (add --dry-run to look first)",
+      "  start                   Run the dashboard, REST API and MCP-over-HTTP (the default)",
+      "  mcp                     Run the MCP server over stdio (what your apps launch)",
+      "",
+      "Daily",
+      "  relevant \"message\"      Show the notes that relate to a sentence",
+      "  changes                 What changed while you were away",
+      "  history <id>            A note's earlier versions (history restore <id> <version> puts one back)",
+      "  pin <id> | unpin <id>   Pin a note so agents can read it but not change it",
+      "",
+      "Trust",
+      "  quarantine              Review writes that were held (by the linter or an approve-first namespace)",
+      "  approve-first           Hold every agent write to a namespace until you approve it",
+      "  trust                   Distrust a writer; decide which other servers' exports to believe",
+      "  rollback --writer w --since 2h   Undo what one writer did (shows a plan first)",
+      "  access                  Who read memory, and when",
+      "",
+      "Maintenance",
+      "  backup [--out <dir>]    Copy the database safely, even while the server runs",
+      "  export | import         Move notes in and out (JSON or Markdown)",
+      "  quality                 Duplicates, stale notes and flagged notes worth a look",
+      "  delete <id>             Delete a note permanently, with its earlier versions",
+      "  uninstall               Take Monomem out of every app setup connected",
+      "",
+      "Per-command options: 'monomem help --all'. Docs: https://github.com/calasdan-sketch/monomem",
+      "",
+    ].join("\n")
+  );
+}
+
+function usage(all = false): void {
+  if (!all) return shortUsage();
   console.log(
     [
       "monomem <command>",
@@ -206,8 +279,11 @@ async function doctor(): Promise<void> {
   const { existsSync } = await import("node:fs");
   const { resolve: resolvePath } = await import("node:path");
   const { Store } = await import("./store.js");
-  const ok = (m: string) => console.log("  [ok]   " + m);
-  const warn = (m: string) => console.log("  [warn] " + m);
+  // Colour only for a person at a terminal: not when piped, and not when NO_COLOR is set (no-color.org).
+  const colour = process.stdout.isTTY && !process.env.NO_COLOR;
+  const tag = (t: string, code: number) => (colour ? `\x1b[${code}m${t}\x1b[0m` : t);
+  const ok = (m: string) => console.log("  " + tag("[ok]", 32) + "   " + m);
+  const warn = (m: string) => console.log("  " + tag("[warn]", 33) + " " + m);
   console.log("monomem doctor\n");
 
   const { nodeIsOk, MIN_NODE_TEXT, sqliteHasFts5 } = await import("./setup.js");
@@ -2300,10 +2376,18 @@ async function main(): Promise<void> {
       console.error(
         `Monomem needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${process.versions.node}.\n` +
           "  Fix: install Node 22.16+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n" +
+          "  Just want to set it up now? This runs setup with a temporary Node 24 (nothing to install):\n" +
+          "      npx -y -p node@24 -p monomem monomem setup\n" +
+          "  Your apps will still start Monomem with the Node on this computer, so upgrade Node before relying on it.\n" +
           "  Nothing was changed. (Can't upgrade Node? Docker works too: see INSTALL.md.)"
       );
       process.exit(1);
     }
+  }
+  if (!COMMANDS.includes(cmd)) {
+    const guess = suggestCommand(cmd);
+    console.error(`Unknown command '${cmd}'.${guess ? ` Did you mean '${guess}'?` : ""}\nRun 'monomem help' to see the commands.`);
+    process.exit(1);
   }
   if (cmd === "--version" || cmd === "-v" || cmd === "version") {
     const { PACKAGE_VERSION } = await import("./config.js");
@@ -2445,11 +2529,10 @@ async function main(): Promise<void> {
     case "help":
     case "--help":
     case "-h":
-      usage();
+      usage(process.argv.includes("--all"));
       break;
     default:
-      console.error(`Unknown command: ${cmd}\n`);
-      usage();
+      console.error(`Unknown command '${cmd}'. Run 'monomem help' to see the commands.`);
       process.exit(1);
   }
 }
