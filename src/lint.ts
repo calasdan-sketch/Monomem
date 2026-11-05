@@ -416,7 +416,7 @@ export function factMismatchWarnings(title: string, body: string, tags: readonly
     const re = new RegExp(String.raw`\b${words.join("[\\s_.-]+")}\b\s*(?:is|are|=|:|->|now|to)\s*(?:now\s+|to\s+)?["'\x60]?([a-z0-9][\w.\-/@:]*)`, "i");
     const hit = re.exec(text)?.[1]?.replace(/[.,;:]+$/, "").toLowerCase();
     if (!hit || FILLER_WORDS.has(hit) || value.startsWith(hit)) continue;
-    out.push(`the text says ${key} is "${hit}" but the fact says "${rawValue.trim()}". Fix whichever is wrong.`);
+    out.push(`the text may say ${key} is "${hit}", but the fact says "${rawValue.trim()}". Check which is right and fix the other.`);
   }
   return out;
 }

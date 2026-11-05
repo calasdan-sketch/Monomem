@@ -6,13 +6,15 @@
 // ponytail: tier 2 is exact-key matching, so a paraphrase ("we host on Fly" vs "Hosting: Render") is missed on purpose; precision first.
 import type { Store, NoteRecord } from "./store.js";
 import { printable } from "./security.js";
-import { noteFacts, normFact } from "./facts.js";
+import { noteFacts, normFact, canonKey } from "./facts.js";
 import { writerKind } from "./why.js";
 
 /** kind = what the label is (server-stamped marker or token label), so a spoofed "stdio" label is told apart from a token holder. */
 export interface ConflictNote { id: number; title: string; writer: string; kind: string; pinned: boolean; at: string;
   /** How many OTHER facts the note carries besides the disputed key (Keep removes only the disputed one). */
-  otherFacts: number }
+  otherFacts: number;
+  /** The fact key this note actually carries (a synonym such as "hosting" for a deploy_target group). Fact tier only. */
+  factKey?: string }
 export interface Conflict {
   namespace: string;
   /** Older first. */
@@ -88,6 +90,7 @@ const brief = (n: NoteRecord, key?: string): ConflictNote => ({
   pinned: n.pinned === true,
   at: n.updated_at,
   otherFacts: noteFacts(n.tags).filter(([k]) => k !== key).length,
+  ...(key !== undefined ? { factKey: key } : {}),
 });
 
 // "fly.io" vs "fly.io (prod)" is a refinement, not a conflict; "npm" vs "pnpm" is (whole words, not substrings).
@@ -112,8 +115,8 @@ export function findConflicts(store: Store, opts: { namespaces?: string[]; notes
   const out: Conflict[] = [];
   const done = new Set<string>();
 
-  const facts = new Map<string, Array<{ n: NoteRecord; v: string }>>();
-  for (const n of notes) for (const [k, v] of noteFacts(n.tags)) group(facts, `${n.namespace}\u0000${k}`, { n, v });
+  const facts = new Map<string, Array<{ n: NoteRecord; v: string; k: string }>>(); // synonym spellings (hosting / deploy_target) share a group
+  for (const n of notes) for (const [k, v] of noteFacts(n.tags)) group(facts, `${n.namespace}\u0000${canonKey(k)}`, { n, v, k });
   factLoop: for (const [gk, g] of facts) {
     const key = gk.split("\u0000")[1];
     for (let i = 0; i < g.length; i++) {
@@ -121,7 +124,7 @@ export function findConflicts(store: Store, opts: { namespaces?: string[]; notes
         const [p, q] = oldestFirst(g[i], g[j]);
         if (writerOf(p.n) === writerOf(q.n) || normFact(p.v) === normFact(q.v)) continue;
         done.add(`${p.n.id}-${q.n.id}`);
-        out.push({ namespace: p.n.namespace, a: brief(p.n, key), b: brief(q.n, key), key, values: [normFact(p.v), normFact(q.v)], shown: [p.v, q.v], tier: "fact", confidence: "exact" });
+        out.push({ namespace: p.n.namespace, a: brief(p.n, p.k), b: brief(q.n, q.k), key, values: [normFact(p.v), normFact(q.v)], shown: [p.v, q.v], tier: "fact", confidence: "exact" });
         if (out.length >= MAX_CONFLICTS) break factLoop;
       }
     }
@@ -225,7 +228,7 @@ export function conflictLines(groups: ConflictGroup[]): string[] {
       const others = g.values.filter((o) => o !== v).flatMap((o) => o.notes.map((n) => n.id));
       out.push(`    keep ${printable(v.value)}: monomem supersede --old ${others.join(",")} --new-id ${v.notes[0].id}   (replaces ${others.length === 1 ? "note" : "notes"} ${others.join(", ")} whole)`);
     }
-    if (g.tier === "fact") for (const v of g.values) out.push(`    or drop just the fact ${printable(v.value)}: ${v.notes.map((n) => `monomem fact remove ${n.id} ${printable(g.key)}`).join(" | ")}`);
+    if (g.tier === "fact") for (const v of g.values) out.push(`    or drop just the fact ${printable(v.value)}: ${v.notes.map((n) => `monomem fact remove ${n.id} ${printable(n.factKey ?? g.key)}`).join(" | ")}`);
     const all = g.values.flatMap((v) => v.notes);
     out.push(`    or pin one: ${all.map((n) => `monomem pin ${n.id}`).join(" | ")}`);
     const writers = [...new Set(all.map((n) => n.writer))];

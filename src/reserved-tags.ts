@@ -51,6 +51,9 @@ function reservedSet(tags: readonly string[] | undefined): Set<string> {
  */
 export function assertPlainWriteTags(next: readonly string[] | undefined, existing?: readonly string[]): void {
   if (next === undefined) return; // tags not part of this write
+  // A `fact:` tag is one line of printable text: a raw newline or control character in one is an injection vector (facts.ts checks the `facts` path).
+  const badFact = next.find((t) => t.trimStart().startsWith("fact:") && /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t) && !(existing ?? []).includes(t));
+  if (badFact !== undefined) throw new ValidationError("a fact: tag must be one line of plain text (no line break or control character); pass facts through the `facts` field");
   const want = reservedSet(next);
   const have = reservedSet(existing);
   if (want.size === have.size && [...want].every((t) => have.has(t))) return;

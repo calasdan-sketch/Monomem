@@ -555,8 +555,9 @@ function cfKeep(gi, vi){
 }
 // Removes only the disputed fact tag, through the ordinary note edit (lint, approve-first and the pin gate still apply).
 function cfRemoveFacts(gi, g, losers){
-  var p = Promise.resolve(), done = 0, held = 0, pre = "fact:"+g.key+"=", mark = "fact-removed:"+g.key;
+  var p = Promise.resolve(), done = 0, held = 0;
   losers.forEach(function(l){
+    var fk = l.n.factKey || g.key, pre = "fact:"+fk+"=", mark = "fact-removed:"+fk;
     p = p.then(function(){
       return api("/notes/"+Number(l.n.id)).then(function(j){
         var n = j.note || j;

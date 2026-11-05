@@ -468,7 +468,7 @@ export function createMcpServer(
       title: "Write shared state",
       description:
         "Create a new note in the shared cross-surface state store, or update an existing one if `id` is given. Returns the resulting note." +
-        " Record decisions as `facts` (deploy_target, package_manager, test_runner …): a different value from another agent is then flagged to the user." +
+        " When the note states a decision or setting, ALSO pass `facts`, e.g. facts: {\"deploy_target\":\"render\"}. Other agents then read the exact value, and a disagreement is caught." +
         (nsActive
           ? " SERVER-RESOLVED NAMESPACE: this server writes to its own namespace; no `namespace` parameter is accepted."
           : ""),
@@ -501,7 +501,7 @@ export function createMcpServer(
           .record(z.string(), z.string())
           .optional()
           .describe(
-            "Pass whenever the note states a decision or setting. Reuse a key from similar_keys or this list: " + COMMON_FACT_KEYS.join(", ") + ". Prefix a subject only when the project has several (api.deploy_target). Decisions as exact key/value pairs, e.g. {\"deploy_target\": \"render\", \"package_manager\": \"pnpm\"}. At most 10; keys are lowercase a-z 0-9 _ . - (max 40 chars), values one line of at most 80 chars. If another writer's live note in the same namespace states a different value for a key (or a synonym such as hosting), the write still succeeds and the reply carries `conflicts`: tell the user. If the key is new and an existing key looks like the same thing, the reply carries `similar_keys` and a `hint`: reuse that key. `fact_warnings` means the note's text states another value than its fact: fix one."
+            "Example: {\"package_manager\":\"pnpm\",\"test_runner\":\"vitest\"}. Keys: reuse one from similar_keys or this list: " + COMMON_FACT_KEYS.join(", ") + ". Prefix a subject only when the project has several (api.deploy_target). At most 10; keys are lowercase a-z 0-9 _ . - (max 40 chars), values one line of at most 80 chars. If another writer's live note in the same namespace states a different value for a key (or a synonym such as hosting), the write still succeeds and the reply carries `conflicts`: tell the user. If the key is new and an existing key looks like the same thing, the reply carries `similar_keys` and a `hint`: reuse that key. "
           ),
         source: z
           .string()
