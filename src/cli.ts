@@ -72,7 +72,7 @@ function shortUsage(): void {
       "  rollback --writer w --since 2h   Undo what one writer did (shows a plan first)",
       "  access                  Who read memory, and when",
       "  drill [--json]          Replay known memory-poisoning attacks on a copy of your store and your settings",
-      "  health [--json] [--card [file.svg]]   One grade A-F: setup, settings, drill, audit chain, held writes (rule: health --help)",
+      "  health [--json] [--card [file.svg]]   One grade A-F with the reason: setup, settings, drill, audit chain, held writes (rule: health --help)",
       "",
       "Maintenance",
       "  backup [--out <dir>]    Copy the database safely, even while the server runs",
@@ -284,22 +284,10 @@ function usage(all = false): void {
 const DOCTOR_MAX_DATA_BYTES = 1e9;
 const DOCTOR_MAX_BACKLOG = 10_000;
 
-/** doctor: settings that weaken protection, plus a data folder a cloud-sync client may copy. Warnings only. */
+/** doctor: settings that weaken protection, plus a data folder a cloud-sync client may copy. Warnings only; the list is shared with `monomem health`. */
 async function doctorSecurityChecks(dataDir: string, bindHost: string, warn: (m: string) => void): Promise<void> {
-  const { lintPolicy } = await import("./lint.js");
-  const policy = lintPolicy();
-  if (policy.secret === "warn" || policy.injection === "warn") {
-    warn(`MONOMEM_LINT="${process.env.MONOMEM_LINT}" stores notes the memory linter would otherwise hold or refuse (secrets: ${policy.secret}, injection: ${policy.injection}). Remove it unless you chose this.`);
-  }
-  if (process.env.MONOMEM_STDIO_ADMIN_TOOLS === "1") {
-    warn("MONOMEM_STDIO_ADMIN_TOOLS=1 lets an agent on the stdio server use the admin tools (approve its own quarantined writes, unpin, delete). Unset it unless you want that.");
-  }
-  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(bindHost)) {
-    warn(`MONOMEM_BIND=${bindHost} is not a loopback address: anything that can reach this machine on the network can reach the API, so it must be behind your own authenticated tunnel (INFRA.md).`);
-  }
-  if (/(?:^|[\\/])(?:OneDrive[^\\/]*|Dropbox[^\\/]*|iCloud Drive[^\\/]*|iCloudDrive|Google Drive[^\\/]*|GoogleDrive[^\\/]*|Mobile Documents)(?:[\\/]|$)/i.test(dataDir)) {
-    warn(`data dir ${dataDir} is inside a cloud-sync folder (OneDrive, Dropbox, iCloud or Google Drive): the sync client uploads the database and token, and can corrupt a live SQLite file. See SECURITY.md; set MONOMEM_HOME to a local folder.`);
-  }
+  const { securityFindings } = await import("./health.js");
+  for (const f of await securityFindings(dataDir, bindHost)) warn(f.detail);
 }
 
 async function doctor(): Promise<void> {

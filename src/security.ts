@@ -495,7 +495,7 @@ export function authenticate(req: IncomingMessage, tokens: TokenEntry[]): Scope 
 // MONOMEM_AUDIT_LOG set at runtime and is unit-testable. The entry records
 // only the operation and metadata (op/id/namespace/byte count) -- never the
 // note title or body, so the audit trail can't itself become a leak.
-function auditPath(): string {
+export function auditPath(): string {
   return process.env.MONOMEM_AUDIT_LOG || join(DATA_DIR, "audit.log");
 }
 
