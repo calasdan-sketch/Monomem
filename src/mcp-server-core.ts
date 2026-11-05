@@ -39,6 +39,7 @@ import { rollbackPreview, rollbackConfirm, embedRestored } from "./rollback.js";
 import { supersedePreview, supersedeConfirm, supersedeUndo, noteHistory, restoreVersion, purgeNoteHistory, SupersedeError, type Caller } from "./supersede.js";
 import { runnerStatus } from "./liveness.js";
 import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
+import { withFacts, writeConflicts } from "./facts.js";
 import { waitForChanges, parseWait, WAIT_MAX_SECONDS, WAIT_RECOMMENDED_SECONDS } from "./change-wait.js";
 import { type Scope, PACKAGE_VERSION } from "./config.js";
 export { PACKAGE_VERSION };
@@ -179,6 +180,12 @@ function quarantinedResult(e: QuarantinedError) {
 }
 
 /** Attach linter warnings (MONOMEM_LINT=warn) to a write payload. */
+/** Adds `conflicts` (other writers' different values for this note's fact keys) when the write carried facts. The write already succeeded. */
+function withConflicts<T extends object>(payload: T, store: Store, note: NoteRecord, facts: unknown): T & { conflicts?: string[] } {
+  const c = facts === undefined ? [] : writeConflicts(store, note);
+  return c.length ? { ...payload, conflicts: c } : payload;
+}
+
 function withWarnings<T extends object>(payload: T, warnings: LintFinding[]): T & { warnings?: LintFinding[] } {
   return warnings.length ? { ...payload, warnings } : payload;
 }
@@ -490,6 +497,12 @@ export function createMcpServer(
           .describe("Note title. Required when creating a new note."),
         body: z.string().optional().describe("Note body/content."),
         tags: z.array(z.string()).optional().describe("Tags for the note."),
+        facts: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe(
+            "Decisions as exact key/value pairs, e.g. {\"deploy_target\": \"render\", \"package_manager\": \"pnpm\"}. At most 10; keys are lowercase a-z 0-9 _ . - (max 40 chars), values one line of at most 80 chars. If another writer's live note in the same namespace states a different value for a key, the write still succeeds and the reply carries `conflicts`: tell the user. Scope keys to the subject (orders.database, not database)."
+          ),
         source: z
           .string()
           .optional()
@@ -521,8 +534,9 @@ export function createMcpServer(
           ),
       },
     },
-    async ({ id, namespace, title, body, tags, source, if_rev, forget_after, confidence }) => {
+    async ({ id, namespace, title, body, tags: plainTags, facts, source, if_rev, forget_after, confidence }) => {
       const warnings: LintFinding[] = [];
+      let tags = plainTags;
       try {
         const denied = denyIfUnder("write");
         if (denied) return errorResult(denied);
@@ -540,9 +554,6 @@ export function createMcpServer(
           // update-by-id could rewrite notes from a granted namespace. A
           // missing or foreign note reports the same "no note" so the caller
           // can't probe which ids exist in namespaces it may not write.
-          const patch = nsActive
-            ? { title, body, tags, source, forget_after, confidence }
-            : { namespace, title, body, tags, source, forget_after, confidence };
           // A note the distrust list hides reads as missing here too (only an admin may rewrite it).
           // hideArchived: updating a forgotten note would echo its text back; it must be restored first.
           const target = store.readVisible(id, { hideArchived: true, includeDistrusted: scopeAllows(scope, "admin") });
@@ -550,18 +561,23 @@ export function createMcpServer(
           if (nsActive && target.namespace !== ownNs) {
             return errorResult(`no note with id ${id}`);
           }
+          if (facts !== undefined) tags = withFacts(plainTags, facts, target.tags);
+          const patch = nsActive
+            ? { title, body, tags, source, forget_after, confidence }
+            : { namespace, title, body, tags, source, forget_after, confidence };
           const updated = store.update(id, patch, { ifRev: if_rev, lintWarnings: warnings });
           if (!updated) return errorResult(`no note with id ${id}`);
           await maybeEmbed(store, updated);
           // A partial update echoes back the merged note, which can include a
           // pre-existing body planted by someone else -- wrap it as untrusted.
-          return untrustedResult(withWarnings({ note: updated }, warnings));
+          return untrustedResult(withConflicts(withWarnings({ note: updated }, warnings), store, updated, facts));
         }
         if (!title || !title.trim()) {
           return errorResult("title is required when creating a new note");
         }
         // Writes always go to the server-resolved namespace when active; the
         // model-supplied `namespace` is ignored (prompt-injection guard).
+        tags = withFacts(plainTags, facts);
         const created = store.create(
           nsActive
             ? { namespace: ownNs, title, body, tags, source, forget_after, ...(typeof confidence === "number" ? { confidence } : {}) }
@@ -569,7 +585,7 @@ export function createMcpServer(
           { lintWarnings: warnings }
         );
         await maybeEmbed(store, created);
-        return untrustedResult(withWarnings({ note: created }, warnings));
+        return untrustedResult(withConflicts(withWarnings({ note: created }, warnings), store, created, facts));
       } catch (e) {
         if (e instanceof QuarantinedError) return quarantinedResult(e);
         return errorFor(e);
