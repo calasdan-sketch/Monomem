@@ -178,8 +178,13 @@ export async function drillMain(argv: string[], out: (s: string) => void = conso
       return 2;
     }
   }
+  const dbPath = process.env.MONOMEM_DB_PATH || DB_PATH;
+  if (!existsSync(dbPath)) {
+    console.error(`drill: No memory yet: run \`npx monomem setup\` first (or write a note), then run drill again. (Looked for ${dbPath})`);
+    return 2;
+  }
   try {
-    const r = await runDrill({ dbPath: process.env.MONOMEM_DB_PATH || DB_PATH });
+    const r = await runDrill({ dbPath });
     out(json ? JSON.stringify(r, null, 2) : renderDrill(r));
     return r.ok ? 0 : 1;
   } catch (e) {

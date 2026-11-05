@@ -208,7 +208,7 @@ export async function runHealth(o: HealthOpts = {}): Promise<HealthReport> {
   const checks: HealthCheck[] = [];
   const add = (id: string, label: string, status: Status, text: string): void => void checks.push({ id, label, status, text });
 
-  const { nodeIsOk, MIN_NODE_TEXT, sqliteHasFts5 } = await import("./setup.js");
+  const { nodeIsOk, MIN_NODE_TEXT, sqliteHasFts5, HOOKS_DECLINED_FILE } = await import("./setup.js");
   const nodeOk = nodeIsOk(process.versions.node) && sqliteHasFts5();
   add("node", "Node", nodeOk ? "ok" : "fail", nodeOk ? `Node ${process.versions.node} with SQLite FTS5` : `Node ${process.versions.node} needs >= ${MIN_NODE_TEXT} with SQLite FTS5, or search fails`);
 
@@ -244,6 +244,8 @@ export async function runHealth(o: HealthOpts = {}): Promise<HealthReport> {
   const settingsPath = o.settingsPath ?? join(homedir(), ".claude", "settings.json");
   if (hookWired(settingsPath)) add("hooks", "Hooks", "ok", "SessionStart hook wired in ~/.claude/settings.json");
   else if (pluginInstalled(o.pluginsPath ?? join(homedir(), ".claude", "plugins", "installed_plugins.json"), settingsPath)) add("hooks", "Hooks", "ok", "the monomem Claude Code plugin is installed (its SessionStart hook comes with it)");
+  else if (!existsSync(dirname(settingsPath))) add("hooks", "Hooks", "info", "Claude Code does not seem to be installed here (no ~/.claude folder), so there is no Claude Code hook to check");
+  else if (existsSync(join(o.dataDir ?? DATA_DIR, HOOKS_DECLINED_FILE))) add("hooks", "Hooks", "info", "you chose no Claude Code hook when you ran setup, so Claude Code gets no memory at session start (run monomem setup --hook to add it)");
   else add("hooks", "Hooks", "warn", "no monomem SessionStart hook in ~/.claude/settings.json and no monomem plugin in Claude Code's plugin list, so Claude Code gets no memory at session start");
 
   const sec = await securityFindings(o.dataDir ?? DATA_DIR, o.bindHost ?? BIND_HOST);

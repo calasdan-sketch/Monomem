@@ -12,7 +12,7 @@
 // Files are re-read right before the write and the edit is re-applied to what is there NOW, because Claude Code rewrites
 // ~/.claude.json while it runs; a change made in between is kept, not overwritten.
 
-import { copyFileSync, existsSync, fsyncSync, closeSync, openSync, mkdirSync, readFileSync, lstatSync, realpathSync, renameSync, statSync, unlinkSync, writeSync, chmodSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, rmSync, writeFileSync, fsyncSync, closeSync, openSync, mkdirSync, readFileSync, lstatSync, realpathSync, renameSync, statSync, unlinkSync, writeSync, chmodSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
@@ -35,6 +35,11 @@ export interface SetupEnv {
   cliPath: string;
   version: string;
   now: () => Date;
+  /**
+   * A global `npm i -g monomem` of THIS version (a stable cli.js path). Only looked for when setup runs from the npx cache:
+   * undefined = not looked up yet, null = looked up and not found.
+   */
+  globalCliPath?: string | null;
 }
 
 /** Expand Windows 8.3 short names (PROGRA~1) and symlinks to the real long path; keep the input if that is impossible. */
@@ -158,6 +163,48 @@ export interface ServerEntry {
 /** Is this process running from the npx cache (which is deleted from time to time)? */
 export function runningFromNpxCache(cliPath: string): boolean {
   return /[\\/]_npx[\\/]/.test(cliPath);
+}
+
+/** Hooks that run on every prompt / every Read: the agent waits for them, so their start-up time is felt each time. */
+const SYNC_HOOK_EVENTS: ReadonlySet<string> = new Set(["user-prompt", "file-context"]);
+
+/** Marker file (in the data folder) that setup writes when the person said no to the Claude Code hook, so `monomem health` can say so. */
+export const HOOKS_DECLINED_FILE = "setup-hooks-declined";
+
+/** From the npx cache: is the same version also installed globally? Returns that cli.js, a path that is not deleted from time to time. */
+export function detectGlobalCli(e: SetupEnv): string | undefined {
+  try {
+    const r = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: e.platform === "win32", timeout: 15_000 });
+    const root = r.status === 0 ? (String(r.stdout).trim().split("\n").pop() ?? "").trim() : "";
+    if (!root) return undefined;
+    const pkg = join(root, "monomem");
+    const cli = join(pkg, "dist", "src", "cli.js");
+    const v = (JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")) as { version?: string }).version;
+    return v === e.version && existsSync(cli) ? longPath(cli) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** True when the hooks for the person and the agent wait on would go through npx (about 1 s slower on every prompt and every Read). */
+export function syncHooksUseSlowNpx(e: SetupEnv, opts: Pick<SetupOptions, "command">): boolean {
+  return (opts.command === "npx" || (opts.command === "auto" && runningFromNpxCache(e.cliPath))) && !(opts.command === "auto" && e.globalCliPath);
+}
+
+export const NPX_LATENCY_NOTE = (version: string): string =>
+  "Speed: you started setup with npx, so the hooks that run on every prompt and every file read would go through npx too. " +
+  "That adds about 1 to 1.5 seconds to each prompt and each read (a direct install adds under 0.4 s). Two choices:\n" +
+  `    (a) recommended: run  npm i -g monomem@${version}  and then run  monomem setup  again; the hooks then run the installed copy.\n` +
+  "    (b) keep npx and accept the delay on every prompt and read (the background hooks are not affected).\n" +
+  "  I do not install anything for you.";
+
+const CLIENT_LABEL: Record<string, string> = { "claude-code": "Claude Code", "claude-desktop": "Claude Desktop", cursor: "Cursor", codex: "Codex", gemini: "Gemini CLI", muse: "Muse", vscode: "VS Code", zed: "Zed" };
+
+/** "Claude Code and Cursor": the apps whose files setup is about to change (a running app can rewrite its own file). */
+export function closeList(ids: string[]): string {
+  const names = [...new Set(ids)].map((i) => CLIENT_LABEL[i]).filter((n): n is string => !!n);
+  if (!names.length) return "the assistants you are connecting";
+  return names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
 }
 
 export function buildServerEntry(e: SetupEnv, opts: Pick<SetupOptions, "command">, env?: Record<string, string>, withType = false): ServerEntry {
@@ -577,8 +624,10 @@ export const CAPTURE_HOOKS: ReadonlyArray<{ on: string; event: string; async: bo
 export function buildCaptureCommand(e: SetupEnv, opts: Pick<SetupOptions, "command">, event: string, dbPath?: string): string {
   const useNpx = opts.command === "npx" || (opts.command === "auto" && runningFromNpxCache(e.cliPath));
   const db = dbPath ? ` --db "${dbPath.replace(/\\/g, "/")}"` : "";
-  if (useNpx) return `npx -y monomem@${e.version} hook ${event}${db}`;
-  return `node "${e.cliPath.replace(/\\/g, "/")}" hook ${event}${db}`;
+  // A hook the agent waits for runs the global copy when there is one; the background ones stay on npx.
+  const cli = useNpx && SYNC_HOOK_EVENTS.has(event) && opts.command === "auto" && e.globalCliPath ? e.globalCliPath : e.cliPath;
+  if (useNpx && cli === e.cliPath) return `npx -y monomem@${e.version} hook ${event}${db}`;
+  return `node "${cli.replace(/\\/g, "/")}" hook ${event}${db}`;
 }
 
 export function planHook(e: SetupEnv, opts: SetupOptions, dbForHook?: string): { change: FileChange | null; already: boolean; conflict?: string } {
@@ -710,7 +759,7 @@ export function planHooks(e: SetupEnv, opts: SetupOptions, dbForHook: string | u
       inverse.unshift({ op: "unappend", path: ["hooks"], key: h.on, marker: `hook ${h.event}` });
       added++;
     }
-    if (added) lines.push(`record what ${host.agent} does in this project (files, commands, errors) into Monomem, stored only on this machine (MONOMEM_CAPTURE=off turns it off)`);
+    if (added) lines.push(`record what ${host.agent} does in every project (files, commands, errors) into Monomem, stored only on this machine (MONOMEM_CAPTURE=off turns it off)`);
   }
   if (!ops.length) return { change: null, already: true };
   if (host.notes) lines.push(...host.notes);
@@ -946,10 +995,10 @@ export function writeChange(e: SetupEnv, change: FileChange): WrittenChange | nu
     const back = readFileSync(real, "utf8");
     const stillThere = appliedFor(back, change.ops, change.format);
     if (stillThere) return { client: change.client, file, real, backup, createdFile: buf === null, afterSha: sha(back), inverse: change.inverse, label: change.label, ...(change.format ? { format: change.format } : {}) };
-    if (attempt === 4) throw new Error(`${file} keeps being rewritten by another program, so the change did not stay. Close Claude Code and run setup again.`);
+    if (attempt === 4) throw new Error(`${file} keeps being rewritten by another program, so the change did not stay. Close the assistant that owns that file and run setup again.`);
     sleepSync(80);
   }
-  throw new Error(`${file} changed while I was working on it; run setup again (close Claude Code first).`);
+  throw new Error(`${file} changed while I was working on it; run setup again (close the assistant that owns it first).`);
 }
 
 // ---- undo history ----------------------------------------------------------------------------------------------------------
@@ -1013,7 +1062,7 @@ async function reportDatabaseAfterUndo(s: HistorySession, io: SetupIO): Promise<
     io.out("  so the restored entry will fail until you do ONE of these:");
     io.out("   A. Keep the new database and use Monomem:  monomem setup   (it will reconnect you).");
     io.out(`   B. Go fully back (notes written since the upgrade are lost, so run \`monomem backup --out <folder>\` first if you want them):`);
-    io.out("        1. Close Claude Code and every program that uses the database.");
+    io.out("        1. Close every assistant and program that uses the database.");
     io.out(`        2. Move the safety copy over it:  ${bak}  ->  ${u.path}`);
     io.out(`        3. Delete  ${u.path}-wal  and  ${u.path}-shm  if they exist (they belong to the upgraded file).`);
     if (!existsSync(bak)) io.out(`      (I do not see ${bak}; if it was removed, option B is not possible.)`);
@@ -1031,7 +1080,7 @@ export async function undoLast(e: SetupEnv, io: SetupIO): Promise<number> {
   if (undoSession(e, io, s) === 0) {
     s.undone = true;
     saveHistory(e, all);
-    io.out("Done. Restart Claude Code.");
+    io.out("Done. Restart any assistant that was open.");
     await reportDatabaseAfterUndo(s, io);
     return 0;
   }
@@ -1099,6 +1148,7 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
     return 1;
   }
   if (opts.undo) return undoLast(e, io);
+  if (e.globalCliPath === undefined && opts.command === "auto" && runningFromNpxCache(e.cliPath)) e = { ...e, globalCliPath: detectGlobalCli(e) ?? null };
 
   // A database pinned in the shell (MONOMEM_DB_PATH, or the old CLAUDE_BRIDGE_DB_PATH) must also reach the app's entry,
   // because the app will not run inside this shell.
@@ -1216,12 +1266,14 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
   for (const c of plan.changes) for (const l of c.lines) io.out(`  ${l.startsWith("note:") ? "   " : `${n++}. ${c.label}: `}${l}`);
   for (const d of dbs) io.out(`  ${n++}. Database ${d}: ${describeSchema(Store.peekSchemaVersion(d), SCHEMA_VERSION)}`);
   if (!opts.noTestNote) io.out(`  ${n++}. Write a test note, read it back and delete it, so you know writing, reading and deleting all work (your store is left empty)`);
-  io.out(`  ${n++}. Run \`monomem doctor\` and tell you how to check it inside Claude Code`);
+  io.out(`  ${n++}. Run \`monomem doctor\` and tell you how to check the connection in your assistant`);
   for (const a of plan.already) io.out(`  (already fine) ${a}`);
   for (const w of plan.warnings) io.out(`  (careful) ${w}`);
   io.out("");
   io.out("Before any file is changed, a copy is saved beside it (name ends in .monomem-backup-<time>). `monomem setup --undo` puts it back.");
-  io.out("Please close Claude Code and Claude Desktop first: Claude Code rewrites ~/.claude.json while it runs.\n");
+  io.out(`Please close ${closeList([...plan.changes.map((c) => c.client), ...hosts.map((h) => h.client)])} first, so it does not overwrite the change while it runs.`);
+  if (anyCapture && syncHooksUseSlowNpx(e, opts)) io.out("\n" + NPX_LATENCY_NOTE(e.version));
+  io.out("");
 
   // With automatic memory offered, its plan (which includes the start-of-session hook) is the one shown.
   const optional = hosts.flatMap((h) => capturePlans.get(h) ?? hookPlans.get(h) ?? []);
@@ -1268,12 +1320,12 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
       }
     }
     if (anyHook && opts.hook === "ask") {
-      const h = (await io.ask(`Also install the start-of-session hook (Claude sees your recent notes when a session starts)${hookReplacesOld ? ". This REPLACES your old onememory-mcp hook with the current Monomem one" : ""}? Type y or n: `)).trim().toLowerCase();
+      const h = (await io.ask(`Also install the start-of-session hook (your assistant sees your recent notes when a session starts)${hookReplacesOld ? ". This REPLACES your old onememory-mcp hook with the current Monomem one" : ""}? Type y or n: `)).trim().toLowerCase();
       wantHook = h === "y" || h === "yes";
     }
     // Asked only after a yes to the start-of-session hook (or when it is already there): a no to that is a no to both.
     if (anyCapture && capture === "ask" && (wantHook || !anyHook)) {
-      const c = (await io.ask("Also record what Claude does in this project (files, commands, errors), stored only on this machine? Type y or n: ")).trim().toLowerCase();
+      const c = (await io.ask("Also record what your assistant does in every project (files, commands, errors), stored only on this machine? Type y or n: ")).trim().toLowerCase();
       wantCapture = c === "y" || c === "yes";
     }
   } else {
@@ -1363,6 +1415,21 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
     saveHistory(e, all);
   }
 
+  // Remember a no to the Claude Code hook (or clear it after a yes), so `monomem health` reports "you chose no" as info, not a warning.
+  const claudeHost = hosts.find((h) => h.client === "claude-code");
+  if (claudeHost) {
+    const marker = join(dirname(DB_PATH), HOOKS_DECLINED_FILE); // the standard data folder, never an old install's
+    try {
+      if (wantHook || wantCapture) rmSync(marker, { force: true });
+      else if (hookPlans.has(claudeHost) || capturePlans.has(claudeHost)) {
+        mkdirSync(dirname(marker), { recursive: true });
+        writeFileSync(marker, "The Claude Code hook was declined when setup ran. Run monomem setup --hook to add it.\n");
+      }
+    } catch {
+      /* best effort: only health's wording depends on it */
+    }
+  }
+
   // 3. Doctor.
   if (!opts.noDoctor) {
     io.out("\nmonomem doctor:");
@@ -1384,7 +1451,7 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
     }
   }
   if (missing.length) {
-    io.err(`\nWarning: ${missing.join(", ")} was changed by another program just after I wrote it, and the Monomem entry is gone. Close Claude Code completely, then run setup again.`);
+    io.err(`\nWarning: ${missing.join(", ")} was changed by another program just after I wrote it, and the Monomem entry is gone. Close the assistant that owns that file completely, then run setup again.`);
     return 1;
   }
   // The last thing setup says is the only thing most people will act on, so
@@ -1415,8 +1482,38 @@ export async function runSetup(e: SetupEnv, io: SetupIO, opts: SetupOptions): Pr
     io.out("\n  The new chat was never told. It answers 8443. Wire up a second assistant with `monomem setup` and the same memory follows you there.");
   }
   await offerClaudeMemPreview(e, io, opts, primaryDb);
+  await offerServerMemoryPreview(e, io, opts, primaryDb);
   io.out("\nIf monomem is missing or red: docs/live-claude-code.md has the fixes. To go back: monomem setup --undo");
   return 0;
+}
+
+/** The clients whose config names the official `@modelcontextprotocol/server-memory` server (a plain-text look; nothing is parsed or changed). */
+export function clientsUsingServerMemory(e: SetupEnv): string[] {
+  const out: string[] = [];
+  for (const t of detectClients(e)) {
+    if (!t.exists || t.id === "project") continue;
+    try {
+      if (readFileSync(t.file, "utf8").includes("@modelcontextprotocol/server-memory")) out.push(t.label);
+    } catch {
+      /* unreadable: skip */
+    }
+  }
+  return out;
+}
+
+/** If an app already runs the official server-memory server, offer (default No) a DRY RUN import of its graph. */
+async function offerServerMemoryPreview(e: SetupEnv, io: SetupIO, opts: SetupOptions, db: string): Promise<void> {
+  const who = clientsUsingServerMemory(e);
+  if (!who.length) return;
+  const cmd = "monomem import --from mcp-memory --dry-run";
+  if (!io.interactive || opts.yes) {
+    io.out(`\nI found the server-memory server in ${who.join(", ")}. To preview bringing its notes over (nothing is written): ${cmd}`);
+    return;
+  }
+  const a = (await io.ask(`\nI found the server-memory server in ${who.join(", ")}. Preview what importing its notes would do? Nothing leaves this computer and nothing is written. Type y, or press Enter to skip: `)).trim().toLowerCase();
+  if (a !== "y" && a !== "yes") return;
+  const { runForeignImport } = await import("./foreign-import.js");
+  await runForeignImport(e, io, { from: "mcp-memory", dryRun: true, yes: false, dbPath: db });
 }
 
 /** If a claude-mem database is here, offer a DRY RUN import (never the real one). The importer opens it read-only, so nothing leaves this computer. */

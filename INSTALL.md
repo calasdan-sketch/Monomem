@@ -187,6 +187,49 @@ a server whose command is `monomem` and whose argument is `mcp`. Example (Windsu
 
 ---
 
+## Connect to a shared server (a teammate's setup)
+
+If your team runs one Monomem server (see [docs/team.md](./docs/team.md)), you do not install anything. Your admin gives you
+the address (`https://<your host>/mcp`) and your own token (shown once by `monomem token add`). Every client sends the token as
+`Authorization: Bearer <token>`. Keep the token out of files you commit.
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http monomem https://<your host>/mcp --header "Authorization: Bearer <token>"
+```
+
+Then type `/mcp` in Claude Code: `monomem` should show as connected. A red mark with 401 means the token is wrong.
+
+**Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project)
+
+```json
+{
+  "mcpServers": {
+    "monomem": {
+      "url": "https://<your host>/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
+    }
+  }
+}
+```
+
+**Codex CLI** (`~/.codex/config.toml`). Codex supports remote HTTP MCP servers. It reads the token from an environment
+variable rather than the file, so set `MONOMEM_TOKEN` in the shell that starts Codex:
+
+```toml
+[mcp_servers.monomem]
+url = "https://<your host>/mcp"
+bearer_token_env_var = "MONOMEM_TOKEN"
+```
+
+Other apps that accept a remote MCP URL plus custom headers take the same two values. An app that only accepts a URL and
+no headers cannot connect to a token-protected server.
+
+How these were checked: the Authorization header form is tested against Monomem's own `/mcp` endpoint (a client with the header connects
+and lists tools; one without it gets 401). The Claude Code command is from its MCP docs, and the Codex keys (`url`,
+`bearer_token_env_var`) are from the Codex source. The Cursor file shape was not run here.
+
 ## Also reach Claude web & mobile (optional)
 
 Everything above is local. To let Claude on the web or your phone read/write

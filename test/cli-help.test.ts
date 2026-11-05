@@ -49,3 +49,15 @@ test("every command main() handles is on the known-command list (no 'Unknown com
   const missing = [...new Set(cases)].filter((c) => !listed.includes(`"${c}"`));
   assert.deepEqual(missing, []);
 });
+
+test("help --all mentions every real command (aliases and flags excepted)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(join(PROJECT_ROOT, "src", "cli.ts"), "utf8");
+  const start = src.indexOf("const COMMANDS = [");
+  const listed = [...src.slice(start, src.indexOf("];", start)).matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const aliases = new Set(["serve", "mcp:stdio", "version", "help", "--help", "-h", "--version", "-v"]);
+  const all = run(["help", "--all"]).stdout;
+  const words = new Set(all.split(/[^A-Za-z0-9:-]+/));
+  const missing = listed.filter((c) => !aliases.has(c) && !words.has(c));
+  assert.deepEqual(missing, []);
+});
