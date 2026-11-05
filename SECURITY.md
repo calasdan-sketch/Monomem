@@ -17,7 +17,8 @@ content as untrusted input to your agents** — see "Memory safety" below.
   token length/count is not fully eliminated, which is immaterial for the
   high-entropy tokens this uses behind a tunnel). Tokens are never placed in
   URLs and are never logged. The primary token file is created `0600` and is
-  git-ignored.
+  git-ignored. The `0600` mode applies on POSIX systems; on Windows (NTFS) it has no effect, so rely on the folder
+  permissions of your user profile.
 - **Scoped tokens:** besides the primary (admin) token, you can define extra
   `read` / `write` / `admin` tokens via `MONOMEM_TOKENS` (a JSON array)
   or a `~/.monomem/tokens.json` file, so a leaked read-only token can't write, delete
@@ -29,13 +30,21 @@ content as untrusted input to your agents** — see "Memory safety" below.
   `MONOMEM_RATE_MAX` / `MONOMEM_RATE_WINDOW_MS`) so a leaked token
   can't be brute-forced or hammered. Over-limit requests get `429`.
 - **Input validation:** per-note size caps (title/body/tags), a 1MB request
-  body cap, and parameterized SQL only (no string-built queries).
+  body cap, and all values are bound as parameters; SQL text is
+  built only from internal identifiers.
 - **Secret guard:** writes are scanned for high-confidence credentials (AWS
   keys, private-key blocks, provider API tokens, etc.) and **rejected** by
   default (`MONOMEM_LINT`), since a memory store is where secrets get pasted
   by accident.
 - **Audit log:** an append-only log records every mutation (op, id, namespace,
-  byte count) — **no note content and no secrets** are logged.
+  byte count) — **no note content and no secrets** are logged. Archive, restore and the expiry and decay sweeps are
+  logged from inside the store, so every path (MCP, REST, CLI, background sweep) writes a line. Each line carries
+  `prev`, the sha256 of the line before it (carried across rotation), and `monomem audit verify` walks the chain and
+  reports the first broken line. This is **tamper-evident, not tamper-proof**: it detects edits and deletions *inside*
+  the chain. It does not detect removal of the newest lines, or a complete rewrite of the file by someone who can write
+  it. Lines written before this was added have no `prev` and are not checked. Two processes writing in the same instant
+  can produce a false break. Archive through MCP `state_delete` currently writes two lines (one from the store, one
+  from the tool, which names the caller).
 - **Supply chain:** committed lockfile + `npm ci`, Dependabot, `npm audit` in
   CI, and MIT-licensed with only two production dependencies.
 
@@ -140,12 +149,30 @@ prompt-injection / "memory poisoning"** channel. Layers:
   high-entropy tokens) are blocked; prompt-injection phrasing is
   **quarantined**, invisible to search and recall until an admin approves it
   (`monomem quarantine`). It is a pattern linter: it will miss novel
-  phrasing and can flag harmless text. See
+  phrasing and can flag harmless text. It matches patterns, so a reworded attack passes (bench scenario E16 is a
+  designed miss). Text written in invisible Unicode tag characters is decoded and scanned, and any such character
+  is flagged (emoji subdivision flags are exempt). See
   [docs/memory-linter.md](./docs/memory-linter.md).
 - **Untrusted-data banner on every MCP read** (and `monomem recall`).
   REST responses do not carry it; REST callers must apply the same rule.
 - **SKILL.md** tells agents to treat note content as data, never as
   instructions. If you integrate the tools yourself, enforce the same rule.
+
+## Write controls and their limits
+
+These protect memory from agents that reach it through MCP or REST. **An agent with a shell tool can run the `monomem`
+CLI itself, so none of them stops an agent that can run commands.**
+
+- **Approve-first namespaces** (`monomem approve-first`): writes that do not come from the local CLI are held in the
+  quarantine queue until approved. An admin REST token is treated like any other REST caller, so it is held too.
+- **Pinned notes** (`monomem pin`): only the CLI can edit, forget, restore, replace or delete them. An admin token can
+  unpin a note over REST and then change it.
+- **Flood guard**: a writer label that makes too many writes in an hour is paused until `monomem resume`. The label is
+  self-declared, so this stops runaway loops, not a hostile app that changes its label.
+- **Rollback by writer** (`monomem rollback`): undoes what one writer label created or changed; it does not undo tag
+  edits, archives, replacements or deletes, and it relies on the same self-declared label.
+- **Read access log** (`monomem access`): records which writer read what (query preview, counts, no note text), kept
+  30 days by default.
 
 ## Limitations (stated honestly)
 

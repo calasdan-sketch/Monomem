@@ -4,7 +4,7 @@
 // log. All dependency-free on purpose -- this code sits in front of a service
 // that can be exposed over a public tunnel, so less surface is safer.
 
-import { appendFileSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync } from "node:fs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { dirname, join } from "node:path";
 import type { IncomingMessage } from "node:http";
@@ -169,6 +169,8 @@ const CONFUSABLE_RE = new RegExp(`[${Object.keys(CONFUSABLES).join("")}]`, "gu")
 export function normalizeForScan(text: string): string {
   return text
     .normalize("NFKC")
+    // Unicode TAG chars render as nothing but encode ASCII: decode them so hidden text is scanned.
+    .replace(/[\u{E0020}-\u{E007E}]/gu, (c) => String.fromCharCode(c.codePointAt(0)! - 0xe0000))
     .replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]+/gu, "")
     .replace(CONFUSABLE_RE, (c) => CONFUSABLES[c])
     .replace(/\s+/g, (m) => (m.includes("\n") ? "\n" : " "));
@@ -553,6 +555,65 @@ function rotateAuditIfNeeded(path: string): void {
   }
 }
 
+const GENESIS = "0".repeat(64);
+const sha = (line: string): string => createHash("sha256").update(line).digest("hex");
+
+/** sha256 of the last line of `path` (or of path.1 right after a rotation); GENESIS when there is none. */
+function lastAuditLineHash(path: string): string {
+  for (const p of [path, `${path}.1`]) {
+    try {
+      const size = statSync(p).size;
+      if (size === 0) continue;
+      const len = Math.min(size, 16_384); // ponytail: lines are short (detail is capped); a longer one would hash a partial line
+      const buf = Buffer.alloc(len);
+      const fd = openSync(p, "r");
+      try {
+        readSync(fd, buf, 0, len, size - len);
+      } finally {
+        closeSync(fd);
+      }
+      const lines = buf.toString("utf8").split("\n").filter(Boolean);
+      if (lines.length) return sha(lines[lines.length - 1]);
+    } catch {
+      /* missing file: try the next */
+    }
+  }
+  return GENESIS;
+}
+
+/**
+ * Walk the audit chain (oldest rotated file first). A line whose `prev` is not the hash of the line before it is
+ * "broken". Detects edits and deletions INSIDE the chain; it cannot see truncation of the newest lines or a full
+ * rewrite of the file by someone who can write it. Lines written before the chain existed (no `prev`) are skipped.
+ * Two processes writing at the same instant can also break a link (the hash is read, then the line appended).
+ */
+export function verifyAuditChain(path: string = auditPath()): { ok: boolean; lines: number; brokenLine?: number; file?: string } {
+  const files: string[] = [];
+  for (let i = 1; existsSync(`${path}.${i}`); i++) files.unshift(`${path}.${i}`);
+  if (existsSync(path)) files.push(path);
+  let prevLine: string | undefined;
+  let chained = false;
+  let n = 0;
+  for (const f of files) {
+    for (const line of readFileSync(f, "utf8").split("\n")) {
+      if (!line) continue;
+      n++;
+      let rec: { prev?: unknown };
+      try {
+        rec = JSON.parse(line);
+      } catch {
+        return { ok: false, lines: n, brokenLine: n, file: f };
+      }
+      if (typeof rec.prev === "string") chained = true;
+      if (prevLine !== undefined && chained && rec.prev !== sha(prevLine)) {
+        return { ok: false, lines: n, brokenLine: n, file: f };
+      }
+      prevLine = line;
+    }
+  }
+  return { ok: true, lines: n };
+}
+
 export function audit(entry: {
   op: string;
   id?: number;
@@ -569,7 +630,9 @@ export function audit(entry: {
     const path = auditPath();
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     rotateAuditIfNeeded(path);
-    appendFileSync(path, JSON.stringify({ ts: new Date().toISOString(), ...entry }) + "\n", { mode: 0o600 });
+    // Hash chain: `prev` = sha256 of the previous line (carried across rotation from audit.log.1).
+    const prev = lastAuditLineHash(path);
+    appendFileSync(path, JSON.stringify({ ts: new Date().toISOString(), prev, ...entry }) + "\n", { mode: 0o600 });
   } catch {
     // Audit logging must never break a request.
   }

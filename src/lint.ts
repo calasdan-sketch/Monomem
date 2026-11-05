@@ -194,6 +194,8 @@ const INJECTION_PATTERNS: Array<[string, RegExp]> = [
   ],
 ];
 
+const FLAG_TAGS_RE = /\u{1F3F4}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{2,7}\u{E007F}/gu;
+
 /** First injection label found in `text`, or null. */
 export function scanForInjection(text: string | undefined): string | null {
   if (!text) return null;
@@ -204,6 +206,8 @@ export function scanForInjection(text: string | undefined): string | null {
   for (const [label, re] of INJECTION_PATTERNS) {
     if (re.test(label === "system-prompt marker" ? prose : t)) return label;
   }
+  // Any TAG char is invisible; only well-formed emoji subdivision flags (England etc.) are exempt.
+  if (/[\u{E0000}-\u{E007F}]/u.test(text.replace(FLAG_TAGS_RE, ""))) return "hidden Unicode tag text";
   return null;
 }
 
