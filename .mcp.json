@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "monomem@1.2.0",
+        "monomem@1.2.1",
         "mcp"
       ],
       "env": {

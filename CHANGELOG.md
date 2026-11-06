@@ -6,6 +6,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-06
+
+### Fixed
+
+- The `monomem health --card` and `monomem meter --card` share cards show the official Calas mark instead of a
+  hand-drawn crescent. The banner, social preview and favicon carry the official mark too.
+
 ## [1.2.0] - 2026-11-05
 
 ### Highlights
