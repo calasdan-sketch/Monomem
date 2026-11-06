@@ -137,6 +137,7 @@ describe("3: REST/MCP validation", () => {
       const rb = await fetch(`${base}/notes/${note.id}/restore`, { method: "POST", headers: h, body: JSON.stringify({ forget_after: "-5" }) });
       assert.equal(rb.status, 400);
     } finally {
+      server.closeAllConnections(); // do not leave a keep-alive socket mid-response: Node 22.16 can throw inside its HTTP parser after the test ends
       await new Promise<void>((r) => server.close(() => r()));
       store.close();
     }
