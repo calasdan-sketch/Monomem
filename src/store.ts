@@ -6055,6 +6055,9 @@ export class Store {
     if (!body || !mac || extra !== undefined) return null;
     const want = createHmac("sha256", this.feedKey()).update(`${domain}.${body}`).digest().subarray(0, 16);
     const got = Buffer.from(mac, "base64url");
+    // Canonical spelling only: base64 ignores the unused low bits of the last character, so a code with its last
+    // characters changed could decode to the same MAC. Such a code was never issued, so it is refused.
+    if (got.toString("base64url") !== mac || Buffer.from(body, "base64url").toString("base64url") !== body) return null;
     if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
     try {
       const v = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));

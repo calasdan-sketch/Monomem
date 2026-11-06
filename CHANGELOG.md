@@ -322,6 +322,10 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A replace confirmation code is accepted only in the exact spelling it was issued in. Base64 ignores a few bits of a
+  code's last character, so a code with its last characters changed could still pass; it could not be forged or reused.
+- Two processes upgrading the same database at once no longer both write and announce the pre-upgrade copy.
+
 - **Reads no longer wait behind another process's write.** Logging a read (the access log and session-start receipts)
   could make a search or a session start wait seconds for another app's write lock; the row is now skipped when the
   database is busy, and Monomem says so once.
