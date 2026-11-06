@@ -3,6 +3,12 @@
 Monomem is a note store exposed over MCP + HTTP. **Treat all stored
 content as untrusted input to your agents** — see "Memory safety" below.
 
+Monomem was renamed from OneMemory. Version numbers in this file that say OneMemory belong to the old name and its
+numbering (1.x and 2.x); Monomem restarted at 1.0.0 (see [CHANGELOG.md](./CHANGELOG.md)).
+
+To check your own setup, run `monomem drill` (replays 20 known memory-poisoning attacks on a copy of your store) and
+`monomem health` (turns that and your security settings into one A to F grade, with the rule printed).
+
 ## Controls
 
 - **Network:** binds `127.0.0.1` by default. Public exposure is opt-in
@@ -13,7 +19,7 @@ content as untrusted input to your agents** — see "Memory safety" below.
   defense); browser origins are blocked unless listed in
   `MONOMEM_ALLOWED_ORIGINS`.
 - **Auth:** a bearer token is required on every route except `/health` and
-  `/ready`. Each token is compared in constant time (a minor side-channel on
+  `/ready`, and the static pages `/`, `/ui`, `/dashboard.js` and `/favicon.ico`, which hold no notes. Each token is compared in constant time (a minor side-channel on
   token length/count is not fully eliminated, which is immaterial for the
   high-entropy tokens this uses behind a tunnel). Tokens are never placed in
   URLs and are never logged. The primary token file is created `0600` and is
@@ -61,7 +67,7 @@ content as untrusted input to your agents** — see "Memory safety" below.
   who steals a disk image or backup.
 - **Trusted:** the CLI and the stdio MCP transport run with full local trust
   and use no token. Anyone with shell access to the machine and its data
-  directory owns the store. Since 1.1.0 the *agent* on the stdio connection
+  directory owns the store. Since OneMemory 1.1.0 the *agent* on the stdio connection
   does not inherit all of that: its `state_delete` archives instead of
   erasing, and the operator-only tools (`memory_quarantine`, `trust_policy`,
   `memory_history_purge`, `memory_consolidate`, `task_approve`), the
@@ -72,7 +78,7 @@ content as untrusted input to your agents** — see "Memory safety" below.
   mitigated, not eliminated (OWASP GenAI #1); there is no OAuth, only static
   bearer tokens.
 
-## Writer trust (1.4.0, hardened in 1.4.1)
+## Writer trust (OneMemory 1.4.0, hardened in 1.4.1)
 
 A note's `written_by` is stamped by the server from the authenticated token for REST and MCP-over-HTTP callers (for a
 local stdio app it is a label from that app's config, `MONOMEM_CLIENT`, which is not authenticated); an admin can put a writer on a
@@ -93,10 +99,10 @@ note's original author. Read [docs/trust.md](./docs/trust.md) for exactly what t
   left out of `monomem backup` unless you pass `--include-attest-key`.
 - It is a policy on labels, not protection against the operator; a trusted server can still export a hostile
   note; and a writer who obtains a new token under a new label is not on the list.
-- Heartbeats from runners older than 1.3.4 are no longer believed by default (`MONOMEM_RUNNER_ACCEPT_LEGACY=1`
+- Heartbeats from runners older than OneMemory 1.3.4 are no longer believed by default (`MONOMEM_RUNNER_ACCEPT_LEGACY=1`
   restores the old behaviour). A heartbeat counts only if the runner process wrote it and its own `alive_at` agrees
   with the server's clock within two minutes, so a tag-only touch of an old heartbeat does not make it fresh.
-- **Replacing a note (1.6.0)** is two steps: a preview that changes nothing, then a confirm that needs the preview's one-time
+- **Replacing a note (OneMemory 1.6.0)** is two steps: a preview that changes nothing, then a confirm that needs the preview's one-time
   code. The code is signed with a key kept in the database, expires (default 10 minutes), works once, is bound to the caller
   (writer, scope, tenant), to the exact notes and revisions previewed and to the exact replacement text, and a wrong code gets
   one generic message. A distrusted writer, or a replacement that claims lower confidence, needs an administrator and an explicit
@@ -104,13 +110,13 @@ note's original author. Read [docs/trust.md](./docs/trust.md) for exactly what t
   warning; the tool descriptions tell it to show the full warning and wait for you, and the code makes it impossible to confirm
   without a preview, but a careless or manipulated agent could still confirm on its own. The command line asks you at your own
   keyboard and is the strongest gate.
-- **Version history (1.6.0)** keeps the text an edit replaces, so it can hold text someone removed on purpose. It is administrators-only,
+- **Version history (OneMemory 1.6.0)** keeps the text an edit replaces, so it can hold text someone removed on purpose. It is administrators-only,
   bounded per note, encrypted at rest when encryption is on (plaintext otherwise, like note bodies), included in `export` unless
   `?history=0` / `--no-history`, and removable with `history purge`. Treat an export that carries history like the database.
 - Pre-upgrade copies (`<db>.pre-v16-backup`) are plaintext snapshots: remove them
   (`monomem backup --prune-premigration`) once the upgrade is checked, especially before enabling encryption.
 
-## Encryption at rest (shipped in 1.2.0)
+## Encryption at rest (shipped in OneMemory 1.2.0)
 
 `monomem encrypt enable` encrypts note **bodies** with AES-256-GCM. The
 limits, stated plainly:
@@ -128,11 +134,11 @@ limits, stated plainly:
   so encryption protects against a stolen database file or a backup of the
   database alone, not against someone who gets the whole directory. There is
   no re-key command.
-- **Binding of ciphertext to its row (AAD):** 1.2.0 did not bind a body's
+- **Binding of ciphertext to its row (AAD):** OneMemory 1.2.0 did not bind a body's
   ciphertext to its note id and namespace, so someone who could write to the
-  SQLite file could copy ciphertext between rows. 1.2.1 addresses this (see
+  SQLite file could copy ciphertext between rows. OneMemory 1.2.1 addresses this (see
   the CHANGELOG; confirm for the version you run).
-- Quarantined (linter-held) writes are sealed too in 1.2.1; in 1.2.0 they
+- Quarantined (linter-held) writes are sealed too in OneMemory 1.2.1; in 1.2.0 they
   were stored in plaintext.
 - `GET /export` returns decrypted bodies, so treat exports as sensitive.
 - Details: [docs/encryption-retention.md](./docs/encryption-retention.md).
@@ -155,8 +161,8 @@ prompt-injection / "memory poisoning"** channel. Layers:
   high-entropy tokens) are blocked; prompt-injection phrasing is
   **quarantined**, invisible to search and recall until an admin approves it
   (`monomem quarantine`). It is a pattern linter: it will miss novel
-  phrasing and can flag harmless text. It matches patterns, so a reworded attack passes (bench scenario E16 is a
-  designed miss). Text written in invisible Unicode tag characters is decoded and scanned, and any such character
+  phrasing and can flag harmless text. It matches patterns, so a reworded attack passes (`monomem drill` lists this as a
+  known miss). Text written in invisible Unicode tag characters is decoded and scanned, and any such character
   is flagged, as is a run of four or more variation selectors (the England, Scotland and Wales flag emoji are
   exempt). The `source` field is not scanned; tag characters are removed from it when it is stored. See
   [docs/memory-linter.md](./docs/memory-linter.md).
@@ -222,7 +228,19 @@ CLI itself, so none of them stops an agent that can run commands.**
   (`monomem trust distrust <writer>`) removes it from the notice.
 - Encryption limits are listed above.
 
+## Your data
+
+- **Stored on your computer:** your notes; the read access log (which writer read what, kept 30 days by default, with
+  query previews that have secrets redacted and no note text); the audit log of operations (never note content); and
+  memory receipts (which notes a session start showed, by id and reason).
+- **Nothing is sent to Calas.** Monomem has no telemetry and, by default, makes no network calls. The only outside
+  connections are ones you configure: an optional summarizer model, and optional embeddings (`MONOMEM_EMBED_URL`, which
+  can be a remote host if you point it there).
+- If a team runs Monomem on staff computers, the team is responsible for those records: who may read the access log
+  and audit log, how long they are kept, and what staff are told.
+
 ## Reporting a vulnerability
 
-Please open a private security advisory on the GitHub repository, or email the
-maintainer. Do not file public issues for security reports.
+Email **office@calasautomations.com**, or open a private security advisory on the GitHub repository
+(github.com/calasdan-sketch/monomem, Security tab, "Report a vulnerability"). We reply within 7 days and coordinate
+disclosure within 90 days. Please do not file public issues for security reports.

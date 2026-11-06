@@ -26,3 +26,9 @@ and per run, the same word in every place inside one attack. The step and check 
 
 To run it against another memory system, map `steps` onto its write, search and admin calls and evaluate `expect`.
 This folder makes no claim about how any other system performs.
+
+## Prior work
+
+This corpus builds on public research into memory poisoning, and we credit it here without claiming to match or extend it: sleeper
+triggers (an instruction stored now that fires in a later session), MINJA (memory injection through ordinary queries), Trojan Hippo,
+and the OWASP framing of this risk as ASI06, memory and context poisoning. Search for those names to find the original papers and write-ups.

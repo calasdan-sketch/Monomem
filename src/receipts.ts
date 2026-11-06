@@ -114,21 +114,56 @@ export function receiptGet(store: Store, sessionId: string, namespaces?: string[
 export const esc = (v: unknown): string =>
   (typeof v === "number" ? v.toLocaleString("en-US") : String(v)).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`).replace(/&#60;/g, "&lt;").replace(/&#62;/g, "&gt;");
 
+export const CARD_REPO = "github.com/calasdan-sketch/monomem";
+const SLATE = "#9FB3C4";
+
+/** Crescent mark (a gold disc with a navy bite; the card is solid navy) and the two-tone lowercase wordmark, as on the dashboard. */
+export function cardBrand(label = ""): string {
+  return (
+    `<circle cx="52" cy="46" r="17" fill="#F0C171"/><circle cx="60" cy="41" r="15" fill="#0B2E45"/>` +
+    `<text x="80" y="56" font-size="30" font-weight="700" fill="#FFFFFF">mono<tspan fill="#F0C171">mem</tspan>` +
+    (label ? `<tspan font-size="17" font-weight="400" fill="${SLATE}"> ${esc(label)}</tspan>` : "") +
+    `</text>`
+  );
+}
+
+/** One footer line on every card: how to get it, and where it lives. */
+export function cardFooter(y = 344): string {
+  return `<text x="40" y="${y}" font-size="12" fill="${SLATE}"><tspan font-weight="600" fill="#F0C171">npx monomem setup</tspan> &#183; ${esc(CARD_REPO)}</text>`;
+}
+
+/** Greedy word wrap for SVG (which does not wrap): at most `max` characters a line. */
+export function wrapText(text: string, max: number): string[] {
+  const lines: string[] = [];
+  for (const w of text.split(/\s+/).filter(Boolean)) {
+    if (lines.length && lines[lines.length - 1].length + 1 + w.length <= max) lines[lines.length - 1] += " " + w;
+    else lines.push(w);
+  }
+  return lines;
+}
+
+/** Wrapped text as one <text> with a <tspan> per line. */
+export function svgLines(text: string, x: number, y: number, max: number, attrs: string, lineHeight = 17): string {
+  const t = wrapText(text, max).map((l, i) => `<tspan x="${x}"${i ? ` dy="${lineHeight}"` : ""}>${esc(l)}</tspan>`).join("");
+  return `<text x="${x}" y="${y}" ${attrs}>${t}</text>`;
+}
+
 /** A 640x360 SVG with the meter's real totals. Estimates at ~4 chars/token, exactly as meter.ts computes them. */
 export function renderCard(t: MeterTotals): string {
   const stat = (x: number, n: unknown, label: string): string =>
-    `<text x="${x}" y="190" font-size="44" font-weight="700" fill="#F0C171">${esc(n)}</text>` +
-    `<text x="${x}" y="218" font-size="15" fill="#FFFFFF">${esc(label)}</text>`;
+    `<text x="${x}" y="188" font-size="44" font-weight="700" fill="#F0C171">${esc(n)}</text>` +
+    `<text x="${x}" y="214" font-size="15" fill="#FFFFFF">${esc(label)}</text>`;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" font-family="system-ui, -apple-system, Segoe UI, sans-serif">` +
     `<rect width="640" height="360" rx="18" fill="#0B2E45"/>` +
-    `<text x="40" y="70" font-size="30" font-weight="700" fill="#F0C171">Monomem</text>` +
-    `<text x="40" y="100" font-size="15" fill="#FFFFFF">What local memory saved my agents</text>` +
+    cardBrand() +
+    `<text x="40" y="104" font-size="15" fill="#FFFFFF">What local memory saved my agents</text>` +
     stat(40, t.sessions, Number(t.sessions) === 1 ? "session" : "sessions") +
     stat(230, t.injected_tokens, "tokens injected") +
     stat(430, t.saved_tokens, "est. tokens saved") +
-    `<text x="40" y="262" font-size="13" fill="#FFFFFF"><tspan x="40">estimate, ~4 chars/token. Saved = captured work the injected memory</tspan><tspan x="40" dy="18">stood in for, minus the tokens injected.</tspan></text>` +
-    `<text x="40" y="330" font-size="15" font-weight="600" fill="#F0C171">No network calls by Monomem by default</text>` +
+    `<text x="40" y="256" font-size="13" fill="${SLATE}"><tspan x="40">estimate, ~4 chars/token. Saved = captured work the injected memory</tspan><tspan x="40" dy="18">stood in for, minus the tokens injected.</tspan></text>` +
+    `<text x="40" y="312" font-size="15" font-weight="600" fill="#F0C171">No network calls by Monomem by default</text>` +
+    cardFooter() +
     `</svg>\n`
   );
 }

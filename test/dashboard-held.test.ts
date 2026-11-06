@@ -51,7 +51,7 @@ describe("dashboard: Held view", () => {
     assert.match(html, /work/);
     assert.ok(!html.includes("<img"), "no live markup");
     assert.match(html, /arm\(this,function\(\)\{qQuarantine\(4,&quot;reject&quot;\)\}\)/);
-    assert.match(p.el("held_n").innerHTML, /<span class='pill'>1<\/span>/);
+    assert.match(p.el("held_n").innerHTML, /1 waiting<\/span><span class='pill' aria-hidden='true'>1<\/span>/);
     assert.equal(p.el("tab_held").className, "lit");
     assert.match(html, /class='card held'/);
     assert.match(html, /HELD &middot; NOT IN SHARED MEMORY/);

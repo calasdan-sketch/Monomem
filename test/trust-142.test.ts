@@ -889,7 +889,7 @@ describe("docs and CI stay in step with the code", () => {
 
   test("docs/upgrading.md exists and is linked from the README and the CHANGELOG", () => {
     const up = read("docs", "upgrading.md");
-    for (const must of ["Upgrading from 1.3", "pre-v18-backup", "1.3.4", "roll back", "imported_unverified", "MONOMEM_ATTEST_MIN_VERSION", "EXPERIMENTAL"]) assert.ok(up.includes(must) || up.toLowerCase().includes(must.toLowerCase()), `upgrading.md lacks ${must}`);
+    for (const must of ["Older upgrade notes (OneMemory)", "Monomem 1.2.0", "pre-v18-backup", "1.3.4", "roll back", "imported_unverified", "MONOMEM_ATTEST_MIN_VERSION", "EXPERIMENTAL"]) assert.ok(up.includes(must) || up.toLowerCase().includes(must.toLowerCase()), `upgrading.md lacks ${must}`);
     assert.match(read("README.md"), /docs\/upgrading\.md/);
     assert.match(read("CHANGELOG.md"), /docs\/upgrading\.md/);
   });

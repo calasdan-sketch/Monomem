@@ -1,3 +1,4 @@
+import { humanWriterMap } from "./actor.js";
 // A tiny self-contained dashboard served at GET "/" so you can browse, search,
 // add, and delete notes in the shared store from a browser. No framework, no
 // external requests -- just vanilla HTML/CSS/JS. The page itself is public
@@ -10,7 +11,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>monomem</title>
-<link rel="icon" href="/favicon.ico" type="image/png">
+<link rel="icon" href="/favicon.ico" type="image/png" sizes="64x64">
 <style>
   /* Brand: navy #0B2E45 + gold #F0C171. Every colour is a token; the light theme only redefines tokens. */
   :root{color-scheme:dark;--gold:#F0C171;
@@ -99,14 +100,19 @@ export const DASHBOARD_HTML = `<!doctype html>
   .cf .acts button{max-width:100%;overflow-wrap:anywhere}
   /* Phones: the note text comes before its action buttons. */
   @media (max-width:600px){
-    header h1{order:-2}
-    header label.chk{order:-1;margin-left:auto} /* the checkbox shares the title's row instead of wrapping alone */
+    header h1{order:-3}
+    header #q{order:-2;flex-basis:100%} /* search comes straight after the title, before the checkbox */
+    header label.chk{order:-1}
     .card{display:flex;flex-direction:column}
     .cardhead{display:contents}
     .cardhead>div:first-child{order:1;flex:none}
     .card>.body,.card>.heldbody{order:2}
     .card .acts{order:3;margin-top:10px}
   }
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .viewh{font-size:18px;margin:0 0 2px}
+  #viewd{margin:0 0 12px;font-size:13px}
+  .tag.fact{color:var(--ink);border-color:var(--accent)}
   code{background:var(--panel2);border-radius:4px;padding:0 4px}
 </style>
 </head>
@@ -116,9 +122,9 @@ export const DASHBOARD_HTML = `<!doctype html>
   <h1>mono<span>mem</span></h1>
   <input id="q" class="grow" aria-label="Search notes" placeholder="Search notes...">
   <input id="ns" class="ns" aria-label="Namespace filter" placeholder="namespace">
-  <button class="ghost" onclick="toggleNew()">+ New</button>
+  <button class="ghost" id="btn_new" aria-expanded="false" aria-controls="new" onclick="toggleNew()">+ New</button>
   <button class="ghost" onclick="load()">Refresh</button>
-  <label class="chk" title="Also show notes written by writers an admin distrusts (marked DISTRUSTED)"><input type="checkbox" id="inc" onchange="load()"> distrusted</label>
+  <label class="chk" title="Also show notes written by writers an admin distrusts (marked DISTRUSTED)"><input type="checkbox" id="inc" aria-describedby="inc_help" onchange="load()"> distrusted<span id="inc_help" class="sr">Also show notes written by writers an admin distrusts. They are marked DISTRUSTED.</span></label>
 </header>
 <nav aria-label="Views">
   <button id="tab_list" onclick="load()" title="All notes, newest first">Notes</button>
@@ -126,7 +132,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   <button id="tab_review" onclick="loadReview()" title="Notes written by agents that you have not looked at yet">Review</button>
   <button id="tab_changes" onclick="loadChanges()" title="What changed in the last 24 hours">Changes</button>
   <button id="tab_sessions" onclick="loadSessions()" title="Agent sessions Monomem recorded, each with its timeline">Sessions</button>
-  <button id="tab_quality" onclick="loadQuality()" title="Duplicates, stale twins, held writes, linter findings and rows about to decay (admin token)">Quality</button>
+  <button id="tab_quality" onclick="loadQuality()" title="Duplicates, stale twins, held writes, linter findings, rows about to decay and writers who disagree (admin token)">Quality<span id="quality_n"></span></button>
   <button id="tab_meter" onclick="loadMeter()" title="What Monomem costs you: tokens injected and saved, local-model tokens, database size">Meter</button>
 </nav>
 <main>
@@ -142,6 +148,8 @@ export const DASHBOARD_HTML = `<!doctype html>
       <span id="n_err" class="err" role="alert"></span>
     </div>
   </div>
+  <h2 id="viewh" class="viewh">Notes</h2>
+  <p id="viewd" class="muted"></p>
   <div id="msg" class="msg" role="status" aria-live="polite"></div>
   <div id="runner" class="card err" style="display:none"></div>
   <button id="heldstrip" class="strip" onclick="loadHeld()" hidden></button>
@@ -186,6 +194,12 @@ function hue(s){ s = String(s); if(hueOf[s] !== undefined) return hueOf[s];
   return (hueOf[s] = HUES[h % HUES.length]); } // the stable hash picks a start; a hue another writer already has is skipped (past ten writers they repeat)
 function shownWriter(w){ return w === "primary" ? "admin (setup)" : w; } // display only: the stored label stays "primary"
 function chip(label){ return "<span class='chip' style='--h:"+hue(label)+"'>"+esc(shownWriter(label))+"</span>"; }
+// A fact tag reads "deploy_target = render", not the raw fact:deploy_target=render.
+function tagChip(t){
+  var m = /^fact:([^=]+)=(.*)$/.exec(String(t).trim());
+  return m ? "<span class='tag fact'>"+esc(m[1].trim())+" = "+esc(m[2].trim())+"</span>" : "<span class='tag'>"+esc(t)+"</span>";
+}
+function tagsHtml(list){ return (list||[]).map(tagChip).join(""); }
 function acts(html){ return "<div class='acts'>"+html+"</div>"; }
 function byLine(w){ return w ? " &middot; by "+chip(w) : ""; }
 
@@ -197,13 +211,15 @@ function empty(text){ return "<p class='muted'>"+text+"</p>"; }
 
 // Inline confirm: the first click turns the button into "Confirm <label>?" for a few seconds; a second click runs fn.
 function arm(btn, fn){
-  if(btn.getAttribute("data-armed")){ clearTimeout(btn._t); btn.removeAttribute("data-armed"); fn(); return; }
+  var al = btn.getAttribute("aria-label");
+  if(btn.getAttribute("data-armed")){ clearTimeout(btn._t); btn.removeAttribute("data-armed"); if(al){ btn.setAttribute("aria-label", al.replace(/^confirm /, "")); } fn(); return; }
   var was = btn.textContent;
   btn.setAttribute("data-armed", "1");
   btn.textContent = "Confirm " + was.toLowerCase() + "?";
+  if(al){ btn.setAttribute("aria-label", "confirm " + al); }
   var m = $("msg"); if(m){ m.className = "msg"; m.textContent = "Press " + was + " again within 4 seconds to confirm."; }
   var hint = m ? m.textContent : "";
-  btn._t = setTimeout(function(){ btn.removeAttribute("data-armed"); btn.textContent = was; if(m && m.textContent === hint) m.textContent = ""; }, 4000);
+  btn._t = setTimeout(function(){ btn.removeAttribute("data-armed"); btn.textContent = was; if(al){ btn.setAttribute("aria-label", al); } if(m && m.textContent === hint) m.textContent = ""; }, 4000);
 }
 // Longer confirm with a server-written warning (supersede preview): text plus Confirm / Cancel on the status line.
 function ask(text, okLabel, fn){
@@ -216,11 +232,24 @@ function ask(text, okLabel, fn){
 }
 
 var VIEW = "list";
+// One h2 and one visible line per view (this replaces the tooltips as the way to learn what a tab is for).
+var VIEWS = {
+  list:["Notes","All notes, newest first."],
+  held:["Held writes","Writes kept out of shared memory until you approve or reject them: ones the linter flagged (secrets, injected instructions) and ones written to an approve-first namespace. Needs an admin token."],
+  review:["Review","Notes written by agents that you have not looked at yet."],
+  changes:["Changes","What changed in the last 24 hours."],
+  sessions:["Sessions","Agent sessions Monomem recorded, each with its timeline."],
+  session:["Session timeline",""],
+  quality:["Quality","Duplicates, stale twins, held writes, linter findings, rows about to decay, and writers who disagree about a fact. Needs an admin token."],
+  meter:["Meter","What Monomem costs you: tokens injected and saved, local-model tokens, database size."]
+};
 // The view buttons are a tab bar: the active one carries aria-current.
 var TABS = { list:"list", held:"held", review:"review", changes:"changes", sessions:"sessions", session:"sessions", quality:"quality", meter:"meter" };
 function setView(v){
   VIEW = v;
   say("");
+  $("viewh").textContent = VIEWS[v][0];
+  $("viewd").textContent = VIEWS[v][1];
   ["list","held","review","changes","sessions","quality","meter"].forEach(function(t){
     $("tab_" + t).ariaCurrent = TABS[v] === t ? "page" : null;
   });
@@ -240,7 +269,9 @@ function saveTok(){
 function logout(){ try { sessionStorage.removeItem(TOKKEY); } catch(e){} show(false); }
 function toggleNew(){
   var n = $("new");
-  n.style.display = n.style.display === "block" ? "none" : "block";
+  var open = n.style.display !== "block";
+  n.style.display = open ? "block" : "none";
+  $("btn_new").setAttribute("aria-expanded", open ? "true" : "false");
 }
 
 function api(path, opts){
@@ -265,16 +296,16 @@ function render(notes){
     return;
   }
   list.innerHTML = notes.map(function(n){
-    var tags = (n.tags||[]).map(function(t){ return "<span class='tag'>"+esc(t)+"</span>"; }).join("");
+    var tags = tagsHtml(n.tags);
     return "<div class='card'><div class='cardhead'><div>"+
-      "<h3>"+esc(n.title)+(n.pinned ? "<span class='badge-pin' title='Pinned: agents can read it; only the monomem CLI can change it'>Pinned</span>" : "")+
-      (n.distrusted ? "<span class='badge-bad' title='An admin distrusts the writer of this note: treat its content as hostile'>DISTRUSTED</span>" : "")+"</h3>"+
+      "<h3>"+esc(n.title)+(n.pinned ? "<span class='badge-pin' title='Pinned: agents can read it; only the monomem CLI can change it'>Pinned<span class='sr'>: agents can read it; only the monomem CLI can change it</span></span>" : "")+
+      (n.distrusted ? "<span class='badge-bad' title='An admin distrusts the writer of this note: treat its content as hostile'>DISTRUSTED<span class='sr'>: an admin distrusts the writer of this note, treat its content as hostile</span></span>" : "")+"</h3>"+
       "<div class='meta'>#"+n.id+" &middot; "+esc(n.namespace)+" &middot; "+esc((n.updated_at||"").slice(0,16).replace("T"," "))+byLine(n.written_by)+"</div>"+
       tags+"</div>"+
       acts(((n.tags||[]).indexOf("never-show") >= 0
-        ? "<button class='ghost' title='Let it be shown at session start again' onclick='neverShow("+n.id+",false)'>show again</button>"
-        : "<button class='ghost' title='Never inject this note at session start (it stays searchable)' onclick='neverShow("+n.id+",true)'>never show</button>")+
-      " <button class='danger' onclick='arm(this,function(){del("+n.id+")})'>delete</button>")+"</div>"+
+        ? "<button class='ghost' aria-label='show note #"+Number(n.id)+" again' title='Let it be shown at session start again' onclick='neverShow("+n.id+",false)'>show again</button>"
+        : "<button class='ghost' aria-label='never show note #"+Number(n.id)+"' title='Never inject this note at session start (it stays searchable)' onclick='neverShow("+n.id+",true)'>never show</button>")+
+      " <button class='danger' aria-label='delete note #"+Number(n.id)+"' onclick='arm(this,function(){del("+n.id+")})'>delete</button>")+"</div>"+
       (n.body ? "<div class='body'>"+esc(n.body)+"</div>" : "")+"</div>";
   }).join("");
 }
@@ -305,6 +336,7 @@ function load(){
   setView("list");
   loadRunner();
   loadHeldCount();
+  loadDisputeCount();
   var q = $("q").value.trim();
   var ns = $("ns").value.trim();
   var qs = (ns ? ("namespace=" + encodeURIComponent(ns)) : "") + (inc() ? ((ns ? "&" : "") + "include_distrusted=1") : "");
@@ -322,7 +354,7 @@ function loadChanges(){
   api(path).then(function(j){
     var c = j.counts || {};
     $("count").textContent = "last 24h: " + (c.created||0) + " created, " +
-      (c.updated||0) + " updated, " + (c.deleted||0) + " deleted" + (j.quarantined ? (", " + j.quarantined + " quarantined") : "");
+      (c.updated||0) + " updated, " + (c.deleted||0) + " deleted" + (j.quarantined ? (", " + j.quarantined + " held") : "");
     var srcs = Object.keys(j.bySource || {}).map(function(k){
       var v = j.bySource[k];
       return "<span class='tag'>"+esc(k || "(no source)")+": +"+v.created+" ~"+v.updated+" -"+v.deleted+"</span>";
@@ -342,7 +374,7 @@ function loadChanges(){
 // ---- Review queue: notes an AI agent wrote that nobody has looked at yet ----
 // "Accepted" is the tag "reviewed" (tags do not change who wrote a note). Notes you or the server wrote yourself (cli,
 // server, import:claude) are not queued. A writer the admin distrusts stays hidden, as everywhere else.
-var HUMAN_WRITERS = { "cli": 1, "server": 1, "import:claude": 1, "": 1 };
+var HUMAN_WRITERS = ${JSON.stringify(humanWriterMap())};
 function reviewQueue(notes, writer){
   return (notes || []).filter(function(n){
     if(HUMAN_WRITERS[n.written_by || ""]){ return false; }
@@ -374,10 +406,10 @@ function loadReview(){
     var shown = reviewQueue(j.notes || [], writer);
     $("count").textContent = shown.length + " to review";
     var rows = shown.map(function(n){
-      var tags = (n.tags||[]).map(function(t){ return "<span class='tag'>"+esc(t)+"</span>"; }).join("");
+      var tags = tagsHtml(n.tags);
       return "<div class='card'><div class='cardhead'><div><h3>"+esc(n.title)+(n.pinned ? "<span class='badge-pin'>Pinned</span>" : "")+"</h3><div class='meta'>#"+n.id+" &middot; "+esc(n.namespace)+
         " &middot; written by "+chip(n.written_by)+" &middot; "+esc((n.updated_at||"").slice(0,16).replace("T"," "))+"</div>"+tags+"</div>"+
-        acts("<button onclick='acceptNote("+n.id+")'>Accept</button> <button class='danger' onclick='arm(this,function(){del("+n.id+")})'>delete</button>")+"</div>"+
+        acts("<button aria-label='accept note #"+Number(n.id)+"' onclick='acceptNote("+n.id+")'>Accept</button> <button class='danger' aria-label='delete note #"+Number(n.id)+"' onclick='arm(this,function(){del("+n.id+")})'>delete</button>")+"</div>"+
         (n.body ? "<div class='body'>"+esc(n.body)+"</div>" : "")+"</div>";
     }).join("");
     $("list").innerHTML = "<div class='row'><select id='rv_writer' aria-label='Filter by writer' onchange='loadReview()'>"+opts+"</select>"+
@@ -399,7 +431,7 @@ function acceptNote(id){
 var HELDN = 0;
 function setHeldCount(n){
   HELDN = n;
-  $("held_n").innerHTML = n ? "<span class='pill'>" + Number(n) + "</span>" : "";
+  $("held_n").innerHTML = n ? "<span class='sr'>, " + Number(n) + " waiting</span><span class='pill' aria-hidden='true'>" + Number(n) + "</span>" : "";
   $("tab_held").className = n ? "lit" : "";
   showStrip();
 }
@@ -408,6 +440,16 @@ function showStrip(){
   var s = $("heldstrip");
   s.hidden = !(HELDN > 0 && VIEW === "list");
   s.textContent = HELDN + (HELDN === 1 ? " write" : " writes") + " held for review \\u2192";
+}
+// Same pattern for the Quality tab: a red count of disputed facts (needs an admin token; anyone else sees no badge).
+function setDisputeCount(n){
+  $("quality_n").innerHTML = n ? "<span class='sr'>, " + Number(n) + (n === 1 ? " disputed fact" : " disputed facts") + "</span><span class='pill' aria-hidden='true'>" + Number(n) + "</span>" : "";
+  $("tab_quality").className = n ? "lit" : "";
+}
+function loadDisputeCount(){
+  api("/quality" + nsQs("?", true)).then(function(j){
+    setDisputeCount((j.conflict_groups || []).filter(function(g){ return g.tier === "fact"; }).length);
+  }).catch(function(){ setDisputeCount(0); });
 }
 function loadHeldCount(){
   api("/quarantine" + nsQs("?", true)).then(function(j){ setHeldCount((j.quarantine || []).length); })
@@ -422,13 +464,13 @@ function loadHeld(){
     $("count").textContent = held.length + " held";
     $("list").innerHTML = held.length ? held.map(function(q){
       var why = (q.reasons || []).map(function(r){ return "<span class='tag why'>"+esc(r.label)+(r.field && String(r.label).indexOf(r.field) < 0 ? " in "+esc(r.field) : "")+"</span>"; }).join("");
-      var heldTags = (q.tags || []).map(function(t){ return "<span class='tag'>"+esc(t)+"</span>"; }).join("");
+      var heldTags = tagsHtml(q.tags);
       var who = q.written_by ? byLine(q.written_by) : (q.source ? " &middot; claims "+esc(q.source) : "");
       return "<div class='card held'><div class='cardhead'><div><span class='stamp'>HELD &middot; NOT IN SHARED MEMORY</span><h3>"+esc(q.title || "(title unchanged)")+"</h3>"+
         "<div class='meta'>held #"+Number(q.id)+" &middot; "+(q.op === "update" ? "update of #"+Number(q.target_id) : "new note")+
         " &middot; "+esc(q.namespace)+" &middot; "+when(q.created_at)+who+"</div>"+(why || "<span class='tag why'>held by policy</span>")+(heldTags ? "<div>"+heldTags+"</div>" : "")+"</div>"+
-        acts("<button onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;reject&quot;)})'>Reject</button> "+
-        "<button class='ghost' onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;approve&quot;)})'>Approve</button>")+"</div>"+
+        acts("<button aria-label='reject held write #"+Number(q.id)+"' onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;reject&quot;)})'>Reject</button> "+
+        "<button class='ghost' aria-label='approve held write #"+Number(q.id)+"' onclick='arm(this,function(){qQuarantine("+Number(q.id)+",&quot;approve&quot;)})'>Approve</button>")+"</div>"+
         (q.body ? "<div class='heldbody'>"+esc(q.body)+"</div>" : "")+"</div>";
     }).join("") : empty("Nothing is held. Writes that look like secrets or injected instructions wait here for your approval.");
   }).catch(failList);
@@ -480,21 +522,24 @@ function loadSession(id){
 
 // ---- Quality: what is worth a look (GET /quality, admin). Every button goes through a path that asks first and can be
 // undone: replace = supersede preview, then confirm (undo: supersede undo), archive (undo: restore), quarantine approve/reject.
+// The server calls a held write "quarantined"; the page says "held" everywhere.
+function typeLabel(t){ return t === "quarantined" ? "held" : String(t); }
 function loadQuality(){
   setView("quality");
   api("/quality" + nsQs("?")).then(function(j){
     var c = j.counts || {};
-    $("count").textContent = Object.keys(c).map(function(k){ return c[k] + " " + k; }).join(", ");
+    $("count").textContent = Object.keys(c).map(function(k){ return c[k] + " " + typeLabel(k); }).join(", ");
     var rows = (j.issues || []).map(function(i){
       var a = Number(i.ids[0]), b = Number(i.ids[1]), q = Number(i.quarantine_id), btn = "";
       if(i.type === "duplicate" || i.type === "stale_twin"){ btn = "<button onclick='qReplace("+a+","+b+")'>Replace #"+a+" with #"+b+"</button>"; }
-      else if(i.type === "quarantined"){ btn = "<button onclick='arm(this,function(){qQuarantine("+q+",&quot;reject&quot;)})'>Reject</button> <button class='ghost' onclick='arm(this,function(){qQuarantine("+q+",&quot;approve&quot;)})'>Approve</button>"; }
+      else if(i.type === "quarantined"){ btn = "<button aria-label='reject held write #"+q+"' onclick='arm(this,function(){qQuarantine("+q+",&quot;reject&quot;)})'>Reject</button> <button class='ghost' aria-label='approve held write #"+q+"' onclick='arm(this,function(){qQuarantine("+q+",&quot;approve&quot;)})'>Approve</button>"; }
       else { btn = "<button class='ghost' onclick='arm(this,function(){qArchive("+a+")})'>Archive</button>"; }
-      return "<div class='card'><div class='cardhead'><div><h3><span class='tag'>"+esc(i.type)+"</span>"+esc(i.detail)+"</h3>"+
+      return "<div class='card'><div class='cardhead'><div><h3><span class='tag'>"+esc(typeLabel(i.type))+"</span>"+esc(i.detail)+"</h3>"+
         "<div class='meta'>"+esc(i.namespace)+" &middot; "+esc(i.fix)+(i.alt ? " &middot; or "+esc(i.alt) : "")+"</div></div>"+acts(btn)+"</div></div>";
     }).join("");
     var cf = j.conflict_groups || [];
     CFG = cf; CFACT = {};
+    setDisputeCount(cf.filter(function(g){ return g.tier === "fact"; }).length);
     var tot = Number(j.conflict_total) || cf.length;
     var head = j.conflict_capped ? "showing "+cf.length+" of at least "+tot : (cf.length < tot ? "showing "+cf.length+" of "+tot : String(cf.length));
     var crow = cf.length ? "<div class='card'><h3>Conflicts ("+head+")</h3><div class='meta'>Different writers, same key, different value. Flag only: nothing changes until you press a button and confirm. Exact = the notes carry the same fact key. Possible = guessed from the text.</div>"+cf.map(function(g, gi){ return cfRow(g, gi); }).join("")+"</div>" : "";
@@ -635,11 +680,11 @@ function loadMeter(){
     function num(v){ return Number(v||0).toLocaleString(); }
     $("count").textContent = num(t.sessions) + " metered session" + (t.sessions===1?"":"s");
     var rows = (m.recent || []).map(function(r){
-      return "<tr><td>"+when(r.updated_at)+"</td><td>"+esc(r.namespace)+"</td><td>"+num(r.injected_tokens)+"</td><td>"+num(r.saved_tokens)+"</td><td>"+num(r.llm_tokens)+"</td></tr>";
+      return "<tr><td>"+when(r.updated_at)+"</td><td>"+(r.namespace ? esc(r.namespace) : "<span class='muted'>(none)</span>")+"</td><td>"+num(r.injected_tokens)+"</td><td>"+num(r.saved_tokens)+"</td><td>"+num(r.llm_tokens)+"</td></tr>";
     }).join("");
     $("list").innerHTML = "<div class='card'><h3>Totals</h3><div>"+
-      "~"+num(t.injected_tokens)+" tokens injected at session start ("+num(t.injections)+" times)<br>"+
-      "~"+num(t.saved_tokens)+" tokens of captured work they stood in for<br>"+
+      "~"+num(t.injected_tokens)+" tokens injected at session start ("+num(t.injections)+(Number(t.injections) === 1 ? " time" : " times")+")<br>"+
+      "~"+num(t.saved_tokens)+" tokens saved (estimate): the captured work the injected notes stood in for, minus the tokens injected<br>"+
       num(t.llm_tokens)+" local-model tokens (0 = the optional summarizer is off)<br>"+
       num(m.capture_events)+" capture events recorded<br>"+
       "database "+(Number(m.db_bytes||0)/1048576).toFixed(1)+" MB on disk</div>"+
@@ -705,6 +750,6 @@ if(tok()){ show(true); load(); } else { show(false); $("tok").focus(); }
 
 // The brand mark (docs/brand/mark-gold-48.png), served at GET /favicon.ico without a token.
 export const FAVICON_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAACMAAAAwCAYAAACbm8NsAAAEuklEQVR4nK2YeahnYxjHP+ec37VkZ6KYv4QphGyhRJYoSymKzFBKZIjJNslW1GTJ8geiyJKlDP/YSoMGfxhrRpOSRGPJJAaF6/r9jp7b95meOfds77n3qdN7znve87zf8+zPm21eu4JEKoBxeD4WOBU4HTgSeB1YBvwJZEDZl/EoAUQu5mPdXwgsB47W/AxwPfCg1icBSQEzAv7T/ZnAHcBh4f1LgIl4o0CQCqQvmJGALAIekESMJpKSgXioBjQLCSaTOoz5ycCTwGI92/w0cB7wmp6ZDxACkzog6M+vBtYIyIwM2MazBWRKUrKLhQYTdb5KqimD4WbyljUCYsAWhJrAlMBdwMqK6AsZ74tS8YIBqQMzkrivA24QkEJzNr4H3BpcvA9lQ8C4J5wG3KPNirBuWnHFn8sOAIWu5KDnXrM78ERg6BIwpo8CX3S4b77rCfdPgo0lUV4R5X3A3sFYSwH5Q9KiwWvyoM7B5Exs8+OAi8Qw13v/uxeA74NNEX7C52ztks1rV9w9HzCu05uDJ2Wac5t5SmNZ862pbD/gcWC98tNgMPZXR8hwXS1o3kBtANZVJBUldBPwKXCJ4s6yAZXAFqYoiLkR+5yr622BcMP10SLyM8CJ+gmLORcDzwPbyvuSwWwHnFXj6pnGDzSWAcjBwBsCNK3NVwrI1NAclUtF+2qzCKbQ+FVYa5ssAd6qAFktTyy0ZjxEVbmKIypxodT4N/Cz7k0NOwGvAHvqeRtgUwiGZfh2NATM4S1h+x9dTg8D+4cyIlMy3RSyt1OydIzhgS1gpmRTyNuWhoBoKvkOeEzvq3biNpYEZnELmB2A3XR/W5ifhPjzlzaty0GTFOkYmF1qwGQhzphdHKIuwN3dvWp1BdwcMMEReoFpEmWp8RTg0jDn8xuUONvAzFJf6XiBVIe+0LiqMufGu66hj6rSuG/bYkx/G9harE8onnqpKlc2TgGTa9yY8F0vN8+l+xQwmcYUifZy81wZNwWMU2ol1ykdA/NhpXToS9snru/cw8B8BnwdYksX+RrLT0nVvwFqk46B+Rd4tbJRG7k6LUelgokl7RzyF88mRMtM41FhgxTK2sDY9QnwZs/mLNd4DLBHSBt9qTFfeRkQI20XYwe8SJmcRONvdPM8NGnvqof2uT50+UBV1bp5XjHKaxXM8o4NvGE7HjhD96P5SsfBODML8dckuDk6rfAEOi/biW7mJw5Pq7zsOvJwdR6kM5xU25njvVWfd2ksV+Hd1XZ4+XAlcJnWTiVIaKsgWAUT25Vz1Bt5VdeUu9y+HlGvPhPOA7toq7CQNfh8EYqi54Dzg9TqNnGgtv5GwJt/l2xXEp7t25vQj0NjfwFwSwiQdcz97yYy6Jd1tDITPKdNUrNnOl0Lcm10J3AS8KUYZzWgXDVjqfhzhYodtTYW80Ul4G4RTxtNNBqDd9Tw3Q78GkCNdZUVFVuEvldFu50DHiB+s+2vSyOCarKZOoqF9z7AVTq9MHU4+XlwVhPcrDp4X07xEfAt8EPw1iwFDOHg0BlYg2eH0+fq5MvOBKvk53t1EfoXAbwC+Cm1OfeTKjdmSx3WVdq1l040TJWHSi0mwZ2DV/0O/KjLov03wMcCxf/CRWltnLlVZgAAAABJRU5ErkJggg==",
+  "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",
   "base64",
 );

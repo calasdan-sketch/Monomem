@@ -184,7 +184,9 @@ describe("monomem health", () => {
       assert.match(svg, /#F0C171/);
       assert.match(svg, />A</);
       assert.match(svg, /2026-11-05/);
-      assert.match(svg, /monomem health/);
+      assert.match(svg, /mono<tspan[^>]*>mem<\/tspan>/);
+      assert.match(svg, /github\.com\/calasdan-sketch\/monomem/);
+      assert.match(svg, /npx monomem setup/);
       assert.match(svg, /A: no warnings/);
       const red = renderHealthCard({ ...r, grade: "D", checks: [{ id: "x", label: "Linter off", status: "fail", text: "" }] });
       assert.match(red, /#FF6B5B/);

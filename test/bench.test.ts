@@ -767,7 +767,8 @@ describe("shipping and docs", () => {
   });
 
   test("the CHANGELOG has 1.6.0 and 1.5.0 entries", () => {
-    assert.match(read("CHANGELOG.md"), /^## \[1\.6\.0\]/m);
-    assert.match(read("CHANGELOG.md"), /^## \[1\.5\.0\]/m);
+    // Pre-rename entries are labelled "OneMemory x.y.z" so they cannot be mistaken for Monomem releases.
+    assert.match(read("CHANGELOG.md"), /^## \[OneMemory 1\.6\.0\]/m);
+    assert.match(read("CHANGELOG.md"), /^## \[OneMemory 1\.5\.0\]/m);
   });
 });

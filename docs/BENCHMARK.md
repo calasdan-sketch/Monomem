@@ -225,6 +225,10 @@ monomem bench --locomo      [--data file] [--limit N] [--mode keyword|hybrid] [-
   `longmemeval_s_cleaned.json`, 264 MB) and LoCoMo ([`snap-research/locomo`](https://github.com/snap-research/locomo),
   `data/locomo10.json`). Without `--data` each file is downloaded once to `~/.cache/monomem-bench/`
   (outside the repository) and reused. The file is treated as untrusted data and only `JSON.parse`d.
+- **Licences, as the sources state them.** The LongMemEval repository says it is under the MIT licence, and the cleaned dataset
+  card on Hugging Face lists MIT. The LoCoMo repository's `LICENSE.txt` is Creative Commons Attribution-NonCommercial 4.0
+  International, so check that your use fits before running `--locomo`. Monomem does not ship either dataset (see above); read the
+  licence at the source for your case: [LongMemEval](https://github.com/xiaowu0162/LongMemEval), [LoCoMo](https://github.com/snap-research/locomo/blob/main/LICENSE.txt).
 - **Isolation.** The command points `MONOMEM_HOME` at a new temporary folder before the configuration
   loads, drops every other `MONOMEM_*` setting except the embedding ones, and refuses to run unless the
   resolved database path is inside that folder. Every haystack gets its own store, deleted afterwards.
