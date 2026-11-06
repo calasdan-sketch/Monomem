@@ -237,17 +237,17 @@ def make_favicon(root: Path) -> None:
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     if "--favicon" in sys.argv:
-        return make_favicon(root)
+        print("the favicon comes from scripts/stamp-calas-mark.py (the official Calas mark)")
+        return
     for target in TARGETS:
         redraw(root / target["path"], target["size"], target["ink_xy"], target["clear"])
     for claim in CLAIMS:
         redraw_claim(root / claim["path"], claim)
     for line in TAGLINES:
         redraw_tagline(root / line["path"], line)
-    for path, origin, scale, fill in MARKS:
-        remove_stroke(root / path, origin, scale, fill)
-        add_tip(root / path, origin, scale, fill)
-    make_favicon(root)
+    # The diagonal stroke is part of the Calas logo, not an artifact: never erase it. The official mark is stamped by
+    # scripts/stamp-calas-mark.py from calas-vault Brand/dc-logo (it also makes the marks and the favicon).
+    print("now run scripts/stamp-calas-mark.py <dc-logo-2048.png> to place the official Calas mark")
 
 
 if __name__ == "__main__":
