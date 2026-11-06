@@ -313,7 +313,7 @@ are different metrics and are never mixed below.
 
 | | LongMemEval-S R@5 | LoCoMo-10 R@5 | Search used | Source |
 |---|---|---|---|---|
-| **Monomem 1.2.0** | **97.4** session (470 q) | 89.3 session, **59.0** turn (1,982 q) | keyword BM25, no embeddings | [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo), rerun with `monomem bench` |
+| **Monomem 1.2.0** | **97.7** session (470 q) | 89.4 session, **59.2** turn (1,982 q) | keyword BM25, no embeddings | [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo), rerun with `monomem bench` |
 | mcp-memory-service 10.34 | 86.0 session, 80.4 turn | 49.7 (granularity not stated) | all-MiniLM-L6-v2 embeddings | [their BENCHMARKS.md](https://github.com/doobidoo/mcp-memory-service/blob/main/docs/BENCHMARKS.md) |
 | MemPalace | 96.6 raw semantic (500 q); 98.4 hybrid, tuned on 50 and scored on 450 | 60.3 session R@10 raw | embeddings (ChromaDB) | [their README](https://github.com/MemPalace/mempalace) |
 
@@ -331,7 +331,7 @@ has no such number; it hands the agent the retrieved notes and the agent's own m
 |---|---|---|---|---|
 | Runtime | Node 22.16+, 2 direct deps, no native modules | Node 20+, plus Bun and uv (installed for you) and Chroma | Python, ONNX embeddings | Node, a JSON file |
 | Model calls to capture or summarize | none (optional local model, off by default) | yes, it compresses captured activity with a model ([users report the cost](https://github.com/thedotmack/claude-mem/issues/3848)) | optional local LLM for quality scoring | none |
-| Token cost of a lookup, measured | yes: top-5 index rows 165-184 tokens vs 4,100-16,400 for the full notes ([table](./docs/BENCHMARK.md#results-2026-11-06-monomem-120)) | "~10x savings" claimed, not measured | not published | not published |
+| Token cost of a lookup, measured | yes, p50 per question: top-5 index rows 165-180 tokens vs 203-16,268 for the five full notes, plus one full note once the agent opens it ([table](./docs/BENCHMARK.md#results-2026-11-06-monomem-120)) | "~10x savings" claimed, not measured | not published | not published |
 | Web dashboard | yes (sessions, quality, meter) | yes (viewer) | yes | no |
 
 Checked against each project's README on 2026-11-06; tell us if one is out of date and we will fix it.
@@ -452,13 +452,14 @@ and no judge (does the right conversation come back?). Monomem 1.2.0, keyword se
 
 | Dataset | Search | Recall@5 | Recall@10 | Search time (p50) | Top 5 as index rows |
 |---|---|---|---|---|---|
-| LongMemEval-S, 470 questions, by session | keyword (default) | 97.4 % | 98.7 % | 3.0 ms | 180 tokens |
-| LoCoMo-10, 1,982 questions, by session | keyword (default) | 89.3 % | 95.2 % | 1.3 ms | 165 tokens |
-| LoCoMo-10, 1,982 questions, by turn | keyword (default) | 59.0 % | 66.5 % | 1.8 ms | 168 tokens |
+| LongMemEval-S, 470 questions, by session | keyword (default) | 97.7 % | 98.7 % | 2.9 ms | 180 tokens |
+| LoCoMo-10, 1,982 questions, by session | keyword (default) | 89.4 % | 95.3 % | 1.4 ms | 165 tokens |
+| LoCoMo-10, 1,982 questions, by turn | keyword (default) | 59.2 % | 66.5 % | 1.8 ms | 168 tokens |
 
-1.1.1 scored 95.1 / 89.3 / 45.2 on the same three runs. "Top 5 as index rows" is what an agent pays (about 4
-characters a token) to see the five best matches as `memory_index` rows before fetching one in full; the five full
-notes cost 16,350 / 4,133 / 203 tokens. These are retrieval numbers, not the end-to-end QA accuracy memory vendors
+1.1.1 scored 95.1 / 89.3 / 45.2 on the same three runs. "Top 5 as index rows" is what an agent pays (p50, about 4
+characters a token) to see the five best matches as `memory_index` rows; the five full notes cost 16,268 / 4,133 / 203
+tokens (p50). The agent then opens the one it needs, which costs that note's full size (about 3,250 tokens for a
+LongMemEval session), so on long notes the saving is roughly 16,300 down to 3,400, and on one-line notes there is none. These are retrieval numbers, not the end-to-end QA accuracy memory vendors
 usually publish, so they are not comparable with those. Every number, the per-type breakdown, the older hybrid run,
 how the ranking was chosen and the caveats: [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo).
 

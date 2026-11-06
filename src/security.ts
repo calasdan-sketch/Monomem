@@ -117,6 +117,8 @@ export const LIMITS = {
   tagCount: 50,
   tagLen: 100,
   responseBytes: 2_000_000, // cap serialized list/search responses at ~2MB
+  query: 4_096, // search words (state_search, memory_index, memory_timeline, GET /search, /index, /timeline)
+  message: 16_000, // state_relevant / POST /relevant: a conversational message, keywords are extracted from it
 };
 
 export function checkSizes(input: {

@@ -56,6 +56,7 @@ All environment variables are optional. This table lists **every** `MONOMEM_*` v
 | `MONOMEM_MCP_PORT` | `8791` | MCP-over-HTTP port (tunnel this one) |
 | `MONOMEM_TRUST_PROXY` | unset | Set to `1` only behind a trusted proxy that sets `x-forwarded-for` |
 | `MONOMEM_TRUST_CLOUDFLARE` | unset | Set to `1` behind Cloudflare so per-client rate limiting keys on `cf-connecting-ip` |
+| `MONOMEM_DEBUG` | unset | `1` prints why FTS5 rejected a search query (the message can quote the query). Without it, the first rejection prints one generic warning and the search returns no results |
 | `MONOMEM_EMBEDDINGS` | unset (off) | `on` to enable optional semantic search; `auto` = use it when the embedding endpoint answers and stay keyword-only (silently, retrying once a minute) when it does not |
 | `MONOMEM_EMBED_URL` | `http://localhost:11434/v1/embeddings` | OpenAI-compatible embeddings endpoint |
 | `MONOMEM_EMBED_MODEL` | `nomic-embed-text` | Embedding model name |

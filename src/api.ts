@@ -905,6 +905,10 @@ export function createApiServer(
           sendError(res, e);
           return;
         }
+        if (q.length > LIMITS.query) {
+          sendJson(res, 400, { error: `q exceeds ${LIMITS.query} chars` });
+          return;
+        }
         const modeRaw = (url.searchParams.get("mode") ?? "").trim().toLowerCase();
         if (modeRaw && modeRaw !== "keyword" && modeRaw !== "semantic" && modeRaw !== "hybrid") {
           sendJson(res, 400, { error: "mode must be keyword, semantic or hybrid" });
@@ -1039,6 +1043,10 @@ export function createApiServer(
         }
         if (typeof parsed.message !== "string" || !parsed.message.trim()) {
           sendJson(res, 400, { error: "message is required" });
+          return;
+        }
+        if (parsed.message.length > LIMITS.message) {
+          sendJson(res, 400, { error: `message exceeds ${LIMITS.message} chars` });
           return;
         }
         // The MCP schema requires an integer limit; the REST layer used to

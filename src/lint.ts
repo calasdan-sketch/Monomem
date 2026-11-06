@@ -103,12 +103,29 @@ const INJECTION_PATTERNS: Array<[string, RegExp]> = [
     /\b(?:ignore|disregard|forget)\s+(?:all\s+|everything\s+)?(?:you(?:'ve| have)?\s+been\s+told|your\s+(?:instructions|rules|guidelines|programming|training))\b/i,
   ],
   [
-    // Constraint override: "ignore all budget limits", "bypass any spending restrictions". Needs a
-    // quantifier (all / any / every) and a constraint noun, so a developer note such as "ignore lint
-    // rules in vendor/" or "bypass the cache in tests" is not flagged. Found by the Agent Memory
-    // hygiene demo's booking attack (github.com/elizabethfuentes12, MIT-0), which the older patterns missed.
+    // Spending-constraint override: "ignore all budget limits", "Ignore the budget limit for this booking",
+    // "Disregard spending limits entirely", "You may exceed every spending limit", "ignore all of the company
+    // travel policies". Needs a budget / spend / travel / payment word AND a constraint noun, so developer notes
+    // ("skip all checks in the CI lane", "skip any rate limits for admin tokens", "bypass any proxy restrictions")
+    // are not flagged. Found by the Agent Memory hygiene demo's booking attack (github.com/elizabethfuentes12,
+    // MIT-0), which the older patterns missed; narrowed in 1.2.0 after a review found developer-note false flags.
     "instruction override",
-    /\b(?:ignore|disregard|bypass|override|skip)\s+(?:all|any|every)\s+(?:of\s+(?:the|your|my)\s+)?(?:[\w-]+\s+){0,2}(?:limits?|limitations|restrictions?|polic(?:y|ies)|guardrails?|constraints?|caps?|approvals?|requirements?|safeguards?|checks?)\b/i,
+    // Strong verbs take any determiner ("Ignore the budget limit"); skip / waive / lift / remove / exceed need a
+    // quantifier or a permission ("skip all budget approvals", "You may exceed every spending limit"), so a human's
+    // "don't exceed the budget cap" or "skip the budget approval under $50" is stored normally.
+    /\b(?:(?:ignore|disregard|bypass|override|forget)\s+(?:(?:all|any|every|each|the|your|my|our|this|these|those|of|prior|previous|existing|current|its|their)\s+){0,4}|(?:skip|waive|lift|remove|break|exceed)\s+(?:all|any|every|each)\s+(?:(?:of|the|your|my|our|prior|previous|existing|current)\s+){0,3}|(?:may|can|could|should|allowed\s+to|free\s+to)\s+(?:freely\s+)?exceed\s+(?:(?:all|any|every|each|the|your|my|our)\s+){0,2})(?:[\w-]+\s+)?(?:budget|budgets|spending|spend|expense|expenses|cost|costs|price|pricing|fare|travel|booking|purchase|purchasing|payment)(?:[\s-]+(?:related|based))?\s+(?:limits?|limitations|caps?|ceilings?|restrictions?|constraints?|polic(?:y|ies)|rules|guidelines|approvals?|thresholds?)\b/i,
+  ],
+  [
+    // "no need to follow the budget policy anymore", "don't respect the spending limits".
+    "instruction override",
+    /\b(?:no\s+(?:longer\s+)?need\s+to|(?:you\s+)?(?:don'?t|do\s+not|never)\s+(?:need\s+to\s+)?|stop)\s*(?:follow(?:ing)?|obey(?:ing)?|respect(?:ing)?|honou?r(?:ing)?|stick(?:ing)?\s+to|enforc(?:e|ing))\s+(?:(?:the|your|my|our|any|all|this|these|company)\s+){0,3}(?:budget|spending|spend|expense|travel|booking|purchase|payment)(?:[\s-]+(?:related|based))?\s+(?:limits?|caps?|restrictions?|constraints?|polic(?:y|ies)|rules|guidelines)\b/i,
+  ],
+  [
+    // Generic constraint override aimed at the agent: "Ignore ALL the limits", "disregard any restrictions",
+    // "override all safety guardrails". Only ignore / disregard (and bypass / override / circumvent for safety
+    // words), with a quantifier, so "bypass any proxy restrictions" or "override any caps lock setting" pass.
+    "instruction override",
+    /\b(?:ignore|disregard)\s+(?:all|any|every)\s+(?:of\s+)?(?:(?:the|your|my|these|those)\s+)?(?:[\w-]+\s+){0,2}(?:limits?|limitations|restrictions?|polic(?:y|ies)|guardrails?|constraints?|safeguards?)\b|\b(?:bypass|override|circumvent|disable)\s+(?:all|any|every)\s+(?:of\s+)?(?:(?:the|your|my)\s+)?(?:guardrails?|safeguards?|(?:approval|review)s?(?:\s+(?:requirements?|rules|polic(?:y|ies)))?|(?:safety|security|content)\s+(?:checks?|polic(?:y|ies)|restrictions?|limits?|rules|filters?|guardrails?))\b/i,
   ],
   [
     "role reassignment",

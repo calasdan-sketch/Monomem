@@ -41,7 +41,7 @@ import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
 import { waitForChanges, parseWait, WAIT_MAX_SECONDS, WAIT_RECOMMENDED_SECONDS } from "./change-wait.js";
 import { type Scope, PACKAGE_VERSION } from "./config.js";
 export { PACKAGE_VERSION };
-import { scopeAllows, UNTRUSTED_BANNER, provenanceBanner, audit } from "./security.js";
+import { scopeAllows, UNTRUSTED_BANNER, provenanceBanner, audit, LIMITS } from "./security.js";
 import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, SEARCH_MODES, type SearchOpts, type RelevantOpts, type ExplainedHit } from "./search-service.js";
 import {
   type ServerNamespaceOpts,
@@ -595,7 +595,7 @@ export function createMcpServer(
           ? " The `namespace` parameter is an untrusted hint: only namespaces this server may read are searched."
           : ""),
       inputSchema: {
-        query: z.string().describe("Search text."),
+        query: z.string().max(LIMITS.query).describe("Search text."),
         namespace: z
           .string()
           .optional()
@@ -736,6 +736,7 @@ export function createMcpServer(
       inputSchema: {
         message: z
           .string()
+          .max(LIMITS.message)
           .describe("Natural conversational text to find relevant memories for."),
         limit: z.number().int().optional().describe("Max results (default 5, max 200)."),
         namespace: z
@@ -1988,7 +1989,7 @@ export function createMcpServer(
         "Cheap: scan the rows, then open the interesting ones with memory_timeline (what happened around it) and memory_get (full text). " +
         "Cite what you use as om:#<id>.",
       inputSchema: {
-        query: z.string().optional().describe("Full-text search words (any order)."),
+        query: z.string().max(LIMITS.query).optional().describe("Full-text search words (any order)."),
         kind: z.enum(["note", "observation", "summary", "all"]).optional().describe("Row kind (default all)."),
         obs_type: z.string().optional().describe("Observation type: bugfix, feature, refactor, change, discovery, decision, security_alert, security_note."),
         file: z.string().optional().describe("Only rows linked to this file path (as shown in `files`)."),
@@ -2020,7 +2021,7 @@ export function createMcpServer(
         "Use after memory_index to see the context of a row (what led to a fix, what came after a decision); then memory_get for full text.",
       inputSchema: {
         anchor: z.number().int().optional().describe("Note id to centre on."),
-        query: z.string().optional().describe("Or: centre on the best match for these words."),
+        query: z.string().max(LIMITS.query).optional().describe("Or: centre on the best match for these words."),
         file: z.string().optional().describe("Or: centre on the newest row linked to this file."),
         session: z.string().optional().describe("Or: centre on this session (and stay inside it)."),
         before: z.number().int().optional().describe("Rows before the anchor (default 5, max 50)."),

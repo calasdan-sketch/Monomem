@@ -9,7 +9,7 @@
 // embedded, every mode degrades to keyword search -- a query must never fail
 // because an optional embedding server is unavailable.
 
-import { Store, NoteRecord, clampInt } from "./store.js";
+import { Store, NoteRecord, clampInt, queryStem } from "./store.js";
 import { embed, embeddingsEnabled, embeddingsConfig, noteEmbeddingText } from "./embeddings.js";
 import { filterByTimeRange } from "./time-parse.js";
 import { extractKeywords } from "./keywords.js";
@@ -720,13 +720,35 @@ export function keywordWithFallback(
   limit: number,
   opts: Parameters<Store["searchRanked"]>[1]
 ): Array<{ note: NoteRecord; score: number }> {
-  const strict = store.searchRanked(query, { ...opts, limit, any: false });
+  return keywordWithFallbackAcross(store, query, limit, opts, [opts?.namespace]);
+}
+
+/**
+ * keywordWithFallback over several namespaces at once (memory_index with a multi-namespace token). Both steps run
+ * across ALL the namespaces before anything is merged: first the all-terms hits of every namespace, best bm25 first,
+ * then the any-keyword hits. Merging each namespace's already-mixed list by score let a partial match in one
+ * namespace outrank every full match in another, because the partial scores are scaled per namespace.
+ * `undefined` in `namespaces` means "every namespace".
+ */
+export function keywordWithFallbackAcross(
+  store: Store,
+  query: string,
+  limit: number,
+  opts: Parameters<Store["searchRanked"]>[1],
+  namespaces: Array<string | undefined>
+): Array<{ note: NoteRecord; score: number }> {
+  const over = (q: string, any: boolean, lim: number): Array<{ note: NoteRecord; score: number }> =>
+    namespaces
+      .flatMap((ns) => store.searchRanked(q, { ...opts, namespace: ns, limit: lim, any }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, lim);
+  const strict = over(query, false, limit);
   const keywords = extractKeywords(query);
-  if (strict.length >= limit || keywords.length < 2) return strict;
+  // One keyword still gets the second step when trimming its suffix widens it ("recommendations" -> recommend*).
+  if (strict.length >= limit || keywords.length === 0 || (keywords.length < 2 && queryStem(keywords[0]) === keywords[0])) return strict;
   const seen = new Set(strict.map((h) => h.note.id));
   // Ask for enough that the all-terms hits (which also match OR) still leave `limit - strict.length` new ones.
-  const loose = store
-    .searchRanked(keywords.join(" "), { ...opts, limit: clampInt(limit + strict.length, limit, 1, 200), any: true })
+  const loose = over(keywords.join(" "), true, clampInt(limit + strict.length, limit, 1, 200))
     .filter((h) => !seen.has(h.note.id))
     .slice(0, limit - strict.length);
   if (!loose.length) return strict;

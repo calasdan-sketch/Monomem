@@ -794,42 +794,83 @@ function parseTags(raw: string): string[] {
   return raw.split(",").map((t) => t.trim()).filter(Boolean); // legacy rows
 }
 
-/** Build an FTS5 MATCH expression: AND of prefix-matched, quote-escaped tokens. */
+/**
+ * Bounds on what one search may cost. A query longer than MAX_QUERY_CHARS is
+ * cut there and only its first MAX_QUERY_TERMS words are used: FTS5 work grows
+ * with the number of terms, and a 10,000-word query used to hold the database
+ * for seconds. The API and MCP surfaces refuse a longer query outright
+ * (security.ts LIMITS.query); these caps also protect internal callers.
+ */
+let ftsErrorWarned = false;
+function noteFtsError(e: unknown): void {
+  if (process.env.MONOMEM_DEBUG === "1") {
+    console.error(`[monomem] search: FTS5 rejected a query: ${String((e as Error)?.message ?? e).slice(0, 300)}`);
+  } else if (!ftsErrorWarned) {
+    ftsErrorWarned = true;
+    console.error("[monomem] search: FTS5 rejected a query and it returned no results (set MONOMEM_DEBUG=1 for details)");
+  }
+}
+
+export const MAX_QUERY_CHARS = 4_096;
+export const MAX_QUERY_TERMS = 64;
+
+/**
+ * Build an FTS5 MATCH expression of prefix-matched, quote-escaped tokens.
+ * AND (default): every word must match, and words are used exactly as typed.
+ * OR (`any`): FTS5 ranks the union by bm25, so a note matching more of the
+ * (IDF-weighted) terms ranks higher; here words also lose a common suffix
+ * (queryStem), because this is the looser "some of the words" step.
+ */
 function buildMatchQuery(q: string, any = false): string {
   const tokens = q
+    .slice(0, MAX_QUERY_CHARS)
     .trim()
     .split(/\s+/)
     .filter((t) => /[\p{L}\p{N}]/u.test(t)) // keep only tokens with a letter/number
-    .map((t) => `"${queryStem(t).replace(/"/g, '""')}"*`);
-  // AND: every term must match. OR (`any`): FTS5 ranks the union by bm25, so a
-  // note matching more of the (IDF-weighted) terms ranks higher.
+    .slice(0, MAX_QUERY_TERMS)
+    .map((t) => `"${(any ? queryStem(t) : t).replace(/"/g, '""')}"*`);
   return tokens.join(any ? " OR " : " AND "); // "" when nothing usable; caller returns []
 }
 
 /**
- * Suffixes trimmed from a query word before it becomes an FTS5 prefix term,
- * longest first. Only the QUERY is trimmed (the index is unchanged, no
- * migration): "recommendations" searches as `recommend*`, which also matches
- * "recommend", "recommended" and "recommending". Measured on LongMemEval-S and
- * LoCoMo (docs/BENCHMARK.md), not a full Porter stemmer.
+ * Words whose suffix is part of the word, not an inflection: trimming would
+ * change the meaning ("evening" is not "even", "species" is not "special").
+ * Checked before any rule in queryStem.
  */
-const QUERY_SUFFIXES = ["ations", "ation", "ments", "ment", "ings", "ing", "ies", "ied", "ers", "er", "ed", "es", "ly", "s"] as const;
+const STEM_KEEP: ReadonlySet<string> = new Set([
+  "always", "anything", "ceiling", "during", "evening", "everything", "hundred", "indeed", "kindred", "morning",
+  "news", "nothing", "perhaps", "pudding", "series", "something", "species", "string", "strings", "thing", "things",
+  "wedding", "whereas",
+]);
 
 /**
- * A plain ASCII word of 5+ letters loses its first matching suffix from
- * QUERY_SUFFIXES when at least 4 letters remain; "ss" endings ("class",
- * "process") keep their s. Anything else (digits, punctuation, #tags, other
- * scripts, short words) is returned unchanged, so identifiers and tags still
- * match exactly as typed.
+ * A light, query-only English suffix trim for the "some of the words" step
+ * (the index is unchanged, no migration). Conservative on purpose: a prefix
+ * search already covers "deploy" -> "deployment", so only endings that block a
+ * prefix match are removed, and only when 4+ letters remain:
+ *   -ations/-ation ("recommendations" -> recommend), -ings/-ing ("testing" -> test),
+ *   -ied/-ies -> -i ("studies" -> studi, also "studied"), -ed ("deployed" -> deploy),
+ *   -es after s/x/z/ch/sh ("boxes" -> box, "matches" -> match), and a plural -s
+ *   ("notes" -> note; not -ss, -us, -is).
+ * -er, -ly and -ment are NOT trimmed: "server", "corner", "flower", "proper",
+ * "supply" and "apartment" would change meaning. Anything that is not a plain
+ * ASCII word of 5+ letters (digits, punctuation, #tags, other scripts) and the
+ * words in STEM_KEEP are returned unchanged (only lower-cased if ASCII).
  */
 export function queryStem(t: string): string {
   if (t.length < 5 || t.length > 64 || !/^[A-Za-z]+$/.test(t)) return t;
   const w = t.toLowerCase();
-  for (const suf of QUERY_SUFFIXES) {
-    if (!w.endsWith(suf) || w.length - suf.length < 4) continue;
-    if ((suf === "s" || suf === "es") && w.endsWith("ss")) return w;
-    return w.slice(0, w.length - suf.length);
-  }
+  if (STEM_KEEP.has(w)) return w;
+  const keep = (n: number): boolean => w.length - n >= 4;
+  if (w.endsWith("ations") && keep(6)) return w.slice(0, -6);
+  if (w.endsWith("ation") && keep(5)) return w.slice(0, -5);
+  if (w.endsWith("ings") && keep(4)) return w.slice(0, -4);
+  if (w.endsWith("ing") && keep(3)) return w.slice(0, -3);
+  if ((w.endsWith("ies") || w.endsWith("ied")) && keep(2)) return w.slice(0, -2);
+  if (w.endsWith("eed")) return w; // "agreed", "speed", "indeed": the -ed is not an inflection to strip
+  if (w.endsWith("ed") && keep(2)) return w.slice(0, -2);
+  if (/(?:s|x|z|ch|sh)es$/.test(w) && w.length - 2 >= 3) return w.slice(0, -2);
+  if (w.endsWith("s") && !/(?:ss|us|is)$/.test(w) && keep(1)) return w.slice(0, -1);
   return w;
 }
 
@@ -4416,8 +4457,10 @@ export class Store {
       // FTS5's rank is negative (lower = better), so -rank is a positive
       // higher-is-better score.
       return rows.map((row) => ({ note: this.rec(row), score: row.score ?? 0 }));
-    } catch {
-      // A malformed FTS expression should never 500 the caller.
+    } catch (e) {
+      // A malformed FTS expression should never 500 the caller. Every word is quoted, so this should not happen:
+      // say so (once; the detail only with MONOMEM_DEBUG=1, since it can quote the query) instead of hiding it.
+      noteFtsError(e);
       return [];
     }
   }
