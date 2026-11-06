@@ -6,6 +6,8 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-05
+
 ### Highlights
 
 - **Check your own setup.** `monomem drill` replays 20 known memory-poisoning attacks on a copy of your store.
