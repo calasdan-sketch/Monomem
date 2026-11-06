@@ -12,7 +12,7 @@
 // app-level "remember to reindex" step to forget.
 
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, statSync, statfsSync, readdirSync, renameSync, existsSync, copyFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, statSync, statfsSync, readdirSync, renameSync, linkSync, existsSync, copyFileSync, unlinkSync } from "node:fs";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { dirname, basename, join } from "node:path";
 import { checkSizes, audit } from "./security.js";
@@ -1861,7 +1861,20 @@ export class Store {
       let renamed = false;
       for (let i = 0; i < 3 && !renamed; i++) {
         try {
-          renameSync(part, dest);
+          // Claim `dest` atomically: a hard link fails with EEXIST when another process got there first (rename would
+          // silently replace its copy on POSIX, and both processes would announce the upgrade). Fall back to rename only
+          // where hard links are not supported.
+          try {
+            linkSync(part, dest);
+          } catch (le) {
+            const code = (le as NodeJS.ErrnoException).code;
+            if (code === "EEXIST") {
+              dropPartial(); // another process finished its copy first
+              return;
+            }
+            if (code !== "EPERM" && code !== "ENOTSUP" && code !== "EXDEV") throw le;
+            renameSync(part, dest);
+          }
           renamed = true;
         } catch (e) {
           if (i === 2) throw e;
