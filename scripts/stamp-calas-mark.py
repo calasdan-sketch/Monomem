@@ -1,7 +1,7 @@
 """Stamp the real Calas mark (calas-vault Brand/dc-logo, crescent WITH its diagonal stroke) onto the Monomem brand images.
 
 The stroke is part of the logo, not an artifact. This replaces whatever mark is in each image with the official one,
-recoloured to brand gold, on the brand navy. Run with a Python that has Pillow:
+recoloured white (the official mark on dark), on the brand navy. Run with a Python that has Pillow:
   ~/tools/motion-venv/Scripts/python.exe scripts/stamp-calas-mark.py <path to dc-logo-2048.png>
 """
 import sys
@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 NAVY = (11, 46, 69)
-GOLD = (240, 193, 113)
+GOLD = (255, 255, 255)  # the official mark on a dark background is white (calas-vault SOP/Brand.md)
 ROOT = Path(__file__).resolve().parent.parent
 
 # image, box to clear (x0, y0, x1, y1), mark height, top-left of the mark
