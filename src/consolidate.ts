@@ -22,6 +22,7 @@
 import { Store, ValidationError, CandidateScanError, clampInt } from "./store.js";
 import type { NoteRecord } from "./store.js";
 import { maybeEmbed } from "./search-service.js";
+import { currentWriter } from "./actor.js";
 
 /** ~30 common English stopwords dropped before similarity scoring. */
 const STOPWORDS = new Set([
@@ -501,6 +502,11 @@ export function resolveConsolidationNotes(store: Store, ids: number[]): NoteReco
   const notes = uniqueIds.map((id) => {
     const n = store.read(id); // gate-ok: admin consolidation by ids: mixed trusted/distrusted sources are refused below
     if (!n) throw new ValidationError(`no note with id ${id}`);
+    store.refuseAgentOnPinned(id, "merging it"); // merging deletes it: refused up front, not half-way through
+    // Merging rewrites and deletes notes, which cannot wait in the review queue: in an approve-first namespace it is the operator's alone.
+    if (currentWriter() !== "cli" && store.isApproveFirst(n.namespace)) {
+      throw new ValidationError(`namespace "${n.namespace}" is approve-first: merging notes there is done by the operator (monomem CLI), not by an agent`);
+    }
     if (n.kind && n.kind !== "note") {
       throw new ValidationError(`note ${id} is a captured ${n.kind}; only ordinary notes are consolidated`);
     }

@@ -11,6 +11,7 @@
 // client-supplied namespaces. With resolution active, /export filters to
 // readable() namespaces and /import forces notes into the server's own
 // namespace.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

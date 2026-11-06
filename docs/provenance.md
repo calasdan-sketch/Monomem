@@ -11,7 +11,7 @@ whole truth: who sets each, when it changes, and whether a distrust rule or `not
 
 | Field | Question it answers | Set by | Changes when | Distrust rule / `not_written_by` |
 |---|---|---|---|---|
-| `written_by` | who last changed the **content** (title or body)? | the server, from the token label or process marker | every content edit (not tags, status, archive); a merge | yes (current writer) |
+| `written_by` | who last changed the **content** (title or body)? | the server: from the token label for token callers; for a local stdio app, a label set in that app's config (`MONOMEM_CLIENT`, not authenticated); for a CLI or server job, a fixed marker | every content edit (not tags, status, archive); a merge | yes (current writer) |
 | `created_by` | who first wrote it? | the server | never | no, on its own (kept for display and audit) |
 | `writer_id` | which database minted that label? `<server_id>/<written_by>` | derived | with `written_by` | the id form of a rule uses it |
 | `merged_from_writers` | whose hands has the content passed through? (the **taint set**) | the server: merge sources, every earlier content writer, claimed names from an import | **only grows**; survives edits and exports | yes: any listed name matches |
@@ -55,7 +55,9 @@ changes `written_by`, and the approval is voided anyway.
 `written_by` is, in order:
 
 1. the **label of the authenticated token** behind the call (REST, MCP over HTTP);
-2. else a fixed marker for the process: `stdio` (the local MCP stdio server), `cli` (an
+2. else a fixed marker for the process: `stdio` (the local MCP stdio server; `stdio:<app>` when
+   its launch config sets `MONOMEM_CLIENT`, which `monomem setup` does per app. That name is
+   self-declared by the config file, not authenticated), `cli` (an
    `monomem ...` command, including `import --dir` and `consolidate`), `server` (the
    long-running server's own background jobs), `runner` (the command runner process, which writes
    the heartbeat that `runner_status` trusts);
@@ -66,7 +68,7 @@ It is read from the connection, never from the request. Sending `written_by`,
 `created_by` or `imported_written_by` in a create, update or import body does nothing
 (the MCP tools do not even declare them). Labels are normalised first (control characters become spaces, runs of whitespace collapse, ends
 are trimmed). A token whose label is `stdio`, `cli`, `server` or `runner` (any letter case), or
-starts with `token:`, is stored as `token:<label>` so it cannot pass as a marker or as another
+starts with `token:` or `stdio:`, is stored as `token:<label>` so it cannot pass as a marker or as another
 token's escaped form; an unlabeled token is stored as `(unlabeled)`. A label over 100 characters is
 stored as its first 87 characters plus `~` and 12 hex digits of its SHA-256, so two long labels with
 the same start stay different; the `written_by` / `not_written_by` filters apply the same rule, so
@@ -150,7 +152,7 @@ unsigned backup flattens history: every note becomes the importer's, and the pay
 ## Upgrading and rolling back
 
 The first time a database at schema v1 to v13 is opened by 1.4.0 (schema v14), Monomem copies it to
-`<database>.pre-v16-backup` (a consistent snapshot, still at the old schema), logs the path, and
+`<database>.pre-v18-backup` (a consistent snapshot, still at the old schema), logs the path, and
 never overwrites an existing copy. (1.3.3 made `.pre-v13-backup` the same way for v12; an existing one is left alone.) The `monomem recall` hook never upgrades a database: against an older
 file it prints nothing and logs one line until a normal command or the server has migrated it.
 To roll back: stop every monomem process, put the backup file back as the database (keep the

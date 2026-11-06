@@ -1,5 +1,6 @@
 // Progressive disclosure: memory_index / memory_timeline / memory_get / session_list over MCP, and the same answers over
 // REST (GET /index, GET /timeline, POST /get, GET /sessions, GET /sessions/:id, GET /files/timeline, POST /capture).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

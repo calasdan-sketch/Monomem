@@ -14,6 +14,7 @@ import type { Store, NoteRecord } from "./store.js";
 import { findCandidatesCooperative } from "./consolidate.js";
 import { lintContent, describeFindings } from "./lint.js";
 import { isStale, stalenessConfig } from "./staleness.js";
+import { findConflicts, conflictReport, type Conflict, type ConflictGroup } from "./conflicts.js";
 
 export const QUALITY_TYPES = ["duplicate", "stale_twin", "quarantined", "lint", "decay"] as const;
 export type QualityType = (typeof QUALITY_TYPES)[number];
@@ -35,6 +36,12 @@ export interface QualityIssue {
 export interface QualityReport {
   counts: Record<QualityType, number>;
   issues: QualityIssue[];
+  /** Possible conflicts between writers (conflicts.ts). Listed apart from `issues`: flag only, the human picks the fix. */
+  conflicts: Conflict[];
+  /** The same conflicts as one block per (namespace, key), listing every value and its notes. `conflict_total` counts blocks; `conflict_capped`: at least that many. */
+  conflict_groups: ConflictGroup[];
+  conflict_total: number;
+  conflict_capped: boolean;
 }
 
 const PER_TYPE = 200; // ponytail: fixed cap per issue type, add paging if a store really has more to review
@@ -126,5 +133,7 @@ export async function qualityReport(store: Store, namespaces?: string[]): Promis
   }
 
   const counts = Object.fromEntries(QUALITY_TYPES.map((t) => [t, issues.filter((i) => i.type === t).length])) as Record<QualityType, number>;
-  return { counts, issues };
+  const pairs = findConflicts(store, { namespaces, notes });
+  const grouped = conflictReport(pairs, PER_TYPE);
+  return { counts, issues, conflicts: pairs.slice(0, PER_TYPE), conflict_groups: grouped.groups, conflict_total: grouped.total, conflict_capped: grouped.capped };
 }

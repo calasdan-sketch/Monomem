@@ -1,4 +1,5 @@
 // Monomem was called claude-bridge: its CLAUDE_BRIDGE_* settings must keep working, and keep the data.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";

@@ -3,6 +3,12 @@
 Monomem is a note store exposed over MCP + HTTP. **Treat all stored
 content as untrusted input to your agents** — see "Memory safety" below.
 
+Monomem was renamed from OneMemory. Version numbers in this file that say OneMemory belong to the old name and its
+numbering (1.x and 2.x); Monomem restarted at 1.0.0 (see [CHANGELOG.md](./CHANGELOG.md)).
+
+To check your own setup, run `monomem drill` (replays 20 known memory-poisoning attacks on a copy of your store) and
+`monomem health` (turns that and your security settings into one A to F grade, with the rule printed).
+
 ## Controls
 
 - **Network:** binds `127.0.0.1` by default. Public exposure is opt-in
@@ -13,11 +19,12 @@ content as untrusted input to your agents** — see "Memory safety" below.
   defense); browser origins are blocked unless listed in
   `MONOMEM_ALLOWED_ORIGINS`.
 - **Auth:** a bearer token is required on every route except `/health` and
-  `/ready`. Each token is compared in constant time (a minor side-channel on
+  `/ready`, and the static pages `/`, `/ui`, `/dashboard.js` and `/favicon.ico`, which hold no notes. Each token is compared in constant time (a minor side-channel on
   token length/count is not fully eliminated, which is immaterial for the
   high-entropy tokens this uses behind a tunnel). Tokens are never placed in
   URLs and are never logged. The primary token file is created `0600` and is
-  git-ignored.
+  git-ignored. The `0600` mode applies on POSIX systems; on Windows (NTFS) it has no effect, so rely on the folder
+  permissions of your user profile.
 - **Scoped tokens:** besides the primary (admin) token, you can define extra
   `read` / `write` / `admin` tokens via `MONOMEM_TOKENS` (a JSON array)
   or a `~/.monomem/tokens.json` file, so a leaked read-only token can't write, delete
@@ -29,13 +36,26 @@ content as untrusted input to your agents** — see "Memory safety" below.
   `MONOMEM_RATE_MAX` / `MONOMEM_RATE_WINDOW_MS`) so a leaked token
   can't be brute-forced or hammered. Over-limit requests get `429`.
 - **Input validation:** per-note size caps (title/body/tags), a 1MB request
-  body cap, and parameterized SQL only (no string-built queries).
+  body cap, and all values are bound as parameters; SQL text is
+  built only from internal identifiers.
 - **Secret guard:** writes are scanned for high-confidence credentials (AWS
   keys, private-key blocks, provider API tokens, etc.) and **rejected** by
   default (`MONOMEM_LINT`), since a memory store is where secrets get pasted
   by accident.
 - **Audit log:** an append-only log records every mutation (op, id, namespace,
-  byte count) — **no note content and no secrets** are logged.
+  byte count) — **no note content and no secrets** are logged. Archive, restore and the expiry and decay sweeps are
+  logged from inside the store, so every path (MCP, REST, CLI, background sweep) writes a line. Each line carries
+  `prev`, the sha256 of the line before it (carried across rotation), and `monomem audit verify` walks the chain and
+  counts every break. Several apps append to one log, so two can race and one line then names an earlier line as its
+  `prev`; verify counts that as a fork, not a break, and keeps going. This is **tamper-evident, not
+  tamper-proof**: it detects lines edited or removed *inside* the chain. A forged line inserted with a valid `prev`
+  also looks like a fork, and after a real race the line nobody points to can be edited or removed unseen; forks are
+  reported, so a count you did not expect is worth a look. The hashes are not keyed, so any program
+  running as you with a shell or file access (including an agent with a shell tool) can rewrite the whole chain or cut
+  off its newest lines, and deleting rotated files is not detected. `audit verify` prints the head hash: note it
+  somewhere else to catch a later rewrite. Lines written before this was added have no `prev` and are counted as
+  unchained. Archive through MCP `state_delete` currently writes two lines (one from the store, one
+  from the tool, which names the caller).
 - **Supply chain:** committed lockfile + `npm ci`, Dependabot, `npm audit` in
   CI, and MIT-licensed with only two production dependencies.
 
@@ -47,7 +67,7 @@ content as untrusted input to your agents** — see "Memory safety" below.
   who steals a disk image or backup.
 - **Trusted:** the CLI and the stdio MCP transport run with full local trust
   and use no token. Anyone with shell access to the machine and its data
-  directory owns the store. Since 1.1.0 the *agent* on the stdio connection
+  directory owns the store. Since OneMemory 1.1.0 the *agent* on the stdio connection
   does not inherit all of that: its `state_delete` archives instead of
   erasing, and the operator-only tools (`memory_quarantine`, `trust_policy`,
   `memory_history_purge`, `memory_consolidate`, `task_approve`), the
@@ -58,9 +78,10 @@ content as untrusted input to your agents** — see "Memory safety" below.
   mitigated, not eliminated (OWASP GenAI #1); there is no OAuth, only static
   bearer tokens.
 
-## Writer trust (1.4.0, hardened in 1.4.1)
+## Writer trust (OneMemory 1.4.0, hardened in 1.4.1)
 
-A note's `written_by` is stamped by the server from the authenticated token; an admin can put a writer on a
+A note's `written_by` is stamped by the server from the authenticated token for REST and MCP-over-HTTP callers (for a
+local stdio app it is a label from that app's config, `MONOMEM_CLIENT`, which is not authenticated); an admin can put a writer on a
 per-namespace distrust list that every read path honours (through one gate, with a guard test), and a JSON export
 made with `--attest` / `?attest=1` carries Ed25519 attestations so a server you chose to trust can vouch for a
 note's original author. Read [docs/trust.md](./docs/trust.md) for exactly what this proves and does not.
@@ -78,10 +99,10 @@ note's original author. Read [docs/trust.md](./docs/trust.md) for exactly what t
   left out of `monomem backup` unless you pass `--include-attest-key`.
 - It is a policy on labels, not protection against the operator; a trusted server can still export a hostile
   note; and a writer who obtains a new token under a new label is not on the list.
-- Heartbeats from runners older than 1.3.4 are no longer believed by default (`MONOMEM_RUNNER_ACCEPT_LEGACY=1`
+- Heartbeats from runners older than OneMemory 1.3.4 are no longer believed by default (`MONOMEM_RUNNER_ACCEPT_LEGACY=1`
   restores the old behaviour). A heartbeat counts only if the runner process wrote it and its own `alive_at` agrees
   with the server's clock within two minutes, so a tag-only touch of an old heartbeat does not make it fresh.
-- **Replacing a note (1.6.0)** is two steps: a preview that changes nothing, then a confirm that needs the preview's one-time
+- **Replacing a note (OneMemory 1.6.0)** is two steps: a preview that changes nothing, then a confirm that needs the preview's one-time
   code. The code is signed with a key kept in the database, expires (default 10 minutes), works once, is bound to the caller
   (writer, scope, tenant), to the exact notes and revisions previewed and to the exact replacement text, and a wrong code gets
   one generic message. A distrusted writer, or a replacement that claims lower confidence, needs an administrator and an explicit
@@ -89,13 +110,13 @@ note's original author. Read [docs/trust.md](./docs/trust.md) for exactly what t
   warning; the tool descriptions tell it to show the full warning and wait for you, and the code makes it impossible to confirm
   without a preview, but a careless or manipulated agent could still confirm on its own. The command line asks you at your own
   keyboard and is the strongest gate.
-- **Version history (1.6.0)** keeps the text an edit replaces, so it can hold text someone removed on purpose. It is administrators-only,
+- **Version history (OneMemory 1.6.0)** keeps the text an edit replaces, so it can hold text someone removed on purpose. It is administrators-only,
   bounded per note, encrypted at rest when encryption is on (plaintext otherwise, like note bodies), included in `export` unless
   `?history=0` / `--no-history`, and removable with `history purge`. Treat an export that carries history like the database.
 - Pre-upgrade copies (`<db>.pre-v16-backup`) are plaintext snapshots: remove them
   (`monomem backup --prune-premigration`) once the upgrade is checked, especially before enabling encryption.
 
-## Encryption at rest (shipped in 1.2.0)
+## Encryption at rest (shipped in OneMemory 1.2.0)
 
 `monomem encrypt enable` encrypts note **bodies** with AES-256-GCM. The
 limits, stated plainly:
@@ -113,11 +134,11 @@ limits, stated plainly:
   so encryption protects against a stolen database file or a backup of the
   database alone, not against someone who gets the whole directory. There is
   no re-key command.
-- **Binding of ciphertext to its row (AAD):** 1.2.0 did not bind a body's
+- **Binding of ciphertext to its row (AAD):** OneMemory 1.2.0 did not bind a body's
   ciphertext to its note id and namespace, so someone who could write to the
-  SQLite file could copy ciphertext between rows. 1.2.1 addresses this (see
+  SQLite file could copy ciphertext between rows. OneMemory 1.2.1 addresses this (see
   the CHANGELOG; confirm for the version you run).
-- Quarantined (linter-held) writes are sealed too in 1.2.1; in 1.2.0 they
+- Quarantined (linter-held) writes are sealed too in OneMemory 1.2.1; in 1.2.0 they
   were stored in plaintext.
 - `GET /export` returns decrypted bodies, so treat exports as sensitive.
 - Details: [docs/encryption-retention.md](./docs/encryption-retention.md).
@@ -140,12 +161,42 @@ prompt-injection / "memory poisoning"** channel. Layers:
   high-entropy tokens) are blocked; prompt-injection phrasing is
   **quarantined**, invisible to search and recall until an admin approves it
   (`monomem quarantine`). It is a pattern linter: it will miss novel
-  phrasing and can flag harmless text. See
+  phrasing and can flag harmless text. It matches patterns, so a reworded attack passes (`monomem drill` lists this as a
+  known miss). Text written in invisible Unicode tag characters is decoded and scanned, and any such character
+  is flagged, as is a run of four or more variation selectors (the England, Scotland and Wales flag emoji are
+  exempt). The `source` field is not scanned; tag characters are removed from it when it is stored. See
   [docs/memory-linter.md](./docs/memory-linter.md).
 - **Untrusted-data banner on every MCP read** (and `monomem recall`).
   REST responses do not carry it; REST callers must apply the same rule.
 - **SKILL.md** tells agents to treat note content as data, never as
   instructions. If you integrate the tools yourself, enforce the same rule.
+
+## Write controls and their limits
+
+These protect memory from agents that reach it through MCP or REST. **An agent with a shell tool can run the `monomem`
+CLI itself, so none of them stops an agent that can run commands.**
+
+- **Operator gate on the CLI.** These commands lower protection, so they refuse to run unless both standard input and
+  output are a terminal, and then ask for a typed `yes`; there is no `--yes` for them: `unpin`, `approve-first <ns> off`, `approve-first --all off`,
+  `resume`, `quarantine approve`, `trust undistrust`, `trust attester-add`, `trust attester-unrevoke` and `token add`. The same gate applies to a **pinned** note: `archive`, `restore`, `delete` (with or
+  without `--yes`), `supersede` (its `--old` notes and `supersede undo`) and `history restore` / `history purge` on a note you
+  pinned need the terminal and the typed `yes`. Also gated: `merge --yes` when any note in a group is pinned. Not gated, even on pinned notes: `rollback`, `decay --purge`, `import`,
+  and anything that calls the library directly (the gate is in the CLI, not the store).
+  Raising protection (`pin`, `approve-first on`, `trust distrust`, `token remove`) stays scriptable. This raises the bar
+  against an agent that runs the CLI through a non-interactive shell tool (it gets a clear refusal and nothing changes).
+  It is **not a guarantee**: a tool that allocates a pseudo-terminal can pass the terminal check and type the word, and
+  an agent that can edit the database file or `tokens.json` directly does not need the CLI at all. Other CLI commands are
+  not gated, including ones that weaken protection (`encrypt disable`) or destroy data (`delete --yes` on a note that is not pinned).
+- **Approve-first namespaces** (`monomem approve-first`): writes that do not come from the local CLI are held in the
+  quarantine queue until approved. An admin REST token is treated like any other REST caller, so it is held too.
+- **Pinned notes** (`monomem pin`): only the CLI can edit, forget, restore, replace or delete them, and the CLI asks for the terminal and a typed `yes` first (see the operator gate above). An admin token can
+  unpin a note over REST and then change it.
+- **Flood guard**: a writer label that makes too many writes in an hour is paused until `monomem resume`. The label is
+  self-declared, so this stops runaway loops, not a hostile app that changes its label.
+- **Rollback by writer** (`monomem rollback`): undoes what one writer label created or changed; it does not undo tag
+  edits, archives, replacements or deletes, and it relies on the same self-declared label.
+- **Read access log** (`monomem access`): records which writer read what (query preview, counts, no note text), kept
+  30 days by default.
 
 ## Limitations (stated honestly)
 
@@ -169,9 +220,27 @@ prompt-injection / "memory poisoning"** channel. Layers:
 - Rate limiting is per client address and runs before authentication;
   behind a shared tunnel, clients share a bucket.
 - The audit log records operations, never note content.
+- **Dispute notices are a nuisance vector.** Any writer that can write a fact can make
+  Monomem print "writers disagree on <key>" at the start of sessions in that namespace. The
+  notice never shows a fact value that the injection or directive scan, or the fact-value
+  check, flags (it prints "[value withheld: flagged, see monomem conflicts]"), but it can
+  still be triggered with a harmless-looking value. Distrusting the writer
+  (`monomem trust distrust <writer>`) removes it from the notice.
 - Encryption limits are listed above.
+
+## Your data
+
+- **Stored on your computer:** your notes; the read access log (which writer read what, kept 30 days by default, with
+  query previews that have secrets redacted and no note text); the audit log of operations (never note content); and
+  memory receipts (which notes a session start showed, by id and reason).
+- **Nothing is sent to Calas.** Monomem has no telemetry and, by default, makes no network calls. The only outside
+  connections are ones you configure: an optional summarizer model, and optional embeddings (`MONOMEM_EMBED_URL`, which
+  can be a remote host if you point it there).
+- If a team runs Monomem on staff computers, the team is responsible for those records: who may read the access log
+  and audit log, how long they are kept, and what staff are told.
 
 ## Reporting a vulnerability
 
-Please open a private security advisory on the GitHub repository, or email the
-maintainer. Do not file public issues for security reports.
+Email **office@calasautomations.com**, or open a private security advisory on the GitHub repository
+(github.com/calasdan-sketch/monomem, Security tab, "Report a vulnerability"). We reply within 7 days and coordinate
+disclosure within 90 days. Please do not file public issues for security reports.

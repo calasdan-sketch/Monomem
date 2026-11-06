@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.calasdan-sketch/monomem",
+  "description": "Local shared memory for AI coding agents: SQLite notes with writer provenance, undo, search.",
+  "repository": {
+    "url": "https://github.com/calasdan-sketch/monomem",
+    "source": "github"
+  },
+  "version": "1.2.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "monomem",
+      "version": "1.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "MONOMEM_CLIENT",
+          "description": "App name stamped on this server's writes (written_by becomes stdio:<name>). 1-40 characters a-z 0-9 . _ -. Self-declared, not authenticated.",
+          "isRequired": false
+        },
+        {
+          "name": "MONOMEM_HOME",
+          "description": "Data directory (database, tokens). Default: ~/.monomem (Windows: the .monomem folder in your user profile); an existing ~/.onememory store is kept in place, as is a checkout's ./data/state.db.",
+          "isRequired": false
+        },
+        {
+          "name": "MONOMEM_DB_PATH",
+          "description": "SQLite file path, overriding the data directory for the database only. Default: <data dir>/state.db.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

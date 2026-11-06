@@ -1,6 +1,7 @@
 // 1.2.1 core fixes: retention data safety (janitor, export/import, restore),
 // archived-note leaks, change feed for archive/restore, schema migration,
 // import idempotency, input validation.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -199,7 +200,7 @@ describe("schema migration to v11 from 1.1.0 and 1.2.0 databases", () => {
   function downgrade(dbp: string, to: 9 | 10): void {
     const d = new DatabaseSync(dbp);
     d.exec(`
-      DROP TRIGGER IF EXISTS notes_log_au;
+      DROP TRIGGER IF EXISTS notes_log_au; DROP TRIGGER IF EXISTS notes_archive_log_au;
       CREATE TRIGGER notes_log_au AFTER UPDATE ON notes
       WHEN (old.rev IS NOT new.rev OR old.title IS NOT new.title OR old.body IS NOT new.body
             OR old.tags IS NOT new.tags OR old.namespace IS NOT new.namespace

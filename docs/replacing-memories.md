@@ -90,6 +90,65 @@ Every edit that changes a note's title or body keeps the text it replaces (and t
 - Carried by `export` (turn off with `?history=0` / `--no-history`) and `import` (every entry is a **claim**: names in the file are kept as
   `claimed_writer`, never as a verified writer; size and content checks apply).
 
+## Pinned notes (CLI-only)
+
+`monomem pin <id>` pins a note; `monomem unpin <id>` lifts it; `monomem pin` lists them. Over REST: admin-only `GET /pinned` and
+`PUT /pinned { id, pinned }` (a namespace-pinned admin token reaches its own namespace only). No MCP tool pins or unpins. An agent with a shell tool can run the CLI itself, so a pin protects against MCP and REST agents, not against agents that can run commands.
+
+Agents can still read a pinned note (reads show `pinned: true`, so an agent can tell why a change is refused). Only the local
+`monomem` CLI (writer `cli`) can change it. Everyone else gets an error naming the note: MCP over stdio or HTTP, every REST call
+(an admin token included, the same rule as approve-first: REST cannot tell an operator from an agent holding an admin token), the
+server's own jobs and library callers. Refused for them:
+
+- editing it (`state_write` with its id, `PUT /notes/:id`; a tags-only or source-only edit too);
+- forgetting, restoring or hard-deleting it (`state_delete`, REST archive / restore / `DELETE /notes/:id`);
+- replacing it (`memory_supersede_preview` refuses up front, the confirm refuses too) or bringing it back with supersede undo;
+- putting back an older version (`memory_restore_version`) or forgetting its history (`memory_history_purge`);
+- merging it (`memory_consolidate`; the background janitor skips it).
+
+A pinned note is never archived by the expiry sweep (`forget_after`) or by decay. An admin REST token can unpin a note and then
+change it, so a pin holds against every caller except the CLI and an admin token. A pin is local: export, import and vault sync do
+not carry it. It is not the `pinned` tag, which only keeps captured rows from decay.
+
+## Rolling back one writer
+
+Undo everything one writer did since a moment, for example after an agent went wrong:
+
+```
+monomem rollback --writer stdio:cursor --since 2h          # or --since 2026-11-04T09:00:00Z
+```
+
+The writer name is matched exactly as stored in `written_by` (`token:ci`, `stdio:cursor`, a token label); `stdio` also covers
+every `stdio:<app>`, as in distrust rules. For each note:
+
+- **created** by the writer since then: **archived** (never deleted; `monomem restore <id>` brings it back);
+- its title or body **changed** by the writer since then: the newest version kept from **before the writer's first change** since
+  then becomes the current text again, as a new version (history reason `rollback`). The text it replaces goes into the history,
+  so `monomem history restore <id> <version>` / `memory_restore_version` undoes it. There is no separate undo command;
+- **another writer changed the text later**: a **conflict**, listed and skipped. `--include-conflicts` rolls it back anyway (the
+  other writer's text stays in the history);
+- the version needed is no longer in the bounded history (pruned by the limits above, or purged): **cannot fully undo**, listed
+  and always skipped. Nothing is guessed;
+- a replaced (superseded) or archived note is listed and skipped.
+
+It is two steps, like a replacement: the preview writes nothing and lists exactly what would happen, plus a one-time code (it works
+once, for `MONOMEM_SUPERSEDE_TTL_SECONDS`, default 10 minutes, and only for the caller it was made for). The confirm plans again
+under the write lock and refuses if anything differs from the preview; it applies everything in one transaction, or nothing. The
+CLI shows the preview and asks you to type yes (`--yes` skips the question; without a terminal and without `--yes` it only
+previews). Each rollback writes an audit entry.
+
+Also over REST (admin): `POST /rollback/preview { writer, since, include_conflicts? }` and `POST /rollback/confirm { token }`; and
+the MCP tool `memory_rollback` (admin, operator-only: not registered over stdio unless `MONOMEM_STDIO_ADMIN_TOOLS=1`, and only
+under `MONOMEM_TOOLS=all` or when named). Pinned notes and notes in approve-first namespaces are rolled back from the CLI only
+(marked in its preview); REST and MCP list them as skipped (`operator_only`). Restores made by a rollback are not counted by the
+flood guard; a paused caller is still refused.
+
+Limits: only notes the writer created, and title/body changes it made, are rolled back. Tag, source, namespace or confidence edits,
+notes it forgot (archived), replacements it confirmed (use supersede undo) and hard deletes are not. A change made while history
+was off (`MONOMEM_HISTORY_VERSIONS=0`) left no saved version: it is reported as cannot fully undo only if history is still off and
+the note still names the writer, otherwise it is not seen. The dropped-version check is kept per writer as a time span, so an
+older drop that overlaps can also produce "cannot fully undo" (it errs on the side of skipping).
+
 ## Confidence (a claim, never a check)
 
 A note may carry `confidence`, a number from 0 to 1 that the writer **claims** for how sure it is. It is validated (anything
@@ -102,9 +161,42 @@ the trust rules.
 When two notes are about the same thing (very similar, as in "similar-note suggestions") and the older one is flagged stale, the older one now stays
 behind the newer one in search, even if it matches the words slightly better. It is still returned (and still flagged) so nothing disappears.
 
+## Conflicts between writers
+
+`monomem conflicts` (also in `monomem quality` and the dashboard's Quality view) lists live notes from different writers that
+disagree. It only flags: nothing is changed, hidden or merged. Notes from distrusted writers are left out. Each side shows
+the writer's label and what kind of label it is (a server-stamped marker such as `stdio`, or a token label from your config),
+so a label cannot pass as a peer by its spelling.
+
+- **Exact tier (`facts`).** An agent attaches `facts` when it writes (`state_write`, `POST /notes`): at most 10 keys, keys
+  `[a-z0-9_.-]{1,40}`, values one line of at most 80 characters. They are stored as the tags `fact:<key>=<value>` (no schema
+  change; the secret and injection scan runs on them like any tag). Two live notes in one namespace, from different writers,
+  with the same key and different values (case and extra spaces ignored) are flagged. When such a note is written, the write
+  succeeds and the reply carries `conflicts` so the agent can ask the user. Limit: the match is exact on the key, so one key
+  reused for two subjects is flagged. Reuse a key from the reply's `similar_keys` or this list: `deploy_target`, `package_manager`, `test_runner`, `database`, `node_version`, `base_url`, `ci_provider`, `formatter`. Prefix a subject only when the project has several (`api.deploy_target`). When a write uses a key that is new to the namespace, the reply adds `similar_keys` (existing keys with the same last segment or a known synonym, e.g. `hosting` for `deploy_target`) so the agent can reuse one (each comes with the existing value, note id and writer, plus a `hint`; a prefixed key such as `api.deploy_target` against its base key is intentional scoping and is not flagged). A synonym key is also checked on write: `hosting=fly.io` against `deploy_target=render` is reported as a conflict. At session start, disputed keys appear as at most two "Monomem: writers disagree on ..." lines (values quoted, with note ids and writers; "+N more" when more are disputed), whether or not a namespace is configured.
+- **Keep a fact.** The dashboard's "Keep <value>" removes only the disputed fact from the other notes (they stay, with their other facts) and tags each with `fact-removed:<key>`: the note's text may still mention the old value, so look it over. If the namespace is approve-first the dashboard says the change is held for review and nothing is removed yet. "Replace whole note instead" is the secondary choice and retires the whole note; Pin and Distrust sit under "More". From a terminal: `monomem fact remove <id> <key>`; `monomem facts [--namespace ns] [--as-of t]` lists the recorded facts (as-of shows the notes that existed then with their facts as tagged now; tag history is not kept). `monomem facts --check` prints one line and exits 1 if any fact is disputed (synonym spellings such as hosting / deploy_target count as one setting), 0 if none: for CI. Disputes are per namespace: the same key in two namespaces is not a dispute. `fact remove` on a pinned note needs the same terminal confirmation as other CLI edits of pinned notes. Conflicts are shown as one block per key listing every value and its notes; when the search is capped (500 pairs) the header says "showing N of at least M".
+- **Possible tier (no facts).** The older text rule: both titles state the same `key: value`, or the titles are identical
+  and the bodies hold different values for one key. Titles that merely differ ("Hosting" vs "Where the app runs") are not
+  matched: loosening that gate was measured and flooded the list with look-alike notes.
+
+Measured (test/conflicts-facts.test.ts; P = precision, R = recall; the realistic set is 20 true pairs with natural, different
+titles and 12 look-alikes that are not conflicts; the facts are the ones an agent following SKILL.md would attach):
+
+| Set | Exact tier (facts attached) | Possible tier (no facts) |
+|---|---|---|
+| Realistic pairs | P 1.00, R 1.00 (20/20) | P 0.00, R 0.00 (0/20; its one flag joins two unrelated notes both titled "Node version") |
+| Bench suite B, 7 contradictions | P 1.00, R 1.00 (7/7) | R 0.00 (0/7) |
+| Builder fixture (~200 notes, 15 true pairs) | P 1.00, R 1.00 (15/15) | P 1.00, R 0.80 (12/15) |
+
+Exact-tier precision is 1.00 here because the test keys are scoped per subject; it is a property of the match, not a promise
+about how agents name keys. Pairs written without facts get only the possible tier.
+
+In the dashboard each conflict shows both values, "Keep &lt;value&gt;" for each side (a replacement that asks first and can be
+undone), Pin, and Distrust writer. A pinned note cannot be replaced from the dashboard: change it from the CLI.
+
 ## Upgrading
 
 The first start on 1.6.0 upgrades the database to schema v15 (columns for confidence and the replaced link, and tables for history and
-one-time codes). As for every schema change, a verified copy of the old database is kept first at `<database>.pre-v16-backup`; the upgrade
+one-time codes). As for every schema change, a verified copy of the old database is kept first at `<database>.pre-v18-backup`; the upgrade
 does not run if the copy cannot be made. There is no downgrade path: to go back, stop everything, put that copy back as the database,
 and install the older version. Upgrading from 1.3.x or 1.4.x: [upgrading.md](./upgrading.md).

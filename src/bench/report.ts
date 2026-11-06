@@ -50,7 +50,9 @@ function measures(results: ScenarioResult[]): CheckResult[] {
   return results.flatMap((r) => r.checks).filter((c) => c.measure);
 }
 
-function suiteMetrics(suite: Suite, results: ScenarioResult[]): Record<string, unknown> {
+function suiteMetrics(suite: Suite, all: ScenarioResult[]): Record<string, unknown> {
+  // A skipped scenario (missing capability, or partly unsupported) feeds no number.
+  const results = all.filter((r) => r.status !== "skipped");
   const out: Record<string, unknown> = {};
   const fresh = measures(results).filter((c) => c.check === "fresh_answer");
   if (suite === "stale") {
@@ -111,7 +113,7 @@ export function buildReport(
       metrics: suiteMetrics(suite, rs),
     };
   }
-  const allChecks = results.flatMap((r) => r.checks);
+  const allChecks = results.flatMap((r) => r.checks).filter((c) => !c.unsupported);
   const used = [...new Set(results.map((r) => r.known_gap).filter((g): g is string => Boolean(g)))].sort();
   const known = used.map((id) => ({
     id,
@@ -201,7 +203,7 @@ export function renderTable(r: Report, opts: { verbose?: boolean } = {}): string
     for (const s of bad) {
       L.push(`  ${s.id} ${s.title}${s.status === "gap_closed" ? "  [known gap now PASSES: remove its known_gap marker]" : ""}`);
       if (s.error) L.push(`      error: ${s.error}`);
-      for (const c of s.checks.filter((x) => !x.pass || s.status === "gap_closed" && opts.verbose)) {
+      for (const c of s.checks.filter((x) => (!x.pass && !x.unsupported) || s.status === "gap_closed" && opts.verbose)) {
         L.push(`      - ${c.desc}`);
         L.push(`          expected: ${c.expected}`);
         L.push(`          actual:   ${c.actual}`);
@@ -229,7 +231,11 @@ export function renderTable(r: Report, opts: { verbose?: boolean } = {}): string
   const skipped = r.scenarios.filter((s) => s.status === "skipped");
   if (skipped.length) {
     L.push("");
-    L.push(`SKIPPED (${skipped.length}): ${skipped.map((s) => s.id).join(", ")} -- ${skipped[0].skipped_reason}`);
+    if (new Set(skipped.map((s) => s.skipped_reason)).size === 1) L.push(`SKIPPED (${skipped.length}): ${skipped.map((s) => s.id).join(", ")} -- ${skipped[0].skipped_reason}`);
+    else {
+      L.push(`SKIPPED (${skipped.length})`);
+      for (const s of skipped) L.push(`  ${s.id} -- ${s.skipped_reason}`);
+    }
   }
   L.push("");
   L.push("What this does not show");

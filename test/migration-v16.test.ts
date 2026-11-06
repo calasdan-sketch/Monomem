@@ -1,5 +1,6 @@
 // Schema v16 (2.0.0): automatic memory. Upgrade from the real v15 shape (plain and encrypted), one pre-upgrade backup,
 // idempotent reopen, ordinary reads still see notes only, the no-migrate open used by the hooks, and the raw-event TTL.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
@@ -49,10 +50,10 @@ for (const encrypted of [false, true]) {
         assert.equal(Store.peekSchemaVersion(path), 15);
         assert.ok(!cols(path, "notes").includes("kind"));
         const s = quietly(() => new Store(path));
-        assert.equal(SCHEMA_VERSION, 16);
-        assert.equal(Store.peekSchemaVersion(path), 16);
-        assert.ok(existsSync(path + ".pre-v16-backup"));
-        assert.equal(Store.peekSchemaVersion(path + ".pre-v16-backup"), 15);
+        assert.equal(SCHEMA_VERSION, 18);
+        assert.equal(Store.peekSchemaVersion(path), 18);
+        assert.ok(existsSync(path + ".pre-v18-backup"));
+        assert.equal(Store.peekSchemaVersion(path + ".pre-v18-backup"), 15);
         for (const c of ["kind", "session_id", "obs_type"]) assert.ok(cols(path, "notes").includes(c), c);
         assert.ok(cols(path, "capture_events").includes("output_enc"));
         assert.ok(cols(path, "sessions").includes("distilled_seq"));

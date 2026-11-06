@@ -8,6 +8,7 @@
 // hole. These tests pin a namespace to a token and prove the boundary holds,
 // including under concurrent requests (the failure mode that would silently
 // leak one agent's notes into another's response).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

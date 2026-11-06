@@ -11,7 +11,8 @@
 
 import { Store, NoteRecord, clampInt } from "./store.js";
 import { embed, embeddingsEnabled, embeddingsConfig, noteEmbeddingText } from "./embeddings.js";
-import { filterByTimeRange } from "./time-parse.js";
+import { filterByTimeRange, parseTimePhrase, type TimeRange } from "./time-parse.js";
+import { TIME_ZONE } from "./config.js";
 import { extractKeywords } from "./keywords.js";
 import {
   stalenessConfig,
@@ -56,6 +57,104 @@ export function parseMode(raw: string | undefined | null): SearchMode {
 export function rrfMerge(lists: number[][], k = 60): number[] {
   const score = rrfScores(lists, k);
   return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+}
+
+/** A date phrase inside the query ("in June", "last weekend", "on May 3, 2023") as a window, or null. */
+export function queryTimeWindow(query: string, asOf?: Date): TimeRange | null {
+  if (!query.trim()) return null;
+  const w = parseTimePhrase(query, { timeZone: TIME_ZONE, ...(asOf ? { now: asOf } : {}) });
+  // Day-sized windows and wider only: a clock time ("error at 10:30") names when something happened, not when
+  // the note about it was written.
+  return w && w.end.getTime() - w.start.getTime() >= 20 * 3_600_000 ? w : null;
+}
+
+const DAY_MS = 86_400_000;
+/**
+ * Score factor for notes inside a query's date window, and days of slack after it. Swept 1.2-3 x and 0-30 days on
+ * LoCoMo-10 and LongMemEval-S (2026-11-04): every setting helped LoCoMo a little and none moved LongMemEval-S, whose
+ * time questions mostly ask "how many days ago" (the date is the answer, not a filter). 2 x / 7 days was best or tied.
+ */
+export const TIME_HINT_BOOST = 2;
+export const TIME_HINT_SLACK_DAYS = 7;
+
+/**
+ * Soft time hint: notes written inside the window, or within the slack after it (people tell about an event after it
+ * happens), score higher. Nothing is dropped; an explicit time range still filters strictly.
+ * ponytail: "before today" still reads as "today" (the parser has no before/after); soft boost only, so a wrong window
+ * reorders, never hides. Teach time-parse.ts "before/after X" if that shows up in real queries.
+ */
+export function boostTimeWindow(
+  hits: Array<{ note: NoteRecord; score: number }>,
+  win: TimeRange,
+  factor = TIME_HINT_BOOST,
+  slackDays = TIME_HINT_SLACK_DAYS
+): Array<{ note: NoteRecord; score: number }> {
+  const lo = win.start.getTime();
+  const hi = win.end.getTime() + slackDays * DAY_MS;
+  return hits
+    .map((h) => {
+      const t = Date.parse(h.note.created_at);
+      return t >= lo && t < hi ? { note: h.note, score: h.score * factor } : h;
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Share of a session neighbour's score a captured row gains (only rows written just before or after it in the same capture
+ * session, and only when that neighbour is itself a hit). Chosen on LoCoMo-10 conversations 1-5 and checked on 6-10
+ * (2026-11-04): turn R@5 56.9 to 62.3 keyword-only, 65.3 to 70.3 hybrid, on the unseen conversations; 0.25-1.0 all helped.
+ */
+export const SESSION_NEIGHBOUR_WEIGHT = 0.5;
+
+/** Captured rows next to another hit in the same session score higher: what was tried, then what happened, rank together. */
+export function boostSessionNeighbours(
+  store: Store,
+  hits: Array<{ note: NoteRecord; score: number }>,
+  weight = SESSION_NEIGHBOUR_WEIGHT
+): Array<{ note: NoteRecord; score: number }> {
+  const ids = hits.filter((h) => h.note.session_id).map((h) => h.note.id);
+  if (ids.length < 2) return hits;
+  const near = store.sessionNeighbours(ids);
+  const score = new Map(hits.map((h) => [h.note.id, h.score]));
+  return hits
+    .map((h) => {
+      const best = Math.max(0, ...(near.get(h.note.id) ?? []).map((id) => score.get(id) ?? 0));
+      return best > 0 ? { note: h.note, score: h.score + weight * best } : h;
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+/** Weight of the keyword side in the hybrid blend (the semantic side gets 1 - this). */
+export const HYBRID_KEYWORD_WEIGHT = 0.5;
+
+/**
+ * Hybrid ranking: each side's scores are min-max scaled to 0..1 within this search, then blended
+ * 0.5 / 0.5; a note found by only one side gets 0 from the other. Replaced equal-weight RRF on
+ * 2026-11-04: RRF uses only ranks, so a weak semantic list pulled confident keyword hits down
+ * (LoCoMo-10 whole sessions: R@5 89 keyword vs 80 hybrid). Blending scores keeps how sure each
+ * side is (Bruch et al. 2022, arXiv:2210.11934). Measurements: docs/BENCHMARK.md.
+ */
+export function blendHybrid(
+  kw: Array<{ note: NoteRecord; score: number }>,
+  sem: Array<{ note: NoteRecord; score: number }>,
+  kwWeight = HYBRID_KEYWORD_WEIGHT
+): Array<{ note: NoteRecord; score: number }> {
+  const scale = (hits: Array<{ note: NoteRecord; score: number }>): Map<number, number> => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const h of hits) {
+      lo = Math.min(lo, h.score);
+      hi = Math.max(hi, h.score);
+    }
+    return new Map(hits.map((h) => [h.note.id, hi > lo ? (h.score - lo) / (hi - lo) : 1]));
+  };
+  const k = scale(kw);
+  const v = scale(sem);
+  const byId = new Map<number, NoteRecord>();
+  for (const h of [...kw, ...sem]) if (!byId.has(h.note.id)) byId.set(h.note.id, h.note);
+  return [...byId.values()]
+    .map((note) => ({ note, score: kwWeight * (k.get(note.id) ?? 0) + (1 - kwWeight) * (v.get(note.id) ?? 0) }))
+    .sort((a, b) => b.score - a.score);
 }
 
 /** The fused per-id scores rrfMerge sorts on (exposed for importance weighting). */
@@ -246,11 +345,49 @@ function finalizeResults(
   store: Store,
   hits: Array<{ note: NoteRecord; score: number }>,
   limit: number,
-  staleCfg: StalenessConfig
+  staleCfg: StalenessConfig,
+  spread = false
 ): NoteRecord[] {
-  const notes = rankHits(store, hits, staleCfg).slice(0, limit);
+  const ranked = rankHits(store, hits, staleCfg);
+  const notes = (spread ? capPerSession(ranked) : ranked).slice(0, limit);
   bumpAccess(store, notes);
   return notes;
+}
+
+/** Questions that add up or list across the history ("how many", "in total", "list all"...): the answer is spread over several sessions. */
+// Bare "each" / "every" / "total" are everyday words in coding talk ("every time I run tests"), so they are not enough.
+const AGGREGATE_QUERY = /\b(how many|in total|total (?:number|amount|cost|of)|list all|all the \w+ (?:i|we))\b/i;
+/** Most notes of one capture session kept in place on an aggregating question; the rest move behind the others. */
+export const AGGREGATE_PER_SESSION = 2;
+
+/** Soft cap: a session's items past the cap move behind the others, in their order (the caller's limit still applies). */
+export function capPerSessionBy<T>(items: T[], noteOf: (x: T) => NoteRecord, cap = AGGREGATE_PER_SESSION): T[] {
+  const seen = new Map<string, number>();
+  const front: T[] = [];
+  const back: T[] = [];
+  for (const x of items) {
+    const nt = noteOf(x);
+    // Capture sessions only: `source` often names a writer ("claude-code") or is unique per note, so it is a poor stand-in.
+    const sid = nt.session_id;
+    const c = sid ? (seen.get(sid) ?? 0) : 0;
+    if (sid) seen.set(sid, c + 1);
+    (c < cap ? front : back).push(x);
+  }
+  return [...front, ...back];
+}
+export const capPerSession = (notes: NoteRecord[], cap = AGGREGATE_PER_SESSION): NoteRecord[] => capPerSessionBy(notes, (n) => n, cap);
+
+/** Day-level age of a note's date for the reader: "2023-05-08, 5 months before 2023-10-02" (or "ago" without asOf). */
+export function describeWhen(created: string, now: Date = new Date(), relativeToAsOf = false): string {
+  const t = Date.parse(created);
+  if (!Number.isFinite(t)) return "";
+  const date = new Date(t).toISOString().slice(0, 10);
+  const days = Math.floor((now.getTime() - t) / 86_400_000);
+  if (days < 0) return date;
+  const plural = (n: number, u: string): string => `${n} ${u}${n === 1 ? "" : "s"}`;
+  const span = days < 1 ? "" : days < 14 ? plural(days, "day") : days < 60 ? plural(Math.round(days / 7), "week") : days < 730 ? plural(Math.round(days / 30.4), "month") : plural(Math.round(days / 365.25), "year");
+  if (!span) return `${date}, ${relativeToAsOf ? "same day as " + now.toISOString().slice(0, 10) : "today"}`;
+  return `${date}, ${span} ${relativeToAsOf ? "before " + now.toISOString().slice(0, 10) : "ago"}`;
 }
 
 /**
@@ -266,7 +403,7 @@ export function rankHits(store: Store, hits: Array<{ note: NoteRecord; score: nu
 
 // ---- Retrieval visibility --------------------------------------------------
 // "Visibility into why a memory was retrieved." Search ranking is three
-// multiplicative stages -- native relevance (bm25/cosine/RRF) -> recency-
+// multiplicative stages -- native relevance (bm25/cosine/hybrid blend) -> recency-
 // decayed access boost -> graded staleness penalty -- and until now every
 // intermediate was discarded, so an agent (or a user) could see WHICH notes
 // came back but never WHY one outranked another. These types expose the
@@ -277,7 +414,7 @@ export function rankHits(store: Store, hits: Array<{ note: NoteRecord; score: nu
 export interface ScoreBreakdown {
   /** Final score after all stages (higher = better). */
   finalScore: number;
-  /** Native relevance before boosts/penalties: bm25, cosine, or RRF fusion. */
+  /** Native relevance before boosts/penalties: bm25, cosine, or the hybrid blend. */
   baseScore: number;
   /** Recency-decayed access boost multiplier (1.0 = no boost). */
   accessBoost: number;
@@ -342,7 +479,8 @@ function finalizeExplained(
   store: Store,
   hits: Array<{ note: NoteRecord; score: number }>,
   limit: number,
-  staleCfg: StalenessConfig
+  staleCfg: StalenessConfig,
+  spread = false
 ): ExplainedHit[] {
   // Capture native relevance per id BEFORE any boost, so the breakdown can
   // report the true base rather than the post-boost score.
@@ -351,7 +489,7 @@ function finalizeExplained(
     ? demoteStaleTwins(store, applyStalePenalty(boostAndRank(hits), staleCfg), staleCfg)
     : { ranked: [...hits].sort((a, b) => b.score - a.score), behind: new Map<number, number>() };
   const ranked = demoted.ranked;
-  const top = ranked.slice(0, limit);
+  const top = (spread ? capPerSessionBy(ranked, (h) => h.note) : ranked).slice(0, limit);
   bumpAccess(store, top.map((h) => h.note));
 
   return top.map((h) => {
@@ -420,6 +558,8 @@ export interface SearchOpts {
   includeDistrusted?: boolean;
   /** Also return notes a confirmed replacement retired (always labelled `status: "superseded"`). Default: they are left out. */
   includeSuperseded?: boolean;
+  /** "Now" for a date phrase inside the query ("last weekend"); default the real clock. */
+  asOf?: Date;
 }
 
 /**
@@ -447,7 +587,10 @@ async function runSearchInner(
   // Clamp here too: the store methods clamp their own queries, but the hybrid
   // path slices fused ids by this value, so an unclamped 0/negative/NaN would
   // silently return [] or misorder despite real matches.
-  const limit = clampInt(opts.limit, 20, 1, 200);
+  const asked = clampInt(opts.limit, 20, 1, 200);
+  const aggregate = AGGREGATE_QUERY.test(query);
+  const limit = aggregate ? Math.min(asked * 2, 200) : asked; // widen: the answer is spread over several sessions
+  const fetchK = aggregate ? Math.min(limit * 2, 200) : limit; // spare candidates so the per-session cap has others to pull forward
   const mode: SearchMode = opts.mode ?? parseMode(undefined);
   const range = opts.timeRange;
   const writerOpts = {
@@ -480,16 +623,17 @@ async function runSearchInner(
     keywordWithFallback(store, query, fetchLimit, { namespace: opts.namespace, ...rangeOpts });
 
   /** Boost, stale-penalize, truncate to the result limit, bump access. */
+  const win = range === undefined ? queryTimeWindow(query, opts.asOf) : null;
   const finalize = (
     hits: Array<{ note: NoteRecord; score: number }>
-  ): NoteRecord[] => finalizeResults(store, hits, limit, staleCfg);
+  ): NoteRecord[] => finalizeResults(store, win ? boostTimeWindow(hits, win) : hits, limit, staleCfg, aggregate);
 
-  if (mode === "keyword" || !embeddingsEnabled()) return finalize(keyword(limit));
+  if (mode === "keyword" || !embeddingsEnabled()) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : fetchK));
 
   const qv = await embed(query);
-  if (!qv) return finalize(keyword(limit)); // endpoint down / not embeddable -> graceful fallback
+  if (!qv) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : fetchK)); // endpoint down / not embeddable -> graceful fallback
 
-  // Oversample (limit*5, capped at the 200 max) so hybrid RRF has a rich
+  // Oversample (limit*5, capped at the 200 max) so the hybrid blend has a rich
   // candidate pool on both sides; the window is pushed into the vector SQL,
   // so the semantic ranking is already computed within the time range.
   const poolLimit = clampInt(limit * 5, 100, 1, 200);
@@ -514,19 +658,7 @@ async function runSearchInner(
   }
 
   // hybrid: fuse the two rankings, then resolve ids back to records.
-  const ftsHits = keyword(poolLimit);
-  const fusedScores = rrfScores([
-    ftsHits.map((h) => h.note.id),
-    semHits.map((h) => h.note.id),
-  ]);
-
-  const byId = new Map<number, NoteRecord>();
-  for (const h of ftsHits) byId.set(h.note.id, h.note);
-  for (const h of semHits) byId.set(h.note.id, h.note);
-  let hits = [...fusedScores.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id, score]) => ({ note: byId.get(id)!, score }))
-    .filter((h) => h.note !== undefined);
+  let hits = blendHybrid(keyword(poolLimit), semHits);
   if (range !== undefined) {
     const inRange = new Set(filterByTimeRange(hits.map((h) => h.note), range).map((n) => n.id));
     hits = hits.filter((h) => inRange.has(h.note.id));
@@ -549,7 +681,9 @@ async function runSearchExplainedInner(
   query: string,
   opts: SearchOpts = {}
 ): Promise<ExplainedHit[]> {
-  const limit = clampInt(opts.limit, 20, 1, 200);
+  const aggregate = AGGREGATE_QUERY.test(query);
+  const limit = aggregate ? Math.min(clampInt(opts.limit, 20, 1, 200) * 2, 200) : clampInt(opts.limit, 20, 1, 200);
+  const fetchK = aggregate ? Math.min(limit * 2, 200) : limit;
   const mode: SearchMode = opts.mode ?? parseMode(undefined);
   const range = opts.timeRange;
   const writerOpts = {
@@ -580,13 +714,14 @@ async function runSearchExplainedInner(
   const keyword = (fetchLimit: number): Array<{ note: NoteRecord; score: number }> =>
     keywordWithFallback(store, query, fetchLimit, { namespace: opts.namespace, ...rangeOpts });
 
+  const win = range === undefined ? queryTimeWindow(query, opts.asOf) : null;
   const finalize = (hits: Array<{ note: NoteRecord; score: number }>): ExplainedHit[] =>
-    finalizeExplained(store, hits, limit, staleCfg);
+    finalizeExplained(store, win ? boostTimeWindow(hits, win) : hits, limit, staleCfg, aggregate);
 
-  if (mode === "keyword" || !embeddingsEnabled()) return finalize(keyword(limit));
+  if (mode === "keyword" || !embeddingsEnabled()) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : fetchK));
 
   const qv = await embed(query);
-  if (!qv) return finalize(keyword(limit));
+  if (!qv) return finalize(keyword(win ? clampInt(limit * 3, 60, 1, 200) : fetchK));
 
   const poolLimit = clampInt(limit * 5, 100, 1, 200);
   const semHits = store.semanticSearch(qv, {
@@ -607,18 +742,7 @@ async function runSearchExplainedInner(
   }
 
   // hybrid
-  const ftsHits = keyword(poolLimit);
-  const fusedScores = rrfScores([
-    ftsHits.map((h) => h.note.id),
-    semHits.map((h) => h.note.id),
-  ]);
-  const byId = new Map<number, NoteRecord>();
-  for (const h of ftsHits) byId.set(h.note.id, h.note);
-  for (const h of semHits) byId.set(h.note.id, h.note);
-  let hits = [...fusedScores.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id, score]) => ({ note: byId.get(id)!, score }))
-    .filter((h) => h.note !== undefined);
+  let hits = blendHybrid(keyword(poolLimit), semHits);
   if (range !== undefined) {
     const inRange = new Set(filterByTimeRange(hits.map((h) => h.note), range).map((n) => n.id));
     hits = hits.filter((h) => inRange.has(h.note.id));
@@ -648,6 +772,8 @@ function explainedRecencyOnly(note: NoteRecord): ScoreBreakdown {
 export interface RelevantOpts {
   namespace?: string;
   limit?: number;
+  /** "Now" for a date phrase inside the message; default the real clock. */
+  asOf?: Date;
   writtenBy?: string;
   notWrittenBy?: string;
   includeDistrusted?: boolean;
@@ -661,12 +787,10 @@ export interface RelevantOpts {
  * threshold than runSearch/store.search's AND conjunction -- with up to 20
  * keywords, an AND would return almost nothing for a rambling message.
  *
- * Ranking merges the per-keyword FTS5 bm25 rankings with Reciprocal Rank
- * Fusion, multiplied by the keyword-branch count: a note matching several
- * distinct keywords still outranks a single-keyword hit, but within the
- * same count the bm25 relevance wins -- a central-topic hit outranks a
- * passing mention instead of every branch counting the same and ties
- * breaking by recency.
+ * Ranking is anyKeywordHits: one bm25 OR query (rare keywords weigh more),
+ * scaled by the share of keywords each note contains, so a note matching
+ * several distinct keywords outranks a single-keyword hit and a central-topic
+ * hit outranks a passing mention.
  *
  * The merged hits run through the same finalize pipeline as runSearch
  * (access boost, staleness penalty, truncation, access bump), so the
@@ -685,37 +809,40 @@ async function runRelevantSearchInner(
   // Oversample per keyword (limit*2, clamped to 1..200 -- the 50 here is the
   // clampInt *default* for non-numeric input, not a floor) so the merge has
   // a real candidate pool before the final limit cut.
-  const perKeyword = clampInt(Math.ceil(limit * 2), 50, 1, 200);
-  const byId = new Map<number, NoteRecord>();
-  const counts = new Map<number, number>();
-  const lists: number[][] = [];
-  for (const kw of keywords) {
-    // searchRanked (not search): keep each hit's FTS5 bm25 score for the
-    // merge below instead of discarding it.
-    const ranked = store.searchRanked(kw, {
-      namespace: opts.namespace,
-      limit: perKeyword,
-      ...(opts.writtenBy !== undefined ? { writtenBy: opts.writtenBy } : {}),
-      ...(opts.notWrittenBy !== undefined ? { notWrittenBy: opts.notWrittenBy } : {}),
-      ...(opts.includeDistrusted ? { includeDistrusted: true } : {}),
-    });
-    const ids: number[] = [];
-    for (const h of ranked) {
-      ids.push(h.note.id);
-      if (!byId.has(h.note.id)) byId.set(h.note.id, h.note);
-      counts.set(h.note.id, (counts.get(h.note.id) ?? 0) + 1);
-    }
-    lists.push(ids);
-  }
-  const fused = rrfScores(lists);
-  const hits = [...fused.entries()].map(([id, rrf]) => ({
-    note: byId.get(id)!,
-    score: rrf * (counts.get(id) ?? 1),
-  }));
+  // Oversample (limit*2, clamped to 1..200) so finalize has a real candidate
+  // pool before the final limit cut.
+  const hits = anyKeywordHits(store, keywords, clampInt(Math.ceil(limit * 2), 50, 1, 200), {
+    namespace: opts.namespace,
+    ...(opts.writtenBy !== undefined ? { writtenBy: opts.writtenBy } : {}),
+    ...(opts.notWrittenBy !== undefined ? { notWrittenBy: opts.notWrittenBy } : {}),
+    ...(opts.includeDistrusted ? { includeDistrusted: true } : {}),
+  });
+  const win = queryTimeWindow(message, opts.asOf);
   return {
     keywords,
-    results: finalizeResults(store, hits, limit, stalenessConfig()),
+    results: finalizeResults(store, win ? boostTimeWindow(hits, win) : hits, limit, stalenessConfig()),
   };
+}
+
+/**
+ * Notes matching ANY keyword, best first: one FTS5 OR query ranked by bm25 (a
+ * rare word weighs more than a common one), then scaled by the share of the
+ * keywords the note contains, so a note covering more of the question wins.
+ * Measured against the old per-keyword RRF on LongMemEval-S / LoCoMo-10: see
+ * docs/BENCHMARK.md.
+ */
+export function anyKeywordHits(
+  store: Store,
+  keywords: string[],
+  limit: number,
+  opts: Parameters<Store["searchRanked"]>[1]
+): Array<{ note: NoteRecord; score: number }> {
+  if (keywords.length === 0) return [];
+  return store
+    .searchRanked(keywords.join(" "), { ...opts, limit, anyTerm: true })
+    // Floor the coverage: an FTS match the text scan misses (an odd tokenisation) still counts as one keyword.
+    .map((h) => ({ note: h.note, score: h.score * Math.max(keywordCoverage(h.note, keywords), 1 / keywords.length) }))
+    .sort((a, b) => b.score - a.score);
 }
 
 /**
@@ -723,8 +850,8 @@ async function runRelevantSearchInner(
  * ("what did I decide about the deploy region?") rarely matches anything:
  * LongMemEval-S session recall@5 was 11.9% that way vs 95.3% matching any
  * keyword. When the all-terms search leaves room under `limit` and the query
- * has two or more keywords, top it up with any-keyword hits, fused like
- * state_relevant. All-terms hits keep their own scores and always rank first;
+ * has at least one keyword, top it up with any-keyword hits (anyKeywordHits,
+ * as state_relevant). All-terms hits keep their own scores and always rank first;
  * fallback hits score below the weakest of them.
  */
 export function keywordWithFallback(
@@ -735,31 +862,44 @@ export function keywordWithFallback(
 ): Array<{ note: NoteRecord; score: number }> {
   const strict = store.searchRanked(query, { ...opts, limit });
   const keywords = extractKeywords(query);
-  if (strict.length >= limit || keywords.length < 2) return strict;
+  // One keyword is enough: "when did we go camping" has stop words the all-words search also requires.
+  if (strict.length >= limit || keywords.length === 0) return strict;
+  // The query is just that one word: the any-keyword search would repeat the all-words one.
+  if (keywords.length === 1 && query.trim().toLowerCase() === keywords[0]) return strict;
   const seen = new Set(strict.map((h) => h.note.id));
-  const byId = new Map<number, NoteRecord>();
-  const counts = new Map<number, number>();
-  const lists: number[][] = [];
-  for (const kw of keywords) {
-    const ids: number[] = [];
-    for (const h of store.searchRanked(kw, { ...opts, limit })) {
-      if (seen.has(h.note.id)) continue;
-      ids.push(h.note.id);
-      byId.set(h.note.id, h.note);
-      counts.set(h.note.id, (counts.get(h.note.id) ?? 0) + 1);
-    }
-    lists.push(ids);
-  }
-  // RRF scores are on another scale than bm25: map them under half the
-  // weakest all-terms score so finalize's small boosts cannot lift a partial
-  // match above a full one.
-  const floor = strict.length ? Math.min(...strict.map((h) => h.score)) : 1;
-  const loose = [...rrfScores(lists).entries()]
-    .map(([id, rrf]) => ({ note: byId.get(id)!, score: rrf * (counts.get(id) ?? 1) }))
-    .sort((a, b) => b.score - a.score)
+  const loose = anyKeywordHits(store, keywords, limit + strict.length, opts)
+    .filter((h) => !seen.has(h.note.id))
     .slice(0, limit - strict.length);
-  const top = loose.length ? loose[0].score : 1;
+  // bm25 scores of the partial matches sit under half the weakest all-terms
+  // score so finalize's small boosts cannot lift a partial match above a full one.
+  const floor = strict.length ? Math.min(...strict.map((h) => h.score)) : 1;
+  const top = loose.length && loose[0].score > 0 ? loose[0].score : 1; // never divide by 0
   return [...strict, ...loose.map((h) => ({ note: h.note, score: (floor * 0.5 * h.score) / top }))];
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+/** Lower-case and drop accents, as FTS5's unicode61 tokenizer does ("resume" matches "Résumé"). */
+const fold = (s: string): string => s.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase();
+
+/**
+ * Share of the keywords a note contains, each matched as a prefix at a word
+ * start, like the FTS query ("paint" counts in "painting", "aint" does not).
+ * Plain indexOf scans: about 10x faster than one Unicode regex on short notes.
+ */
+export function keywordCoverage(note: NoteRecord, keywords: string[]): number {
+  const bare = [...new Set(keywords.map((k) => fold(k.replace(/^#/, ""))).filter(Boolean))];
+  if (bare.length === 0) return 0;
+  const text = fold(`${note.title} ${note.body} ${note.tags.join(" ")}`);
+  let hit = 0;
+  for (const k of bare) {
+    for (let i = text.indexOf(k); i !== -1; i = text.indexOf(k, i + 1)) {
+      if (i === 0 || !WORD_CHAR.test(text[i - 1])) {
+        hit++;
+        break;
+      }
+    }
+  }
+  return hit / bare.length;
 }
 
 // The public entry points. A caller that opted in with includeDistrusted gets

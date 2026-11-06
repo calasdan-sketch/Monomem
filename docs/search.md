@@ -50,9 +50,27 @@ Supported phrases (case-insensitive, found anywhere in the string, so
 Day boundaries are computed in your timezone: set `MONOMEM_TIMEZONE`
 (e.g. `America/Winnipeg`, default: the host's system timezone). Invalid names fall back to UTC.
 
+## Time travel (`--as-of`)
+
+`monomem search "deploy region" --as-of 7d` shows memory as it stood then (an ISO time, `2h`, `2026-10-01`). `monomem relevant ... --as-of` is the same flag on the same code, so the two read alike. With no words it lists the notes. Add `--json` for machine output. Times are printed in your local time with the UTC offset. `monomem why` and `monomem receipts` print times the same way. JSON output and MCP replies keep ISO 8601 times in UTC (`2026-11-05T18:03:00.000Z`). The MCP tool `state_search` takes the same thing as `as_of`, for an admin token only: a past view brings back earlier versions (which can hold text that was taken out on purpose) and notes that were forgotten since, the same reason note history is admin-only. It only reads; nothing is written.
+
+Each hit shows a short snippet of the old text, an `[edited since]` marker when the note changed after that time, and `writer then:`. For old text the writer and version number come from the note's history (the same record `monomem why` reads), never from today's note. When history does not say, the line reads "writer then: not recorded" (in JSON and MCP the `written_by` and `rev` fields are left out and `writer_then` says "not recorded").
+
+It is rebuilt from what Monomem already keeps: creation time, the saved earlier versions (`note_history`), the replace log (`supersede_log`) and an archive log (`archive_log`). A note made after that time is absent. A note archived or replaced before it is hidden, unless it was restored or the replacement undone before it. A note edited since shows the version that was current then, without today's writer, confidence or attestation fields (history does not keep those). The header says how many notes were archived or replaced at that time and are not shown. Over MCP, `as_of` is admin-only.
+
+`archive_log` is a small table (note id, time, archived or restored; no text) filled by a database trigger on every archive, expiry or decay sweep, replace, restore and undo. It was added without a schema version change (created if missing when a writer opens the database). It starts when your database is first opened by this version (that first open, even to read, writes the table and trigger once; later opens write nothing); the header line says since when. Before that, an archive followed by a restore is not known and the note shows as live. Deleting a note deletes its rows.
+
+What it cannot do, and says so:
+
+- A version that was pruned (default: 20 kept per note) or purged is gone. That note is listed as "text from that time not kept" and counted in the header. The newer text is never shown in its place.
+- A note deleted for good (hard delete) is not shown. No text survives a hard delete.
+- Only text changes make history. Tag or source edits are not reconstructed, and a note whose only later change was such an edit has no recorded writer for the old text. If history was switched off (`MONOMEM_HISTORY_VERSIONS=0`), an edited note is "not kept".
+- Search at a past time scores the rebuilt notes with the keyword scorer (share of your words found, newest first on ties). It does not use the search index, which only holds today's text, and has no semantic ranking, time phrases or writer filters.
+
 ## Relevant-memory search
 
-Don't know the exact wording? `state_relevant` takes a natural conversational
+Don't know the exact wording? `state_search` with `mode: "relevant"` (or the
+separate `state_relevant` tool, which is no longer registered by default) takes a natural conversational
 message, extracts keywords from it (lowercase, stop-words removed, hashtags
 like `#status` kept as-is), and returns notes matching **any** of them —
 a deliberately permissive OR search, unlike `state_search`'s AND conjunction.
@@ -60,7 +78,8 @@ Results rank by most keyword hits first, then newest. The extracted keywords
 are returned alongside the results so you can see what was searched.
 
 ```
-state_relevant({ message: "what did we decide about the acme launch?" })
+state_search({ query: "what did we decide about the acme launch?", mode: "relevant" })
+# same as state_relevant({ message: "..." }); `when`, `explain` and `include_superseded` do not apply
 # -> { keywords: ["decide", "acme", "launch"], results: [...] }
 ```
 

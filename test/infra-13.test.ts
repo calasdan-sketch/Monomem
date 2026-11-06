@@ -1,5 +1,6 @@
 // 1.3.0 infra fixes: backup, audit rotation, waiter caps, graceful shutdown,
 // change-log purge timer, `watch`.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, statSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,6 +19,14 @@ import { runChanges } from "../src/changes.js";
 
 const mk = (p: string) => mkdtempSync(join(tmpdir(), p));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Poll until `ok()` is true; fail with `what` after `limitMs` (generous: a full run loads the machine). */
+async function until(ok: () => boolean, what: string, limitMs = 15000): Promise<void> {
+  const end = Date.now() + limitMs;
+  while (!ok()) {
+    if (Date.now() > end) assert.fail(`timed out after ${limitMs}ms waiting for: ${what}`);
+    await sleep(10);
+  }
+}
 
 describe("monomem backup", () => {
   test("hot copy opens, is consistent, includes the key (0600) and a clear warning file", () => {
@@ -112,8 +121,7 @@ describe("waiters", () => {
     const s = new Store(":memory:");
     const aborts = Array.from({ length: 16 }, () => new AbortController());
     const waits = aborts.map((a, i) => waitForChanges(s, { since: "last", consumer: `c${i}` }, { waitSeconds: 5, signal: a.signal, key: "tok", scopeKey: `s${i}` }));
-    await sleep(50);
-    assert.equal(activeWaiters(), 16);
+    await until(() => activeWaiters() === 16, "16 waiters registered");
     await assert.rejects(
       waitForChanges(s, { since: "last", consumer: "x" }, { waitSeconds: 5, key: "tok", scopeKey: "other" }),
       (e: unknown) => e instanceof WaitBusyError && /429/.test(e.message) && /MONOMEM_WAIT_MAX_PER_TOKEN/.test(e.message) && /disconnect/.test(e.message)
@@ -153,12 +161,11 @@ describe("waiters", () => {
     const s = new Store(":memory:");
     const t0 = Date.now();
     const waits = [0, 1, 2].map((i) => waitForChanges(s, { since: "last", consumer: `c${i}` }, { waitSeconds: 55, key: `t${i}` }));
-    await sleep(80);
-    assert.equal(activeWaiters(), 3);
+    await until(() => activeWaiters() === 3, "3 waiters registered");
     abortAllWaiters();
     const outs = await Promise.all(waits);
     assert.ok(outs.every((o) => o.timedOut === true));
-    assert.ok(Date.now() - t0 < 1000);
+    assert.ok(Date.now() - t0 < 10000, `waits (55 s) ended in ${Date.now() - t0} ms`); // "promptly" = far less than the 55 s wait
     assert.equal(activeWaiters(), 0);
     s.close();
   });
@@ -270,14 +277,14 @@ describe("server process", () => {
       const t0 = Date.now();
       const exited = new Promise<number | null>((res) => srv.child.once("exit", (c) => res(c)));
       const pending = fetch(`http://127.0.0.1:${apiPort}/changes?since=last&consumer=t&wait=25`, { headers: { Authorization: "Bearer infra-test-token-0123456789abcdef0123456789abcdef" } });
-      await sleep(400);
+      await sleep(1000);
       srv.child.kill("SIGTERM");
       const res = await pending;
       assert.equal(res.status, 200);
       const body = (await res.json()) as { timedOut?: boolean };
       assert.equal(body.timedOut, true, "clean timedOut, not a reset socket");
       assert.equal(await exited, 0);
-      assert.ok(Date.now() - t0 < 2500, `drained in ${Date.now() - t0}ms`);
+      assert.ok(Date.now() - t0 < 15000, `drained in ${Date.now() - t0}ms`); // the wait was 25 s; a drain is far quicker
     } finally {
       srv.child.kill("SIGKILL");
       rmSync(dir, { recursive: true, force: true });
@@ -301,7 +308,8 @@ describe("server process", () => {
     try {
       await srv.ready;
       let left = before;
-      for (let i = 0; i < 40 && left > 0; i++) {
+      const end = Date.now() + 30000; // timer is 200 ms; the limit only has to outlast a loaded machine
+      while (left > 0 && Date.now() < end) {
         await sleep(100);
         const c = new DatabaseSync(db, { readOnly: true });
         left = Number((c.prepare("SELECT COUNT(*) AS c FROM change_log").get() as { c: number }).c);

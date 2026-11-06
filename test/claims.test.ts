@@ -16,6 +16,7 @@
 // shipped file must be derived from the code, not asserted beside it. A claim
 // that cannot name its check does not ship.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
@@ -61,7 +62,7 @@ describe("tool-surface claims match the registered tools", () => {
 
   test("the docs' tool count is the real tool count", () => {
     assert.ok(registered.length >= 20, "sanity: the regex should find the tools");
-    const words: Record<number, string> = { 28: "twenty-eight", 30: "thirty", 32: "thirty-two", 34: "thirty-four" };
+    const words: Record<number, string> = { 28: "twenty-eight", 30: "thirty", 32: "thirty-two", 33: "thirty-three", 34: "thirty-four", 35: "thirty-five" };
     const arch = read("docs/architecture.md");
     const claimed = Object.entries(words).find(([, w]) => arch.includes(`with ${w} tools`));
     assert.ok(claimed, "docs/architecture.md should state the tool count in words");

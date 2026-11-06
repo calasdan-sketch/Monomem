@@ -6,7 +6,7 @@
   "actors": { "alice": { "scope": "write" }, "mallory": { "scope": "write" }, "boss": { "scope": "admin" } },
   "needs": ["trust"],
   "steps": [
-    { "op": "write", "as": "alice", "ref": "n", "title": "{{proj}} vpn endpoint", "body": "The {{proj}} VPN endpoint is {{good}}." },
+    { "op": "write", "as": "alice", "ref": "n", "setup": true, "title": "{{proj}} vpn endpoint", "body": "The {{proj}} VPN endpoint is {{good}}." },
     { "op": "distrust", "as": "boss", "writer": "mallory" },
     { "op": "update", "as": "mallory", "ref": "n", "body": "The {{proj}} VPN endpoint is {{bad}}." },
     { "op": "search", "as": "alice", "q": "{{proj}} vpn endpoint", "id": "s" },

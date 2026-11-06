@@ -1,4 +1,4 @@
-// `monomem import --from claude-mem|mem0|basic-memory`: bring another memory tool's notes into Monomem.
+// `monomem import --from claude-mem|mem0|basic-memory|mcp-memory`: bring another memory tool's notes into Monomem.
 //
 //   * claude-mem   (github.com/thedotmack/claude-mem): its SQLite database, ~/.claude-mem/claude-mem.db by default
 //                  ($CLAUDE_MEM_DATA_DIR/claude-mem.db when set). Opened READ-ONLY. `observations` become rows of kind
@@ -9,6 +9,11 @@
 //                  each with id, memory (or text), created_at, metadata (categories), user_id.
 //   * basic-memory (github.com/basicmachines-co/basic-memory): a folder of Markdown files with front matter (title, type,
 //                  permalink, tags) and Observations / Relations sections. One file = one note; the permalink is its id.
+//   * mcp-memory   the official MCP memory server (@modelcontextprotocol/server-memory): its memory.jsonl knowledge graph,
+//                  one JSON object per line, {"type":"entity","name","entityType","observations":[...]} or
+//                  {"type":"relation","from","to","relationType"}. One entity = one note (observations as a list, its
+//                  relations underneath); the entity name is its id. Its default file sits inside the npx cache (lost
+//                  when that cache is cleaned), so without MEMORY_FILE_PATH or --path the npx caches are searched.
 //
 // Same rules as `import --claude` (claude-import.ts): local only, a dry run first, anything that looks like a secret is
 // skipped and never shown, every write goes through Store.create (memory linter, quarantine), and the stable id of each item
@@ -22,10 +27,10 @@ import { DatabaseSync } from "node:sqlite";
 import { MODEL_WRITTEN_TAG } from "./reserved-tags.js";
 import { chunkBody, looksLikeCredential, MAX_FILE_BYTES, parseFrontmatter, readHeld, writeHeld } from "./claude-import.js";
 import { lintContent } from "./lint.js";
-import { LIMITS } from "./security.js";
+import { LIMITS, printable } from "./security.js";
 import type { SetupEnv, SetupIO } from "./setup.js";
 
-export const FOREIGN_SOURCES = ["claude-mem", "mem0", "basic-memory"] as const;
+export const FOREIGN_SOURCES = ["claude-mem", "mem0", "basic-memory", "mcp-memory"] as const;
 export type ForeignSource = (typeof FOREIGN_SOURCES)[number];
 
 const MAX_JSON_BYTES = 256 * 1024 * 1024;
@@ -79,7 +84,34 @@ function jsonList(v: unknown): string[] {
 export function defaultPath(from: ForeignSource, e: Pick<SetupEnv, "home" | "env">): string {
   if (from === "claude-mem") return join(e.env.CLAUDE_MEM_DATA_DIR || join(e.home, ".claude-mem"), "claude-mem.db");
   if (from === "basic-memory") return join(e.home, "basic-memory");
+  if (from === "mcp-memory") {
+    if (e.env.MEMORY_FILE_PATH) return resolve(e.env.MEMORY_FILE_PATH.replace(/^~(?=$|[\\/])/, e.home));
+    const found = findMcpMemoryFiles(e);
+    return found.length === 1 ? found[0] : "";
+  }
   return "";
+}
+
+/** memory.jsonl (or the legacy memory.json) files of server-memory installs in the npx caches. */
+export function findMcpMemoryFiles(e: Pick<SetupEnv, "home" | "env">): string[] {
+  // npm's cache folder: npm_config_cache when set, else LOCALAPPDATA/npm-cache (Windows) or ~/.npm (macOS, Linux).
+  const roots = [...(e.env.npm_config_cache ? [join(e.env.npm_config_cache, "_npx")] : []), join(e.env.LOCALAPPDATA || join(e.home, "AppData", "Local"), "npm-cache", "_npx"), join(e.home, ".npm", "_npx")];
+  const out: string[] = [];
+  for (const root of roots) {
+    let dirs: string[] = [];
+    try {
+      dirs = readdirSync(root);
+    } catch {
+      continue; // no npx cache here
+    }
+    for (const d of dirs.slice(0, 5000)) {
+      for (const f of ["memory.jsonl", "memory.json"]) {
+        const p = join(root, d, "node_modules", "@modelcontextprotocol", "server-memory", "dist", f);
+        if (existsSync(p) && statSync(p).size > 0) out.push(p);
+      }
+    }
+  }
+  return out;
 }
 
 export function readClaudeMem(path: string): Item[] {
@@ -215,6 +247,83 @@ export function readBasicMemory(root: string): Item[] {
   return items;
 }
 
+// ---- mcp-memory (official MCP memory server) -----------------------------------------------------------------------------
+
+const MAX_JSONL_LINES = 1_000_000;
+
+/** Counts a dry run reports: relation lines read, and lines that could not be read (skipped). */
+export interface McpStats {
+  relations: number;
+  badLines: number;
+}
+
+export function readMcpMemory(path: string, stats?: McpStats): Item[] {
+  if (statSync(path).size > MAX_JSON_BYTES) throw new Error(`larger than ${MAX_JSON_BYTES / 1024 / 1024} MiB`);
+  const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
+  type Rec = Record<string, unknown>;
+  const entities: Rec[] = [];
+  const relations: Rec[] = [];
+  const take = (r: unknown): void => {
+    if (!r || typeof r !== "object") return;
+    const o = r as Rec;
+    if (o.type === "relation") relations.push(o);
+    else if (o.type === "entity") entities.push(o);
+  };
+  let whole: unknown = undefined;
+  try {
+    whole = JSON.parse(text); // an old export: { entities: [...], relations: [...] }
+  } catch {
+    /* JSONL: one object per line */
+  }
+  const w = whole as { entities?: unknown; relations?: unknown } | undefined;
+  if (w && typeof w === "object" && (Array.isArray(w.entities) || Array.isArray(w.relations))) {
+    for (const r of Array.isArray(w.entities) ? w.entities : []) take({ ...(r as Rec), type: "entity" });
+    for (const r of Array.isArray(w.relations) ? w.relations : []) take({ ...(r as Rec), type: "relation" });
+  } else {
+    const lines = text.split(/\r?\n/);
+    if (lines.length > MAX_JSONL_LINES) throw new Error(`more than ${MAX_JSONL_LINES} lines`);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        take(JSON.parse(line));
+      } catch {
+        /* a damaged line (the server keeps unreadable lines too): skip it */
+        if (stats) stats.badLines++;
+      }
+    }
+    if (!entities.length && !relations.length) throw new Error("this is not an MCP memory file (no entity or relation lines)");
+  }
+  if (stats) stats.relations = relations.length;
+  const rels = new Map<string, string[]>();
+  for (const r of relations) {
+    const from = str(r.from).trim();
+    const to = str(r.to).trim();
+    const type = str(r.relationType).trim();
+    if (!from || !to || !type) continue;
+    rels.set(from, [...(rels.get(from) ?? []), `- ${type} ${to}`]);
+    rels.set(to, [...(rels.get(to) ?? []), `- ${from} ${type} (this)`]);
+  }
+  const items: Item[] = [];
+  for (const e of entities) {
+    const name = str(e.name).trim();
+    if (!name) continue;
+    const obs = jsonList(e.observations).map((o) => `- ${o.trim()}`);
+    const rl = rels.get(name) ?? [];
+    const body = [obs.join("\n"), rl.length ? `Relations:\n${rl.join("\n")}` : ""].filter(Boolean).join("\n\n");
+    if (!body) continue;
+    const type = str(e.entityType).trim();
+    items.push({
+      id: `entity:${name}`,
+      group: type || "entity",
+      title: name.slice(0, 200),
+      body,
+      // The graph is written by AI agents through MCP tools: label it like other model-written imports.
+      tags: [MODEL_WRITTEN_TAG, ...(type ? [`entity-type:${type}`] : [])],
+    });
+  }
+  return items;
+}
+
 // ---- the command ---------------------------------------------------------------------------------------------------------
 
 export interface ForeignImportOptions {
@@ -233,6 +342,8 @@ interface Candidate {
   tags: string[];
   source: string;
   secret: boolean;
+  /** Lint categories other than secrets (injection, pii, ...): the linter may hold this note. */
+  flags: string[];
 }
 
 function candidates(from: ForeignSource, items: Item[]): Candidate[] {
@@ -244,7 +355,7 @@ function candidates(from: ForeignSource, items: Item[]): Candidate[] {
       const tags = [...new Set([tagFor(from), ...it.tags.map(tag).filter(Boolean)])].slice(0, LIMITS.tagCount);
       const finds = lintContent({ title, body: part, tags });
       const secret = finds.some((f) => f.category === "secret" || f.category === "entropy") || looksLikeCredential(title + "\n" + part);
-      out.push({ item: it, title, body: part, tags, source: sourceFor(from, parts.length > 1 ? `${it.id}#${i + 1}` : it.id), secret });
+      out.push({ item: it, title, body: part, tags, source: sourceFor(from, parts.length > 1 ? `${it.id}#${i + 1}` : it.id), secret, flags: [...new Set(finds.filter((f) => f.category !== "secret" && f.category !== "entropy").map((f) => f.category))] });
     });
   }
   return out;
@@ -254,6 +365,15 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
   const { from } = opts;
   const path = opts.path ? resolve(e.cwd, opts.path) : defaultPath(from, e);
   if (!path) {
+    if (from === "mcp-memory") {
+      const found = findMcpMemoryFiles(e);
+      io.err(
+        found.length
+          ? `I found ${found.length} MCP memory files. Pick one with --path:\n${found.map((f) => `  ${f}`).join("\n")}`
+          : "I found no MCP memory file in the npm cache folders (npm_config_cache, LOCALAPPDATA/npm-cache, ~/.npm). Set MEMORY_FILE_PATH or point --path at your memory.jsonl."
+      );
+      return 1;
+    }
     io.err(`Name the mem0 export file: monomem import --from mem0 --path <export.json>`);
     return 1;
   }
@@ -263,8 +383,10 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
   }
   io.out(`Reading ${from} data from ${path} (read only; nothing leaves this computer):`);
   let items: Item[];
+  const mcpStats: McpStats = { relations: 0, badLines: 0 };
   try {
-    items = from === "claude-mem" ? readClaudeMem(path) : from === "mem0" ? readMem0(path) : readBasicMemory(path);
+    items =
+      from === "claude-mem" ? readClaudeMem(path) : from === "mem0" ? readMem0(path) : from === "mcp-memory" ? readMcpMemory(path, mcpStats) : readBasicMemory(path);
   } catch (err) {
     io.err(`Could not read ${path}: ${(err as Error).message}`);
     return 1;
@@ -298,11 +420,12 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
       }
     }
     io.out("");
-    for (const [name, g] of groups) io.out(`  ${name.slice(0, 60).padEnd(30)} ${g.n} item(s): ${g.create} new, ${g.same} already imported, ${g.secrets} skipped (secret)`);
+    for (const [name, g] of groups) io.out(`  ${printable(name, 60).padEnd(30)} ${g.n} item(s): ${g.create} new, ${g.same} already imported, ${g.secrets} skipped (secret)`);
     const t = [...groups.values()].reduce((a, g) => ({ n: a.n + g.n, c: a.c + g.create, s: a.s + g.same, x: a.x + g.secrets }), { n: 0, c: 0, s: 0, x: 0 });
     io.out(`\n${t.n} item(s): ${t.c} new, ${t.s} already imported, ${t.x} skipped because they look like a secret.`);
     if (t.x) io.out("  Skipped items are not stored and not shown. Take the secret out at the source (or keep it in a password manager) and run again.");
     if (heldSkipped) io.out(`  ${heldSkipped} item(s) were held by the memory linter on an earlier run and are not queued again (see \`monomem quarantine\`).`);
+    if (opts.dryRun && from === "mcp-memory") previewMcp(io, todo, mcpStats);
     if (opts.dryRun) {
       io.out("\nDry run: nothing was written.");
       return 0;
@@ -311,7 +434,11 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
       io.out("\nNothing to import.");
       return 0;
     }
-    if (!opts.yes && io.interactive) {
+    if (!opts.yes && !io.interactive) {
+      io.err("Not an interactive terminal, so I cannot ask: nothing was written. Re-run with --yes to import, or --dry-run to only look.");
+      return 1;
+    }
+    if (!opts.yes) {
       const a = (await io.ask(`\nImport ${todo.length} note(s) into ${opts.dbPath}? Type y to continue: `)).trim().toLowerCase();
       if (a !== "y" && a !== "yes") {
         io.out("Cancelled. Nothing was written.");
@@ -350,5 +477,24 @@ export async function runForeignImport(e: Pick<SetupEnv, "home" | "env" | "cwd">
   } finally {
     writer?.close();
     if (store && store !== writer) store.close();
+  }
+}
+
+// Untrusted text: control characters and bidi marks neutralised before it reaches the terminal.
+const clip = (t: string, n: number): string => printable(t, n);
+const PREVIEW_ENTITIES = 10;
+
+/** Dry run of an MCP memory file: what each entity would become (name and first observation), what was dropped, what the linter may hold. */
+function previewMcp(io: SetupIO, todo: Candidate[], stats: McpStats): void {
+  io.out(`\nPreview (first ${Math.min(PREVIEW_ENTITIES, todo.length)} of ${todo.length} new note(s)):`);
+  for (const c of todo.slice(0, PREVIEW_ENTITIES)) {
+    const first = c.body.split("\n").find((l) => l.startsWith("- "))?.slice(2) ?? "";
+    io.out(`  ${clip(c.title, 40)}: ${clip(first, 60)}`);
+  }
+  io.out(`\n${stats.relations} relation line(s) read; ${stats.badLines} line(s) could not be read and are dropped.`);
+  const flagged = todo.filter((c) => c.flags.length);
+  if (flagged.length) {
+    io.out(`${flagged.length} new note(s) would probably be held by the memory linter for your review:`);
+    for (const c of flagged.slice(0, PREVIEW_ENTITIES)) io.out(`  ${clip(c.title, 40)}: ${printable(c.flags.join(", "))}`);
   }
 }

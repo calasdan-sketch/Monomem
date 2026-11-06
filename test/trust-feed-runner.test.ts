@@ -1,6 +1,7 @@
 // 1.4.0 feed filters (event vs note writer, indexed), per-target runner status,
 // the early return in the catch_up / recall notice, the module split that
 // removed the tasks <-> liveness import cycle, and the delete / merge rules.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

@@ -7,6 +7,7 @@
 //     and deletes are all captured).
 //  4  approving a held update is pinned to the rev it was judged against.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -64,7 +65,7 @@ describe("1: change-feed cursor + marker integrity", () => {
       const keys = (db.prepare("SELECT key FROM _meta").all() as Array<{ key: string }>).map((r) => r.key);
       db.close();
       for (const k of keys) {
-        assert.ok(["store_uuid", "feed_key", "edge_threshold", "labels_clean_v1", "attest_key_id"].includes(k) || k.startsWith("changes_seen:"), k);
+        assert.ok(["store_uuid", "feed_key", "edge_threshold", "labels_clean_v1", "attest_key_id", "archive_log_since"].includes(k) || k.startsWith("changes_seen:"), k);
       }
       const s2 = new Store(path);
       assert.equal(s2.storeId(), uuid);

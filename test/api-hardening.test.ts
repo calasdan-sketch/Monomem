@@ -2,6 +2,7 @@
 // generic 500), /export is exempt from the response-size cap so a grown store
 // can still be backed up, /ready reports DB health, and the audit log records
 // operations WITHOUT note content.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

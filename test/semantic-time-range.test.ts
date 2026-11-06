@@ -8,6 +8,7 @@
 // positives. The fix pushes the window into the vector SQL
 // (notes.created_at >= ? AND notes.created_at < ?), so the ranking is
 // computed within the window.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { DatabaseSync } from "node:sqlite";

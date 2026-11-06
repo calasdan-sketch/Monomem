@@ -104,6 +104,8 @@ export interface WriteInput {
   forget_after?: number;
   /** A tenant the caller CLAIMS to be writing into. A system that confines the caller must ignore it. */
   namespace?: string;
+  /** Scenario setup (the honest "before" state), not part of the attack. `monomem drill` seeds it as the operator, so a store-wide approve-first does not hold it. */
+  setup?: boolean;
 }
 
 export interface UpdateInput {
@@ -149,6 +151,12 @@ export type Capability =
 export interface MemoryAdapter {
   readonly name: string;
   readonly capabilities: ReadonlySet<Capability>;
+  /**
+   * The note fields this system can ever report (see BenchNote). Omit when it can report all of them. A `field` or
+   * `recoverable` check on a field outside this set is judged UNSUPPORTED (neither passed nor failed), so a system is
+   * never failed for lacking a concept it does not claim (for example a server-stamped writer).
+   */
+  readonly fields?: ReadonlySet<keyof BenchNote>;
 
   /** Start a FRESH store for one scenario and create the actors. Must not touch anything that already exists. */
   open(world: WorldSpec): Promise<void>;
@@ -320,6 +328,8 @@ export interface CheckResult {
   pass: boolean;
   expected: string;
   actual: string;
+  /** The adapter could not be judged on this check (an operation it returned "unsupported" for, or a field it lacks). */
+  unsupported?: boolean;
   /** Raw yes/no measurements a `fresh_answer` or `recoverable` check feeds into the suite numbers. */
   measure?: Record<string, boolean>;
 }
@@ -337,4 +347,6 @@ export interface ScenarioResult {
   skipped_reason?: string;
   checks: CheckResult[];
   error?: string;
+  /** The run stopped because a write was held for review (approve-first), so a later step had nothing to act on. For `monomem drill` that means held. */
+  held?: true;
 }

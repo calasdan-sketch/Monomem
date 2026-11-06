@@ -1,6 +1,7 @@
 // Retention: per-note TTL (forget_after -> expires_at), the expiry sweep,
 // soft-archive/restore, and the guarantee that archived notes drop out of
 // list/search/recall but stay on disk and are restorable.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

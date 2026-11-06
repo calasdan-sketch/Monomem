@@ -1,0 +1,1924 @@
+{
+  "tool": "monomem-bench",
+  "version": "1.1.1",
+  "adapter": "mem0-noinfer",
+  "seed": 1,
+  "ok": false,
+  "summary": {
+    "scenarios": 127,
+    "pass": 5,
+    "fail": 12,
+    "known_gap": 0,
+    "gap_closed": 0,
+    "skipped": 110,
+    "checks": 53,
+    "checks_failed": 22
+  },
+  "suites": {
+    "stale": {
+      "scenarios": 32,
+      "pass": 4,
+      "fail": 4,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 24,
+      "metrics": {
+        "queries": 6,
+        "stale-hit-rate@1": {
+          "count": 0,
+          "of": 6,
+          "rate": 0
+        },
+        "stale-hit-rate@5": {
+          "count": 0,
+          "of": 6,
+          "rate": 0
+        },
+        "unflagged-stale-hit-rate@5": {
+          "count": 0,
+          "of": 6,
+          "rate": 0
+        },
+        "current-recall@1": {
+          "count": 5,
+          "of": 5,
+          "rate": 1
+        }
+      }
+    },
+    "contradiction": {
+      "scenarios": 31,
+      "pass": 0,
+      "fail": 0,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 31,
+      "metrics": {
+        "resolved-to-correction": {
+          "checks": 0,
+          "failed": 0
+        },
+        "loser-stays-visible-with-provenance": {
+          "checks": 0,
+          "failed": 0
+        },
+        "silent-overwrite-protection": {
+          "checks": 0,
+          "failed": 0
+        }
+      }
+    },
+    "isolation": {
+      "scenarios": 27,
+      "pass": 0,
+      "fail": 0,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 27,
+      "metrics": {
+        "leakage-count": 0,
+        "leak-probes": 0,
+        "unexpected-denials": 0,
+        "allowed-probes": 0
+      }
+    },
+    "provenance": {
+      "scenarios": 19,
+      "pass": 0,
+      "fail": 0,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 19,
+      "metrics": {
+        "fields-checked": 0,
+        "fields-lost": 0,
+        "fields-kept-only-as-unverified-claim": 0
+      }
+    },
+    "poison": {
+      "scenarios": 18,
+      "pass": 1,
+      "fail": 8,
+      "known_gap": 0,
+      "gap_closed": 0,
+      "skipped": 9,
+      "metrics": {
+        "poison-probes": 14,
+        "poison-reach-count": 13
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "A01",
+      "suite": "stale",
+      "title": "A fact is corrected in place",
+      "what": "A note is written, then its body is edited to the new value. Searching must show the new value and must no longer find the old one.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "Searching the topic returns the note first, and nothing carries the old value",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the note now says the new value",
+          "check": "field",
+          "pass": true,
+          "expected": "body of n includes \"nerenife89\"",
+          "actual": "\"The rakokomu74 service deploys to region nerenife89.\""
+        },
+        {
+          "desc": "the old value can no longer be found by searching for it",
+          "check": "hit_count",
+          "pass": false,
+          "expected": "exactly 0 result(s)",
+          "actual": "1 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "A02",
+      "suite": "stale",
+      "title": "A fact is deleted",
+      "what": "A note is written and then deleted. A search for it must find nothing.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the admin can delete the note",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "The deleted value is not returned",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "no old value in the top 5 unless it is flagged stale",
+          "actual": "no results; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false
+          }
+        },
+        {
+          "desc": "no result at all",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "exactly 0 result(s)",
+          "actual": "0 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "A03",
+      "suite": "stale",
+      "title": "A deleted note cannot be read by id",
+      "what": "After a delete, asking for the note directly must say it does not exist (not return a leftover copy).",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "reading the deleted id says not found",
+          "check": "outcome",
+          "pass": true,
+          "expected": "not_found",
+          "actual": "not_found"
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "suite": "stale",
+      "title": "Newer note beats an old note that is flagged stale",
+      "what": "The old value sits in a note that is 200 days old; a newer note holds the current value. Search must put the current one first, or at least flag the old one as stale.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: restore",
+      "checks": []
+    },
+    {
+      "id": "A05",
+      "suite": "stale",
+      "title": "Newer note beats an unflagged old note",
+      "what": "Two notes about the same fact are both recent: the old value, then a newer note saying the value changed. The agent never edited the old one. Nothing says the first is out of date, so this checks whether search prefers the newer one. The agent replaces the old note with the newer one (preview, then confirm), so the old value stops coming up.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A06",
+      "suite": "stale",
+      "title": "Three versions written as three notes",
+      "what": "A value changes twice and each version is saved as a new note. Search should return the latest first and never show the two older ones unflagged. The agent replaces the two older versions with the latest (preview, then confirm).",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A07",
+      "suite": "stale",
+      "title": "Editing only the tags leaves the fact intact",
+      "what": "A partial update that touches only tags must not wipe or change the body, and must not change who last wrote the content.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" partly unsupported (3 of 4 checks judged, all passed); unsupported: a tag edit does not make the editor the author of the content",
+      "checks": [
+        {
+          "desc": "the body is unchanged",
+          "check": "field",
+          "pass": true,
+          "expected": "body = \"The relitori14 backup runs at datadade55 every night.\"",
+          "actual": "\"The relitori14 backup runs at datadade55 every night.\""
+        },
+        {
+          "desc": "a tag edit does not make the editor the author of the content",
+          "check": "field",
+          "pass": false,
+          "expected": "writer = \"alice\"",
+          "actual": "the adapter has no writer field",
+          "unsupported": true
+        },
+        {
+          "desc": "the new tags are there",
+          "check": "field",
+          "pass": true,
+          "expected": "tags includes \"ops\"",
+          "actual": "[\"ops\",\"mitovuzi33\"]"
+        },
+        {
+          "desc": "The note is still the first hit",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": false,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A08",
+      "suite": "stale",
+      "title": "Editing only the body keeps the title",
+      "what": "A partial update with just a new body must keep the title, and the old body text must disappear from search.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "the title is unchanged",
+          "check": "field",
+          "pass": true,
+          "expected": "title = \"mofireve77 on-call\"",
+          "actual": "\"mofireve77 on-call\""
+        },
+        {
+          "desc": "the body is the new one",
+          "check": "field",
+          "pass": true,
+          "expected": "body = \"On call this week: larudote38.\"",
+          "actual": "\"On call this week: larudote38.\""
+        },
+        {
+          "desc": "the old body text is not searchable any more",
+          "check": "hit_count",
+          "pass": false,
+          "expected": "exactly 0 result(s)",
+          "actual": "1 result(s)"
+        },
+        {
+          "desc": "The title still finds the note",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A09",
+      "suite": "stale",
+      "title": "Editing only the title drops the old title from search",
+      "what": "A partial update with just a new title: searching for a word that only the old title had must find nothing, while the body is untouched.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "the body is unchanged",
+          "check": "field",
+          "pass": true,
+          "expected": "body = \"Kickoff happens on bolafari13.\"",
+          "actual": "\"Kickoff happens on bolafari13.\""
+        },
+        {
+          "desc": "the old title word finds nothing",
+          "check": "hit_count",
+          "pass": false,
+          "expected": "exactly 0 result(s)",
+          "actual": "1 result(s)"
+        },
+        {
+          "desc": "the new title finds the note",
+          "check": "top",
+          "pass": true,
+          "expected": "first hit is n",
+          "actual": "first hit is n"
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "suite": "stale",
+      "title": "Near-duplicate wording, both fresh, old one edited",
+      "what": "The same fact was saved twice in different words. The agent corrects one of them in place and forgets the other. Search should not present the forgotten duplicate as the answer. The agent then replaces the forgotten duplicate with the corrected note (preview, then confirm).",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A11",
+      "suite": "stale",
+      "title": "Near-duplicate wording, old copy is 200 days old",
+      "what": "Old fact in one wording (200 days old), new fact in different wording. Search must rank the new one first or flag the old one.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: restore",
+      "checks": []
+    },
+    {
+      "id": "A12",
+      "suite": "stale",
+      "title": "Archived note disappears; restoring it brings it back",
+      "what": "Archiving is the soft way to retire a fact: it must leave search, and come back only on request.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: retire",
+      "checks": []
+    },
+    {
+      "id": "A13",
+      "suite": "stale",
+      "title": "A note past its deletion deadline is swept out",
+      "what": "A note carries a deletion deadline that has passed. After the sweep it must not be returned by search, but an admin can still list it as archived.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: restore, retire",
+      "checks": []
+    },
+    {
+      "id": "A14",
+      "suite": "stale",
+      "title": "Five edits in a row leave only the last value",
+      "what": "The same note is rewritten five times. Only the final value may be findable.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "Only the final value is in the note",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the body holds the fifth value",
+          "check": "field",
+          "pass": true,
+          "expected": "body of n includes \"vukafile64\"",
+          "actual": "\"Build number is vukafile64.\""
+        },
+        {
+          "desc": "an intermediate value is gone",
+          "check": "hit_count",
+          "pass": false,
+          "expected": "exactly 0 result(s)",
+          "actual": "1 result(s)"
+        },
+        {
+          "desc": "an intermediate value is gone",
+          "check": "hit_count",
+          "pass": false,
+          "expected": "exactly 0 result(s)",
+          "actual": "1 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "A15",
+      "suite": "stale",
+      "title": "Deleting the stale duplicate leaves the current note",
+      "what": "Old and new note both exist; the admin deletes the old one. Search returns only the new one.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Only the new code remains",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (new) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is new; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "exactly one result",
+          "check": "hit_count",
+          "pass": true,
+          "expected": "exactly 1 result(s)",
+          "actual": "1 result(s)"
+        }
+      ]
+    },
+    {
+      "id": "A16",
+      "suite": "stale",
+      "title": "A lone old note is returned but flagged",
+      "what": "Nothing replaced it, so it is still the best answer, but it is 200 days old. The system must say so.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: restore",
+      "checks": []
+    },
+    {
+      "id": "A17",
+      "suite": "stale",
+      "title": "Editing an old note clears the stale flag",
+      "what": "A 200-day-old note is confirmed and rewritten today. It must stop being flagged stale.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: restore",
+      "checks": []
+    },
+    {
+      "id": "A18",
+      "suite": "stale",
+      "title": "Twenty unrelated notes do not hide the current value",
+      "what": "Same as an in-place correction, but with 20 other notes in the store.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "Current value first with 20 other notes present",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "A19",
+      "suite": "stale",
+      "title": "A correction by a second writer replaces the first writer's value",
+      "what": "Alice writes a value, the admin edits it. The current value wins and the note shows the admin as the last writer.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" partly unsupported (1 of 3 checks judged, all passed); unsupported: the last writer is the one who made the correction; the first writer is still recorded",
+      "checks": [
+        {
+          "desc": "Current value first",
+          "check": "fresh_answer",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the last writer is the one who made the correction",
+          "check": "field",
+          "pass": false,
+          "expected": "writer = \"boss\"",
+          "actual": "the adapter has no writer field",
+          "unsupported": true
+        },
+        {
+          "desc": "the first writer is still recorded",
+          "check": "field",
+          "pass": false,
+          "expected": "creator = \"alice\"",
+          "actual": "the adapter has no creator field",
+          "unsupported": true
+        }
+      ]
+    },
+    {
+      "id": "A20",
+      "suite": "stale",
+      "title": "A fact written twice with different values, newest wins on tie",
+      "what": "Two notes with the very same title, the second written later with another value. A search on the title should put the later one first. The agent replaces the older note with the later one (preview, then confirm).",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A21",
+      "suite": "stale",
+      "title": "A preview changes nothing",
+      "what": "Asking 'are you sure?' must not touch anything. After a preview, both notes are still there, unchanged and unlabelled.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A22",
+      "suite": "stale",
+      "title": "A replacement needs a valid one-time code",
+      "what": "A made-up or damaged code must do nothing. The old note stays visible.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A23",
+      "suite": "stale",
+      "title": "A one-time code expires",
+      "what": "A code from a preview is only good for a short time. After that, confirming must be refused and nothing changes.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A24",
+      "suite": "stale",
+      "title": "A one-time code works only once",
+      "what": "After a replacement is confirmed, the same code cannot be used again.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A25",
+      "suite": "stale",
+      "title": "A note edited after the preview cannot be replaced by that preview",
+      "what": "If the old note changes between the preview and the confirm, the person saw something different from what would be hidden. The confirm must be refused.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A26",
+      "suite": "stale",
+      "title": "Undo brings a replaced note back",
+      "what": "Replacing is never a delete: the person can undo it and the old note comes back whole.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A27",
+      "suite": "stale",
+      "title": "A replaced note is shown only when asked for, and labelled",
+      "what": "Search and lists skip replaced notes by default. Asking for them shows them with a clear label and a link to the note that replaced them.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A28",
+      "suite": "stale",
+      "title": "Confirming with different text than previewed is refused",
+      "what": "The person approved one replacement text. A confirm that swaps in other text must be refused and write nothing.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A29",
+      "suite": "stale",
+      "title": "A confirmed replacement writes the new note under the person who confirmed",
+      "what": "When the replacement is new text, it is written at confirm time and stamped with the confirmer, and it comes first in search.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A30",
+      "suite": "stale",
+      "title": "Deleting still deletes",
+      "what": "Hard delete is unchanged: an admin can delete a replaced note for good.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A31",
+      "suite": "stale",
+      "title": "A replaced note cannot be edited until it is brought back",
+      "what": "A replaced note is frozen so nobody quietly rewrites something that is supposed to be out of sight.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "A32",
+      "suite": "stale",
+      "title": "Two notes can be replaced in one go",
+      "what": "One correction can retire several older notes at once, and the warning counts them.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "B01",
+      "suite": "contradiction",
+      "title": "Two writers disagree: both notes stay, each with its own writer",
+      "what": "Alice says X, Mallory says not-X, in separate notes. Neither is silently dropped, and each note says who wrote it.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" partly unsupported (2 of 4 checks judged, all passed); unsupported: Alice's note names Alice; Mallory's note names Mallory",
+      "checks": [
+        {
+          "desc": "Alice's note is returned",
+          "check": "has",
+          "pass": true,
+          "expected": "x is in the results",
+          "actual": "found at rank 1"
+        },
+        {
+          "desc": "Mallory's note is returned",
+          "check": "has",
+          "pass": true,
+          "expected": "nx is in the results",
+          "actual": "found at rank 2"
+        },
+        {
+          "desc": "Alice's note names Alice",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": false,
+          "expected": "writer of x = \"alice\"",
+          "actual": "the adapter has no writer field",
+          "unsupported": true
+        },
+        {
+          "desc": "Mallory's note names Mallory",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": false,
+          "expected": "writer of nx = \"mallory\"",
+          "actual": "the adapter has no writer field",
+          "unsupported": true
+        }
+      ]
+    },
+    {
+      "id": "B02",
+      "suite": "contradiction",
+      "title": "A trusted correction rewrites the disputed note",
+      "what": "Mallory overwrote the fact; the admin puts the right value back in the same note. The answer is the correction, written by the admin, and Mallory's hand stays on record.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" partly unsupported (1 of 4 checks judged, all passed); unsupported: the correction is credited to the admin; Mallory is still listed as a hand the content passed through; Alice is still listed too",
+      "checks": [
+        {
+          "desc": "The corrected value is the answer",
+          "check": "fresh_answer",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the correction is credited to the admin",
+          "check": "field",
+          "pass": false,
+          "expected": "writer = \"boss\"",
+          "actual": "the adapter has no writer field",
+          "unsupported": true
+        },
+        {
+          "desc": "Mallory is still listed as a hand the content passed through",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": false,
+          "expected": "taint includes \"mallory\"",
+          "actual": "the adapter has no taint field",
+          "unsupported": true
+        },
+        {
+          "desc": "Alice is still listed too",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": false,
+          "expected": "taint includes \"alice\"",
+          "actual": "the adapter has no taint field",
+          "unsupported": true
+        }
+      ]
+    },
+    {
+      "id": "B03",
+      "suite": "contradiction",
+      "title": "A trusted correction written as a new note",
+      "what": "Alice says X, Mallory says not-X, the admin adds a third note with the right value. The admin's note should come first and the two older ones should not look equally current. The admin replaces both disputed notes with the correction (preview, then confirm).",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "B04",
+      "suite": "contradiction",
+      "title": "Distrusting the bad writer restores the right answer",
+      "what": "After Mallory is put on the distrust list, an ordinary search shows only Alice's note. An admin can still see Mallory's note, marked, with her name on it.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "B05",
+      "suite": "contradiction",
+      "title": "Removing the distrust rule brings the note back",
+      "what": "Distrust is reversible: undistrusting the writer shows the note again.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "B06",
+      "suite": "contradiction",
+      "title": "A write token cannot switch the distrust list off for itself",
+      "what": "A hostile note could talk an agent into asking for hidden notes. Only an admin may ask.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "B07",
+      "suite": "contradiction",
+      "title": "A weak writer overwrites a trusted note: the change is visible",
+      "what": "Any write token can edit a note in its namespace (there is no per-note owner lock). What must hold: the edit is not silent. The note names the new writer and keeps the old one in its record.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" unsupported (no check could be judged); unsupported: the note now names the weak writer as the last writer; the original author is still named; the trusted writer stays in the record of hands",
+      "checks": [
+        {
+          "desc": "the note now names the weak writer as the last writer",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": false,
+          "expected": "writer = \"mallory\"",
+          "actual": "the adapter has no writer field",
+          "unsupported": true
+        },
+        {
+          "desc": "the original author is still named",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": false,
+          "expected": "creator = \"boss\"",
+          "actual": "the adapter has no creator field",
+          "unsupported": true
+        },
+        {
+          "desc": "the trusted writer stays in the record of hands",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": false,
+          "expected": "taint includes \"boss\"",
+          "actual": "the adapter has no taint field",
+          "unsupported": true
+        }
+      ]
+    },
+    {
+      "id": "B08",
+      "suite": "contradiction",
+      "title": "After a weak overwrite the trusted original text can be recovered",
+      "what": "A note is overwritten in place. An admin must be able to get the trusted original text back from the note's history.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: changes, export_import, history",
+      "checks": []
+    },
+    {
+      "id": "B09",
+      "suite": "contradiction",
+      "title": "Overwrite, then distrust the overwriter: the trusted answer comes back",
+      "what": "Mallory overwrote the admin's note. The admin distrusts Mallory and restores the earlier version from the note's history; agents then see the trusted value again.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust, history",
+      "checks": []
+    },
+    {
+      "id": "B10",
+      "suite": "contradiction",
+      "title": "A read-only token cannot rewrite a note",
+      "what": "The weakest token is refused, and the note is untouched.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" partly unsupported (1 of 2 checks judged, all passed); unsupported: the update is refused",
+      "checks": [
+        {
+          "desc": "the update is refused",
+          "check": "outcome",
+          "metric": "silent_overwrite",
+          "pass": false,
+          "expected": "denied",
+          "actual": "the adapter does not support this operation",
+          "unsupported": true
+        },
+        {
+          "desc": "the note is unchanged",
+          "check": "field",
+          "metric": "silent_overwrite",
+          "pass": true,
+          "expected": "body = \"Budget is tekebedo13.\"",
+          "actual": "\"Budget is tekebedo13.\""
+        }
+      ]
+    },
+    {
+      "id": "B11",
+      "suite": "contradiction",
+      "title": "A distrusted token cannot re-label a trusted note",
+      "what": "Mallory is distrusted but her token still works. She must not be able to edit the tags of a note she did not write (that would let her re-label trusted notes).",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "B12",
+      "suite": "contradiction",
+      "title": "A distrusted writer's overwrite never shows up as the answer",
+      "what": "Mallory is already distrusted and overwrites Alice's note with a lie. The lie must not be served to ordinary searches.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "B13",
+      "suite": "contradiction",
+      "title": "A trusted edit does not launder a distrusted note",
+      "what": "Mallory's note is rewritten by the admin. Because the text may still contain her words, the note stays hidden until the rule is removed (documented behaviour).",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "B14",
+      "suite": "contradiction",
+      "title": "A correction written after distrust becomes the answer",
+      "what": "Mallory's note is hidden by a distrust rule. The admin writes the right value as a new note: it is what searches return.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "B15",
+      "suite": "contradiction",
+      "title": "A merge cannot absorb a distrusted note into a trusted one",
+      "what": "Merging would hide the trusted text (the merged note carries every source's writers) and delete the trusted original. It must be refused.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust, merge",
+      "checks": []
+    },
+    {
+      "id": "B16",
+      "suite": "contradiction",
+      "title": "A stale edit is refused instead of overwriting a newer one",
+      "what": "Alice reads a note, Mallory changes it, then Alice saves her edit based on the old copy (compare-and-swap with the revision she saw). The server must refuse Alice's write instead of silently replacing Mallory's.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: cas",
+      "checks": []
+    },
+    {
+      "id": "B17",
+      "suite": "contradiction",
+      "title": "Two contradictory edits, then a trusted fix",
+      "what": "Alice writes X, Mallory flips it to not-X, the admin restores X. The final state is X and the record lists everyone who touched the content.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" partly unsupported (1 of 4 checks judged, all passed); unsupported: the admin is the last writer; Mallory is on record; Alice is on record",
+      "checks": [
+        {
+          "desc": "The restored value is the only one",
+          "check": "fresh_answer",
+          "metric": "resolution",
+          "pass": true,
+          "expected": "current value (n) ranked first; no old value in the top 5 unless it is flagged stale",
+          "actual": "first is n; old values in top 5: none",
+          "measure": {
+            "has_old_value": true,
+            "stale_at_1": false,
+            "stale_at_5": false,
+            "unflagged_stale_at_5": false,
+            "current_at_1": true
+          }
+        },
+        {
+          "desc": "the admin is the last writer",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": false,
+          "expected": "writer = \"boss\"",
+          "actual": "the adapter has no writer field",
+          "unsupported": true
+        },
+        {
+          "desc": "Mallory is on record",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": false,
+          "expected": "taint includes \"mallory\"",
+          "actual": "the adapter has no taint field",
+          "unsupported": true
+        },
+        {
+          "desc": "Alice is on record",
+          "check": "field",
+          "metric": "loser_visible",
+          "pass": false,
+          "expected": "taint includes \"alice\"",
+          "actual": "the adapter has no taint field",
+          "unsupported": true
+        }
+      ]
+    },
+    {
+      "id": "B18",
+      "suite": "contradiction",
+      "title": "An imported note cannot pose as the admin",
+      "what": "A note exported from another server claims it was written by 'boss'. After import it is stamped with the importer, flagged as unverified, and the claim is only a claim.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import",
+      "checks": []
+    },
+    {
+      "id": "B19",
+      "suite": "contradiction",
+      "title": "Distrusting a claimed writer hides their imported note",
+      "what": "An unverified import claims it came from Mallory. Putting Mallory on the distrust list hides it, because claimed names count as taint.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import, trust",
+      "checks": []
+    },
+    {
+      "id": "B20",
+      "suite": "contradiction",
+      "title": "Both disputing writers distrusted: no answer rather than a wrong one",
+      "what": "If every source of an answer is distrusted, searches return nothing; they must not fall back to showing either side.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "B21",
+      "suite": "contradiction",
+      "title": "A distrusted writer cannot replace a trusted note",
+      "what": "Replacing hides the original, so a writer the admin does not trust may not do it on their own.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede, trust",
+      "checks": []
+    },
+    {
+      "id": "B22",
+      "suite": "contradiction",
+      "title": "A less sure replacement needs an admin",
+      "what": "A new note that claims lower confidence than the one it would hide must not be able to hide it without an admin.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "B23",
+      "suite": "contradiction",
+      "title": "An admin can accept the red flag, but only on purpose",
+      "what": "For a less sure replacement, even an admin must say they accept the risk. Without that, the confirm is refused.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "B24",
+      "suite": "contradiction",
+      "title": "The warning names notes written by other people",
+      "what": "If a replacement hides someone else's note, the warning says so.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "B25",
+      "suite": "contradiction",
+      "title": "Restoring an earlier version makes a new version",
+      "what": "Restoring does not erase anything: the text it replaces goes into the history too.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: history",
+      "checks": []
+    },
+    {
+      "id": "B26",
+      "suite": "contradiction",
+      "title": "A version by a distrusted writer cannot be restored",
+      "what": "Putting text back by an untrusted writer would launder it, so restore refuses.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: history, trust",
+      "checks": []
+    },
+    {
+      "id": "B27",
+      "suite": "contradiction",
+      "title": "Only an admin can read a note's history",
+      "what": "Old text can hold what someone took out on purpose, so a normal writer cannot read it or restore from it.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: history",
+      "checks": []
+    },
+    {
+      "id": "B28",
+      "suite": "contradiction",
+      "title": "A restore made on an out-of-date copy is refused",
+      "what": "Restoring uses the same compare-and-swap rule as editing.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: history, cas",
+      "checks": []
+    },
+    {
+      "id": "B29",
+      "suite": "contradiction",
+      "title": "A code made for one person is useless to another",
+      "what": "Alice's confirmation code must not work for Mallory, even though both can write.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "B30",
+      "suite": "contradiction",
+      "title": "Only the editor chain shows in history, with writers",
+      "what": "The history names who wrote each earlier version.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: history",
+      "checks": []
+    },
+    {
+      "id": "B31",
+      "suite": "contradiction",
+      "title": "A plain writer cannot undo an admin's replacement",
+      "what": "An admin hides a bad note by replacing it. The bad note's own writer must not be able to bring it back; only an admin can.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "C01",
+      "suite": "isolation",
+      "title": "Reading another tenant's note by id",
+      "what": "Tenant B asks for tenant A's note by its id. It must look like the note does not exist. Tenant A can still read it.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "C02",
+      "suite": "isolation",
+      "title": "Writing into another tenant by naming it in the request",
+      "what": "Tenant B sends a note claiming namespace tenantA. The server must file it under tenant B and ignore the claim.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "C03",
+      "suite": "isolation",
+      "title": "Updating another tenant's note by id",
+      "what": "Tenant B tries to rewrite tenant A's note. Refused as 'not found', and the note is unchanged.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "C04",
+      "suite": "isolation",
+      "title": "Deleting another tenant's note by id",
+      "what": "Tenant B's admin tries to delete tenant A's note. Refused, and the note survives.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "C05",
+      "suite": "isolation",
+      "title": "Searching for another tenant's secret",
+      "what": "Tenant B searches for words only tenant A's note has, with and without naming tenantA as the namespace.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "C06",
+      "suite": "isolation",
+      "title": "Listing another tenant's notes",
+      "what": "Tenant B lists notes, asking for tenantA. Only tenant B's own notes may appear.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "C07",
+      "suite": "isolation",
+      "title": "Full export stays inside the tenant",
+      "what": "Each tenant's admin exports everything they may see. Each export has its own tenant's text and none of the other's.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import, tenants",
+      "checks": []
+    },
+    {
+      "id": "C08",
+      "suite": "isolation",
+      "title": "Importing cannot plant notes in another tenant",
+      "what": "Tenant B's admin imports a file whose notes claim namespace tenantA. They must land in tenant B; tenant A sees nothing new.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import, tenants",
+      "checks": []
+    },
+    {
+      "id": "C09",
+      "suite": "isolation",
+      "title": "Token downgrade: each scope gets exactly its own actions",
+      "what": "The same agent holds a read token, a write token and an admin token. Read can search but not write; write can write but not delete, export or import; admin can do all of it.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import, tenants",
+      "checks": []
+    },
+    {
+      "id": "C10",
+      "suite": "isolation",
+      "title": "Asking for hidden notes is admin-only",
+      "what": "include_distrusted switches the trust list off. A write token must be refused; a pinned admin gets only its own tenant's hidden notes.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust, tenants",
+      "checks": []
+    },
+    {
+      "id": "C11",
+      "suite": "isolation",
+      "title": "Trust rules of another tenant cannot be written",
+      "what": "Tenant B's admin tries to distrust a writer inside tenant A (and globally with '*'). Refused. Tenant A's note stays visible.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust, tenants",
+      "checks": []
+    },
+    {
+      "id": "C12",
+      "suite": "isolation",
+      "title": "A read grant lets B read A, never write",
+      "what": "The operator grants tenant B read access to tenant A. B may search A's notes; B may not edit or delete them; A still cannot read B.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "C13",
+      "suite": "isolation",
+      "title": "Signed export from tenant A, imported by tenant B's admin",
+      "what": "Tenant A's admin exports with signatures. Tenant B's admin imports it into B. The notes land in B, are flagged unverified, and B's admin cannot make the server believe A's signing key (that list is server-wide).",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import, attestation, tenants",
+      "checks": []
+    },
+    {
+      "id": "C14",
+      "suite": "isolation",
+      "title": "Import can be told to reject unsigned notes",
+      "what": "With require_attestation, a file with no valid signatures is refused or yields nothing: no note enters the tenant.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import, tenants",
+      "checks": []
+    },
+    {
+      "id": "C15",
+      "suite": "isolation",
+      "title": "The 'what is relevant to this message' lookup stays in the tenant",
+      "what": "Tenant B sends a message full of tenant A's words. Nothing of A's may come back.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: recall, tenants",
+      "checks": []
+    },
+    {
+      "id": "C16",
+      "suite": "isolation",
+      "title": "The change feed stays in the tenant",
+      "what": "Tenant B's admin reads the feed of recent changes. Tenant A's titles must not be in it.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: changes, tenants",
+      "checks": []
+    },
+    {
+      "id": "C17",
+      "suite": "isolation",
+      "title": "Documented limit: a token with no tenant is not isolated",
+      "what": "A token that is not pinned to a tenant keeps the old, open behaviour and sees every tenant. That is by design (the primary token is the operator's); this scenario pins the documented fact so a change would be noticed. Pin every token you hand out.",
+      "limit": "Documented in docs/token-namespaces.md: tokens with no pin are not tenant-scoped.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "C18",
+      "suite": "isolation",
+      "title": "One tenant's sweep cannot retire another tenant's notes",
+      "what": "Tenant A's note is past its deletion deadline. Tenant B's admin runs the sweep. A's note is untouched until A's own admin sweeps.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: restore, retire, tenants",
+      "checks": []
+    },
+    {
+      "id": "C19",
+      "suite": "isolation",
+      "title": "No existence oracle: foreign ids and missing ids look the same",
+      "what": "Reading a note in another tenant, and reading a note that was deleted, must be refused in exactly the same words, so nobody can probe which ids exist.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "C20",
+      "suite": "isolation",
+      "title": "Archiving another tenant's note",
+      "what": "Tenant B's admin tries to archive tenant A's note. Refused, and A still finds it.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: retire, tenants",
+      "checks": []
+    },
+    {
+      "id": "C21",
+      "suite": "isolation",
+      "title": "Merging notes across tenants",
+      "what": "Tenant B's admin tries to merge one of A's notes with one of its own. Refused; both notes survive.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: merge, tenants",
+      "checks": []
+    },
+    {
+      "id": "C22",
+      "suite": "isolation",
+      "title": "Another tenant cannot read a note's history",
+      "what": "History holds old text. An admin of tenant B must not see it for a note in tenant A, and must be told exactly what they are told for a missing note.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: history, tenants",
+      "checks": []
+    },
+    {
+      "id": "C23",
+      "suite": "isolation",
+      "title": "Another tenant cannot preview replacing a note",
+      "what": "Previewing a replacement shows the old note's text. It must be refused for a note in another tenant.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede, tenants",
+      "checks": []
+    },
+    {
+      "id": "C24",
+      "suite": "isolation",
+      "title": "A code from one tenant is useless to another",
+      "what": "A confirmation code made for tenant A must not work for tenant B.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede, tenants",
+      "checks": []
+    },
+    {
+      "id": "C25",
+      "suite": "isolation",
+      "title": "Another tenant cannot undo a replacement",
+      "what": "Undo changes what tenant A sees. Tenant B must not be able to trigger it, or learn whether it exists.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede, tenants",
+      "checks": []
+    },
+    {
+      "id": "C26",
+      "suite": "isolation",
+      "title": "Replaced notes of another tenant stay hidden even when asked for",
+      "what": "Asking to include replaced notes must not open a door into another tenant.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede, tenants",
+      "checks": []
+    },
+    {
+      "id": "C27",
+      "suite": "isolation",
+      "title": "A replacement cannot mix tenants",
+      "what": "A note from tenant A cannot be used to replace tenant B's note.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede, tenants",
+      "checks": []
+    },
+    {
+      "id": "D01",
+      "suite": "provenance",
+      "title": "Export and import keep title, body, tags and timestamps",
+      "what": "A note is exported from one server and imported into a fresh one. The content and both timestamps must survive unchanged.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import",
+      "checks": []
+    },
+    {
+      "id": "D02",
+      "suite": "provenance",
+      "title": "After a plain export and import the original writer is still named",
+      "what": "A plain export is not signed, so the importing server cannot confirm who wrote a note. By design it stamps the importer as the writer and keeps the file's claim, labelled as a claim. The original name must at least survive as that claim.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import",
+      "checks": []
+    },
+    {
+      "id": "D03",
+      "suite": "provenance",
+      "title": "A signed export from a trusted server keeps a verified writer",
+      "what": "The receiving admin has chosen to trust the sending server's signing key. The original writer is then kept as a verified value and the note is not flagged unverified.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import, attestation",
+      "checks": []
+    },
+    {
+      "id": "D04",
+      "suite": "provenance",
+      "title": "A signed export from a server nobody trusts is demoted to a claim",
+      "what": "The signature is there but the receiving admin does not trust the key. The writer survives only as an unverified claim.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import, attestation",
+      "checks": []
+    },
+    {
+      "id": "D05",
+      "suite": "provenance",
+      "title": "The source field survives a move",
+      "what": "The client-supplied source (where the note came from) is kept on export and import.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import",
+      "checks": []
+    },
+    {
+      "id": "D06",
+      "suite": "provenance",
+      "title": "The deletion deadline survives a move",
+      "what": "A note set to be forgotten after 30 days is exported and imported. The deadline must be the same.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import",
+      "checks": []
+    },
+    {
+      "id": "D07",
+      "suite": "provenance",
+      "title": "An edit keeps creator and creation time, and records the previous writer",
+      "what": "Alice writes, the admin edits. Creator and creation time stay Alice's; the last writer is the admin; Alice stays in the record; the update time moves forward.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" partly unsupported (2 of 5 checks judged, all passed); unsupported: creator unchanged; writer is the editor; previous writer is on record",
+      "checks": [
+        {
+          "desc": "creator unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": false,
+          "expected": "creator = \"alice\"",
+          "actual": "the adapter has no creator field",
+          "unsupported": true
+        },
+        {
+          "desc": "created_at unchanged",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "created_at equals created_at of write:n",
+          "actual": "identical"
+        },
+        {
+          "desc": "writer is the editor",
+          "check": "field",
+          "metric": "field",
+          "pass": false,
+          "expected": "writer = \"boss\"",
+          "actual": "the adapter has no writer field",
+          "unsupported": true
+        },
+        {
+          "desc": "previous writer is on record",
+          "check": "field",
+          "metric": "field",
+          "pass": false,
+          "expected": "taint includes \"alice\"",
+          "actual": "the adapter has no taint field",
+          "unsupported": true
+        },
+        {
+          "desc": "updated_at moved forward",
+          "check": "field",
+          "metric": "field",
+          "pass": true,
+          "expected": "updated_at differs from updated_at of write:n",
+          "actual": "different"
+        }
+      ]
+    },
+    {
+      "id": "D08",
+      "suite": "provenance",
+      "title": "A merge keeps every source's writer and the oldest creation time",
+      "what": "Two notes by different writers are merged by the admin. The merged note lists both writers, keeps the older creation time, and names the admin as the one who merged.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: merge",
+      "checks": []
+    },
+    {
+      "id": "D09",
+      "suite": "provenance",
+      "title": "A signature does not survive tampering",
+      "what": "A signed export is altered in transit (the body is changed). The receiving server trusts the sender's key, yet it must not vouch for the altered note: the writer drops to an unverified claim.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import, attestation",
+      "checks": []
+    },
+    {
+      "id": "D10",
+      "suite": "provenance",
+      "title": "A confidence value is kept",
+      "what": "A writer says how sure it is (0.3). A system that has a confidence field returns it on read. Monomem has none: it accepts the request and drops the value without telling the client.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" does not support step(s) write:n",
+      "checks": []
+    },
+    {
+      "id": "D11",
+      "suite": "provenance",
+      "title": "Archive and restore keep the provenance",
+      "what": "A note is archived and restored by an admin. Writer, creator and creation time are exactly as before.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: retire",
+      "checks": []
+    },
+    {
+      "id": "D12",
+      "suite": "provenance",
+      "title": "Staleness survives a move",
+      "what": "A note that is 200 days old is exported and imported. It must still read as old (timestamps kept), not as brand new.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: restore, export_import",
+      "checks": []
+    },
+    {
+      "id": "D13",
+      "suite": "provenance",
+      "title": "A swept note keeps its provenance in the archive",
+      "what": "A note past its deadline is swept. The archived copy still names its writer and creation time.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: restore, retire",
+      "checks": []
+    },
+    {
+      "id": "D14",
+      "suite": "provenance",
+      "title": "Every exported note carries writer, creator and timestamps",
+      "what": "A full export is the backup. For every note in it the provenance fields must be present, not just the content.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import",
+      "checks": []
+    },
+    {
+      "id": "D15",
+      "suite": "provenance",
+      "title": "A confidence value is kept through an edit",
+      "what": "A change to the text must not drop the confidence, and a new value can be set later.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" does not support step(s) write:n",
+      "checks": []
+    },
+    {
+      "id": "D16",
+      "suite": "provenance",
+      "title": "A confidence outside 0 to 1 is refused",
+      "what": "A confidence must be a number from 0 to 1; anything else is refused instead of stored.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" unsupported (no check could be judged); unsupported: 1.5 is refused",
+      "checks": [
+        {
+          "desc": "1.5 is refused",
+          "check": "outcome",
+          "pass": false,
+          "expected": "invalid",
+          "actual": "the adapter does not support this operation",
+          "unsupported": true
+        }
+      ]
+    },
+    {
+      "id": "D17",
+      "suite": "provenance",
+      "title": "A confidence value is shown in search",
+      "what": "A reader choosing between notes can see how sure each writer said they were.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" unsupported (no check could be judged); unsupported: the hit carries the confidence",
+      "checks": [
+        {
+          "desc": "the hit carries the confidence",
+          "check": "field",
+          "metric": "field",
+          "pass": false,
+          "expected": "confidence of n can be read",
+          "actual": "the adapter has no confidence field",
+          "unsupported": true
+        }
+      ]
+    },
+    {
+      "id": "D18",
+      "suite": "provenance",
+      "title": "A confidence value survives export and import",
+      "what": "Moving notes to another server keeps what the writer claimed about how sure it was.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import",
+      "checks": []
+    },
+    {
+      "id": "D19",
+      "suite": "provenance",
+      "title": "A replaced note keeps its writer and dates",
+      "what": "Replacing hides a note; it must not change who wrote it or when.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: supersede",
+      "checks": []
+    },
+    {
+      "id": "E01",
+      "suite": "poison",
+      "title": "Injection text in a note body is quarantined",
+      "what": "A note whose body carries a prompt-injection instruction aimed at a later agent must not become ordinary searchable memory. The write-time linter holds it for admin review instead of storing it.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "the injected note is held in quarantine, not stored as memory",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "quarantined",
+          "actual": "ok"
+        },
+        {
+          "desc": "and it is invisible to an ordinary search",
+          "check": "lacks",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "n is not in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "E02",
+      "suite": "poison",
+      "title": "Fake system-prompt and role tags in a body are quarantined",
+      "what": "Chat-template control tokens and a forged 'new system prompt' planted in note content are a classic way to hijack a later agent. The linter must hold such a note, not serve it as memory.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "the forged system-prompt note is held in quarantine",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "quarantined",
+          "actual": "ok"
+        },
+        {
+          "desc": "and never reaches an ordinary search",
+          "check": "lacks",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "n is not in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "E03",
+      "suite": "poison",
+      "title": "Injection hidden with invisible Unicode is still quarantined",
+      "what": "An attacker breaks up an injection instruction with zero-width characters so a naive scan misses it. The linter normalizes the text (stripping format/zero-width code points) before scanning, so the instruction is still caught and held.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "the zero-width-obfuscated injection is still detected and held",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "quarantined",
+          "actual": "ok"
+        },
+        {
+          "desc": "and does not reach an ordinary search",
+          "check": "lacks",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "n is not in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "E04",
+      "suite": "poison",
+      "title": "A distrusted writer cannot outrank a trusted fact",
+      "what": "A low-trust writer plants a contradicting 'fact'. Once an admin distrusts that writer, an ordinary search returns the trusted note and never the planted one.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "E05",
+      "suite": "poison",
+      "title": "A distrusted writer cannot silently overwrite a trusted note",
+      "what": "A distrusted writer edits a trusted note to plant a lie. The edited note must not be served to ordinary searches, and an admin who looks sees it flagged with the real writer on it.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "E06",
+      "suite": "poison",
+      "title": "A secret in captured tool output is redacted before storage",
+      "what": "Automatic capture records tool output nobody reviews first. A credential in that output must be redacted on the way in, so it never lands in the capture store in the clear.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: capture",
+      "checks": []
+    },
+    {
+      "id": "E07",
+      "suite": "poison",
+      "title": "A secret written straight to a note is blocked",
+      "what": "A high-confidence credential written into a note is refused outright by the linter (block policy), so it never becomes stored, searchable memory.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "the write is refused; the secret is not stored",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "invalid",
+          "actual": "ok"
+        },
+        {
+          "desc": "and the secret is not retrievable",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "the secret appeared in the result"
+        }
+      ]
+    },
+    {
+      "id": "E08",
+      "suite": "poison",
+      "title": "A note claiming a false writer is stamped with the real one",
+      "what": "A writer tries to pass a note off as coming from a trusted identity by putting it in the source field. The server stamps the real, authenticated writer and keeps the false name only as the writer's own unverified claim.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" partly unsupported (1 of 2 checks judged, all passed); unsupported: the server stamps the real authenticated writer, not the claimed identity",
+      "checks": [
+        {
+          "desc": "the server stamps the real authenticated writer, not the claimed identity",
+          "check": "field",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "writer of n = \"agent-alice\"",
+          "actual": "the adapter has no writer field",
+          "unsupported": true
+        },
+        {
+          "desc": "the claimed identity survives only as the writer's own source claim",
+          "check": "field",
+          "pass": true,
+          "expected": "source of n = \"ciso@trusted-admin\"",
+          "actual": "\"ciso@trusted-admin\""
+        }
+      ]
+    },
+    {
+      "id": "E09",
+      "suite": "poison",
+      "title": "A note claiming a false namespace is filed in the real tenant",
+      "what": "A tenant plants a note that names another tenant's namespace in the request. The server must ignore the claim and file the note under the caller's own tenant, so the note cannot reach into a tenant it does not belong to.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: tenants",
+      "checks": []
+    },
+    {
+      "id": "E10",
+      "suite": "poison",
+      "title": "An unsigned import cannot pose as verified",
+      "what": "A note arrives in a plain (unsigned) export from another server. The importer must mark it as arriving unverified, with no verified attestation, so a poisoned export cannot launder itself into trusted, attributed memory.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: export_import",
+      "checks": []
+    },
+    {
+      "id": "E11",
+      "suite": "poison",
+      "title": "A markdown image/link data-exfiltration payload is flagged",
+      "what": "A note body hides a data-exfiltration vector in a markdown image whose URL carries the smuggled data. A renderer that auto-loads the image leaks it. The linter holds such a note in quarantine (GAP-POISON-MDLINK, fixed).",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "the markdown exfiltration payload should be held or refused",
+          "check": "outcome",
+          "pass": false,
+          "expected": "quarantined or invalid",
+          "actual": "ok"
+        },
+        {
+          "desc": "and should not be served as ordinary memory",
+          "check": "lacks",
+          "pass": false,
+          "expected": "n is not in the results",
+          "actual": "found at rank 1"
+        }
+      ]
+    },
+    {
+      "id": "E12",
+      "suite": "poison",
+      "title": "A captured web fetch is not promoted to trusted memory",
+      "what": "Content pulled from the web and recorded by automatic capture carries an injection. It must stay a captured observation, not become a searchable, trusted note, and its instruction must not surface through relevance recall.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: capture, recall",
+      "checks": []
+    },
+    {
+      "id": "E13",
+      "suite": "poison",
+      "title": "A poisoned note cannot reach SessionStart without the banner",
+      "what": "The SessionStart recall injection is the highest-leverage place for a hostile note to sit. All injected memory must be wrapped in the untrusted-data banner, and a distrusted writer's note must be left out of the pre-prompt injection entirely.",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust, session_start",
+      "checks": []
+    },
+    {
+      "id": "E14",
+      "suite": "poison",
+      "title": "Mass near-duplicate flooding cannot bury the real answer",
+      "what": "An attacker floods the store with many near-duplicate notes on the same topic, hoping recency pushes the real answer out of the top results. The trusted answer must still be in the top 5.",
+      "status": "pass",
+      "checks": [
+        {
+          "desc": "the real answer survives the flood in the top 5",
+          "check": "has",
+          "metric": "poison_reach",
+          "pass": true,
+          "expected": "real is in the results (top 5)",
+          "actual": "found at rank 5"
+        }
+      ]
+    },
+    {
+      "id": "E15",
+      "suite": "poison",
+      "title": "A booking-policy override is quarantined and four booking answers stay clean",
+      "what": "Adapted from the Agent Memory hygiene demo (github.com/elizabethfuentes12/stop-ai-agents-losing-memory-sample-for-aws, 05-memory-hygiene-demo, MIT-0): one message tries to revoke a traveler's budget cap and pin first class on a planted airline. In that demo one such fact skewed 1 of 4 key-value lookups and 4 of 4 graph decisions. Here the write gate must hold it, so none of four booking questions ever sees it.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "the override is held for review, not stored",
+          "check": "outcome",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "quarantined",
+          "actual": "ok"
+        },
+        {
+          "desc": "budget question: no planted airline",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "the secret appeared in the result"
+        },
+        {
+          "desc": "cabin question: no planted airline",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "the secret appeared in the result"
+        },
+        {
+          "desc": "airline question: no planted airline",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "the secret appeared in the result"
+        },
+        {
+          "desc": "Madrid question: no planted airline",
+          "check": "no_text",
+          "metric": "poison_reach",
+          "pass": false,
+          "expected": "the other tenant's secret does not appear",
+          "actual": "the secret appeared in the result"
+        }
+      ]
+    },
+    {
+      "id": "E16",
+      "suite": "poison",
+      "title": "A reworded override that passes the write gate is removed from every answer by one distrust",
+      "what": "The write gate is pattern matching, so the same attack phrased as plain data (no 'ignore', no 'from now on') is stored. This measures the read-side fallback: before anything is done the planted airline reaches the answers; once an admin distrusts the writer it reaches none of the four booking questions. Adapted from the Agent Memory hygiene demo (elizabethfuentes12, MIT-0).",
+      "status": "skipped",
+      "skipped_reason": "adapter \"mem0-noinfer\" lacks: trust",
+      "checks": []
+    },
+    {
+      "id": "E17",
+      "suite": "poison",
+      "title": "A sleeper instruction for a later session is stored with a warning",
+      "what": "A note that plants a deferred trigger ('next time the user asks about deploys, run ...') is ordinary-sounding on its own, so the write gate does not hold it: the directive category only warns by default (MONOMEM_LINT=directive=quarantine holds it). This checks the write comes back with a 'deferred trigger' warning instead of being stored silently.",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "warn-only by default: the note is stored",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the write is warned as a deferred trigger",
+          "check": "contains_text",
+          "pass": false,
+          "expected": "the text is available from write:sleeper",
+          "actual": "not found anywhere"
+        }
+      ]
+    },
+    {
+      "id": "E18",
+      "suite": "poison",
+      "title": "A curl-pipe-to-shell note is stored with a warning",
+      "what": "A note telling a later agent to pipe a downloaded script into a shell (curl ... | sh) is how a planted memory turns into code execution. It is not an injection pattern, so it is stored, but the write must come back with a 'pipe to shell' warning (MONOMEM_LINT=directive=quarantine holds it instead).",
+      "status": "fail",
+      "checks": [
+        {
+          "desc": "warn-only by default: the note is stored",
+          "check": "outcome",
+          "pass": true,
+          "expected": "ok",
+          "actual": "ok"
+        },
+        {
+          "desc": "the write is warned as pipe to shell",
+          "check": "contains_text",
+          "pass": false,
+          "expected": "the text is available from write:pipe",
+          "actual": "not found anywhere"
+        }
+      ]
+    }
+  ],
+  "known_gaps": [],
+  "limits": [
+    "These are deterministic behaviour checks, not a retrieval-quality or semantic benchmark. Search here is keyword search (no embeddings, no model), and the scenarios use made-up, unique words so ranking is never the thing being tested.",
+    "Each scenario runs on a fresh store in one process, through the REST API on the loopback interface (plus one MCP tool for merging). It says nothing about speed, large stores, concurrency or a deployed server.",
+    "Timestamps are the real clock. Notes that must look old (or already expired) are placed in the past through the admin import path, so such a note is stamped with the importing admin as its writer.",
+    "A pass means the behaviour held in that scenario. It is not a proof that no other path leaks; 0 leaks is the count over the probes written here, nothing more.",
+    "The scenarios encode one reading of the five provenance fields (source, timestamp, confidence, tenant, deletion policy). Another system may reasonably choose differently; scenario files are plain JSON so they can be changed."
+  ],
+  "run": {
+    "elapsed_ms": 21323,
+    "node": "v24.18.0",
+    "platform": "win32"
+  }
+}

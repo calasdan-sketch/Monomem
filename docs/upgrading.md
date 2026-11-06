@@ -1,25 +1,42 @@
-# Upgrading from 1.3.x
+# Upgrading
 
-> **Moving to 1.6.0 from 1.4.x or 1.5.0?** The first start migrates the database from schema v14 to **v15** (confidence and replace columns,
+## Monomem 1.2.0 (database schema v16 to v18)
+
+Applies to Monomem 1.1.x and OneMemory 2.x. A fresh install needs none of this.
+
+- **What changes.** The first start migrates the database from schema v16 to **v18**: the read access log, flood-guard
+  counts, pinned notes and per-writer history for rollback. No note text is rewritten. The search index is rebuilt once
+  for prefix search (about half a second per 50,000 notes).
+- **A verified backup is made first**, at `<database>.pre-v18-backup`. The upgrade does not run if that copy cannot be made.
+- **One way only.** An older Monomem or OneMemory cannot open a v18 database. If several machines share one database, upgrade all of them.
+- **To go back:** stop every Monomem process (server, MCP clients, runners, the CLI). Put `<database>.pre-v18-backup` back
+  as the database and delete the `-wal` and `-shm` files beside it. Install the older version and start it. Anything written after the upgrade is not in the backup.
+- Afterwards run `monomem doctor`, then `monomem health`. What is new: [CHANGELOG.md](../CHANGELOG.md).
+
+## Older upgrade notes (OneMemory)
+
+> Unless a version is called Monomem, it is a **OneMemory** version (1.x and 2.x): OneMemory was this project's earlier name, and Monomem restarted at 1.0.0 ([CHANGELOG.md](../CHANGELOG.md)). Schema numbers (v14, v15, v18) belong to the database and carry on across the rename.
+
+> **OneMemory 1.6.0 from 1.4.x or 1.5.0 (historical)?** The first start migrates the database from schema v14 to **v15** (confidence and replace columns,
 > and tables for history, one-time codes and the replace log). Nothing is rewritten: no note text is touched. A verified copy is made first at
-> `<database>.pre-v16-backup`, and the upgrade does not run if that copy cannot be made. To go back: stop everything, put that copy back as the
-> database, install the older version. What is new: [replacing-memories.md](./replacing-memories.md). The rest of this page was written for 1.3.x to
-> 1.4.x; the backup there is now named `pre-v15` as well, because the file is named after the schema it upgrades to.
+> `<database>.pre-v15-backup`, and the upgrade does not run if that copy cannot be made. To go back: stop everything, put that copy back as the
+> database, install the older version. What is new: [replacing-memories.md](./replacing-memories.md). The rest of this page was written for OneMemory 1.3.x to
+> 1.4.x. The copy is always named after the schema it upgrades to: `pre-v15-backup` then, `pre-v18-backup` for a current build (which is what the steps below show).
 
-This page is for an existing 1.3.x install moving to 1.4.x (1.4.2 is the last 1.4.x; 1.5.0 only adds the benchmark and needs no migration). Nothing here is
+This page is for an existing OneMemory 1.3.x install moving to OneMemory 1.4.x (1.4.2 is the last 1.4.x; 1.5.0 only adds the benchmark and needs no migration). Nothing here is
 needed for a fresh install.
 
-**EXPERIMENTAL in 1.4.x:** signed attestations, cross-server writer ids, `trust rotate`,
+**EXPERIMENTAL since OneMemory 1.4.x:** signed attestations, cross-server writer ids, `trust rotate`,
 `trust attester-revoke` and the `--any-server` flag. They may change in a minor release. The local
 distrust list and writer labels are the stable part. See [trust.md](./trust.md).
 
-## What happens when you start 1.4.x
+## What happens when you start 1.4.x (OneMemory)
 
 1. **The schema upgrade is one-way.** The first start on a database at schema v1 to v13 migrates it to v14
    (new columns, three small tables, an index over note writers). No note text is touched. An older
    version cannot open a v14 database.
 2. **A backup is made first.** Before migrating, Monomem writes a verified copy to
-   `<database>.pre-v16-backup` (it is built as `.partial`, then checked: it must hold the same number of notes
+   `<database>.pre-v18-backup` (it is built as `.partial`, then checked: it must hold the same number of notes
    as the database, have the old schema version and pass an integrity check; only then is it renamed). If a
    valid copy from an earlier attempt exists it is kept under a dated name and a fresh one is made; a copy
    that cannot be read (permissions) is never deleted, only moved aside. **The upgrade does not run when the
@@ -45,7 +62,7 @@ leftover `.partial` files.
 
 To roll back:
 
-Stop every Monomem process (server, MCP clients, runners, the CLI). **Move** `<database>.pre-v16-backup`
+Stop every Monomem process (server, MCP clients, runners, the CLI). **Move** `<database>.pre-v18-backup`
 over the database (a copy would leave the original; remove the `-wal` and `-shm` files next to it),
 reinstall 1.3.x and start it. Anything written after the upgrade is not in the backup. Once you are happy
 with 1.4.x, `monomem backup --prune-premigration` deletes the copies (they are plaintext even if you

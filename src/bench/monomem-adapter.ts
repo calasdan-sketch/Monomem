@@ -3,11 +3,11 @@
 // does not offer (merging duplicates), the MCP tool `memory_consolidate` over an in-memory MCP connection.
 // Nothing here reads or writes the SQLite file directly.
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Store } from "../store.js";
@@ -95,6 +95,9 @@ export class MonomemAdapter implements MemoryAdapter {
   private clock = { t: 0 };
   private prevEnv: Record<string, string | undefined> = {};
 
+  /** `seedDb`: a database file (a copy, never the real store) to start the "main" server from, for `monomem drill`. */
+  constructor(private readonly seedDb?: string) {}
+
   async open(world: WorldSpec): Promise<void> {
     await this.close();
     this.dir = mkdtempSync(join(tmpdir(), "monomem-bench-"));
@@ -124,6 +127,11 @@ export class MonomemAdapter implements MemoryAdapter {
       // One folder per server: the signing key lives beside the database, and two servers must not share one.
       const folder = join(this.dir, name);
       mkdirSync(folder, { recursive: true });
+      if (this.seedDb && name === "main") {
+        copyFileSync(this.seedDb, join(folder, "state.db"));
+        const seedKey = join(dirname(this.seedDb), ".key"); // an encrypted store's key travels with its copy
+        if (existsSync(seedKey)) copyFileSync(seedKey, join(folder, ".key"));
+      }
       const store = new Store(join(folder, "state.db"));
       const http = createApiServer(store, tokens, this.serverOpts());
       await new Promise<void>((resolve, reject) => {
@@ -228,10 +236,26 @@ export class MonomemAdapter implements MemoryAdapter {
     return { outcome, detail: str(json.error) ?? (q ? "held for review" : `HTTP ${status}`) };
   }
 
+  /** Run `fn` with approve-first switched off on the actor's server, then restore it. For drill setup notes only: they stand in for the operator's own notes. */
+  private async asOperator<T>(actor: string, fn: () => Promise<T>): Promise<T> {
+    const store = this.srv(this.actor(actor)).store;
+    const all = store.approveFirstAll();
+    const names = store.approveFirstNamespaces();
+    store.setApproveFirstAll(false);
+    for (const n of names) store.setApproveFirst(n, false);
+    try {
+      return await fn();
+    } finally {
+      store.setApproveFirstAll(all);
+      for (const n of names) store.setApproveFirst(n, true);
+    }
+  }
+
   // ---- core ---------------------------------------------------------------------------------------------------
 
   async write(actor: string, input: WriteInput): Promise<OpResult> {
     await nextTick(this.clock);
+    if (input.setup && this.seedDb) return this.asOperator(actor, () => this.write(actor, { ...input, setup: false }));
     if (input.age_days !== undefined || input.expires_in_days !== undefined) return this.restoreWrite(actor, input);
     const body: Raw = { title: input.title, body: input.body };
     if (input.tags) body.tags = input.tags;
@@ -241,7 +265,8 @@ export class MonomemAdapter implements MemoryAdapter {
     if (input.namespace !== undefined) body.namespace = input.namespace;
     const r = await this.http(actor, "POST", "/notes", body);
     if (r.status !== 201) return this.fail(r.status, r.json);
-    return { outcome: "ok", note: normalizeNote(r.json.note as Raw) };
+    // Stored, but the linter may have warned (category + label only, never the matched text).
+    return { outcome: "ok", note: normalizeNote(r.json.note as Raw), ...(r.json.warnings ? { data: { warnings: r.json.warnings } } : {}) };
   }
 
   /**
@@ -383,7 +408,7 @@ export class MonomemAdapter implements MemoryAdapter {
     const att = (r.json.attestations as { verified?: number; unverified?: number } | undefined) ?? {};
     return {
       outcome: "ok",
-      data: { imported: r.json.imported, rejected, attested_verified: att.verified ?? 0, attested_unverified: att.unverified ?? 0 },
+      data: { imported: r.json.imported, rejected, quarantined: Array.isArray(r.json.quarantined) ? r.json.quarantined.length : 0, attested_verified: att.verified ?? 0, attested_unverified: att.unverified ?? 0 },
     };
   }
 
@@ -501,7 +526,7 @@ export class MonomemAdapter implements MemoryAdapter {
     let storedText = "";
     if (row) {
       const open = (text: string, enc: string | null, which?: "input"): string => {
-        if (!text) return "";
+        if (!text && !enc) return ""; // an encrypted row keeps its text in the _enc column
         try {
           return this.srv(a).store.openCapture(text, enc, captureAad(row.seq, session, which));
         } catch {

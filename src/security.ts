@@ -4,11 +4,12 @@
 // log. All dependency-free on purpose -- this code sits in front of a service
 // that can be exposed over a public tunnel, so less surface is safer.
 
-import { appendFileSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync } from "node:fs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { dirname, join } from "node:path";
 import type { IncomingMessage } from "node:http";
 import { DATA_DIR, isLoopback, type Scope, type TokenEntry } from "./config.js";
+import { isWriterMarker, MARKER_DESCRIPTIONS } from "./actor.js";
 
 // ---- Untrusted-data banner --------------------------------------------------
 // Note contents are returned to autonomous agents, which makes a stored note a
@@ -38,17 +39,15 @@ function oneLine(s: unknown, max: number): string {
 export function describeWriter(writtenBy: unknown): string {
   const w = oneLine(writtenBy, 100);
   if (!w) return "an unknown writer (stored before writers were recorded)";
-  if (w === "stdio") return "stdio (local MCP client, no token)";
-  if (w === "cli") return "cli (the local monomem command)";
-  if (w === "server") return "server (Monomem's own background job)";
-  if (w === "runner") return "runner (the command runner process on the owner's PC)";
+  if (isWriterMarker(w)) return `${w} (${MARKER_DESCRIPTIONS[w]})`;
+  if (w.startsWith("stdio:")) return `${w} (local MCP client, no sign-in; app name self-declared by its launch config)`;
   return `${w} (token)`;
 }
 
 /** created_by for the banner: a fixed marker as-is, a token label JSON-quoted. */
-function describeCreator(createdBy: unknown): string {
+export function describeCreator(createdBy: unknown): string {
   const w = oneLine(createdBy, 100);
-  return ["stdio", "cli", "server", "runner"].includes(w) ? w : `${JSON.stringify(w.slice(0, 60))} (token)`;
+  return isWriterMarker(w) || w.startsWith("stdio:") ? w : `${JSON.stringify(w.slice(0, 60))} (token)`;
 }
 
 /**
@@ -168,6 +167,8 @@ const CONFUSABLE_RE = new RegExp(`[${Object.keys(CONFUSABLES).join("")}]`, "gu")
 export function normalizeForScan(text: string): string {
   return text
     .normalize("NFKC")
+    // Unicode TAG chars render as nothing but encode ASCII: decode them so hidden text is scanned.
+    .replace(/[\u{E0020}-\u{E007E}]/gu, (c) => String.fromCharCode(c.codePointAt(0)! - 0xe0000))
     .replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]+/gu, "")
     .replace(CONFUSABLE_RE, (c) => CONFUSABLES[c])
     .replace(/\s+/g, (m) => (m.includes("\n") ? "\n" : " "));
@@ -492,7 +493,7 @@ export function authenticate(req: IncomingMessage, tokens: TokenEntry[]): Scope 
 // MONOMEM_AUDIT_LOG set at runtime and is unit-testable. The entry records
 // only the operation and metadata (op/id/namespace/byte count) -- never the
 // note title or body, so the audit trail can't itself become a leak.
-function auditPath(): string {
+export function auditPath(): string {
   return process.env.MONOMEM_AUDIT_LOG || join(DATA_DIR, "audit.log");
 }
 
@@ -552,6 +553,101 @@ function rotateAuditIfNeeded(path: string): void {
   }
 }
 
+const GENESIS = "0".repeat(64);
+const sha = (line: string): string => createHash("sha256").update(line).digest("hex");
+
+/** sha256 of the last line of `path` (or of path.1 right after a rotation); GENESIS when there is none. */
+function lastAuditLineHash(path: string): string {
+  for (const p of [path, `${path}.1`]) {
+    try {
+      const size = statSync(p).size;
+      if (size === 0) continue;
+      const len = Math.min(size, 16_384); // ponytail: lines are short (detail is capped); a longer one would hash a partial line
+      const buf = Buffer.alloc(len);
+      const fd = openSync(p, "r");
+      try {
+        readSync(fd, buf, 0, len, size - len);
+      } finally {
+        closeSync(fd);
+      }
+      const lines = buf.toString("utf8").split("\n").filter(Boolean);
+      if (lines.length) return sha(lines[lines.length - 1]);
+    } catch {
+      /* missing file: try the next */
+    }
+  }
+  return GENESIS;
+}
+
+/**
+ * Walk the audit chain (oldest rotated file first). Several processes append to one log (each app runs its own
+ * server), and one can read the last line's hash just before another appends, so its `prev` names an earlier line:
+ * a concurrent fork. A `prev` that matches one of the last FORK_WINDOW lines is counted as a fork, not a break. A
+ * `prev` that matches none of them is a break: a line was edited or removed. Every break is counted, not just the
+ * first. Limits: it cannot see truncation of the newest lines, deleted rotated files, or a full rewrite by someone
+ * who can write the file (the hashes are not keyed); a forged line INSERTED with a valid `prev` looks like a fork; an
+ * edited or removed line that only a fork pointed past can go unseen.
+ * Lines written before the chain existed (no `prev`) are counted as unchained.
+ */
+const FORK_WINDOW = 16;
+export function verifyAuditChain(path: string = auditPath(), expect?: string): {
+  ok: boolean;
+  /** Only with `expect`: the line whose hash is `expect` is still in the log, and how many lines follow it (0 = it is the head). */
+  anchor?: { found: boolean; linesAfter: number };
+  lines: number;
+  brokenLine?: number;
+  file?: string;
+  breaks: number;
+  forks: number;
+  unchained: number;
+  head?: string;
+} {
+  const files: string[] = [];
+  for (let i = 1; existsSync(`${path}.${i}`); i++) files.unshift(`${path}.${i}`);
+  if (existsSync(path)) files.push(path);
+  const recent: string[] = []; // hashes of the last FORK_WINDOW lines, newest last
+  let n = 0;
+  let breaks = 0;
+  let forks = 0;
+  let unchained = 0;
+  let chained = false; // once a line carries `prev`, a later line without one was not written by this version: a break
+  let brokenLine: number | undefined;
+  let file: string | undefined;
+  let anchorAt = -1; // line number whose hash equals `expect`
+  for (const f of files) {
+    for (const line of readFileSync(f, "utf8").split("\n")) {
+      if (!line) continue;
+      n++;
+      let rec: { prev?: unknown } | undefined;
+      try {
+        rec = JSON.parse(line);
+      } catch {
+        rec = undefined;
+      }
+      if (!rec || typeof rec.prev !== "string") {
+        if (rec && !chained) unchained++;
+        else {
+          breaks++;
+          if (brokenLine === undefined) [brokenLine, file] = [n, f];
+        }
+      } else if ((chained = true) && recent.length > 0) {
+        if (rec.prev === recent[recent.length - 1]) {
+          /* follows the line before it */
+        } else if (recent.includes(rec.prev)) forks++;
+        else {
+          breaks++;
+          if (brokenLine === undefined) [brokenLine, file] = [n, f];
+        }
+      }
+      const h = sha(line);
+      if (expect !== undefined && h === expect) anchorAt = n;
+      recent.push(h);
+      if (recent.length > FORK_WINDOW) recent.shift();
+    }
+  }
+  return { ok: breaks === 0, lines: n, ...(expect !== undefined ? { anchor: { found: anchorAt > 0, linesAfter: anchorAt > 0 ? n - anchorAt : 0 } } : {}), breaks, forks, unchained, ...(brokenLine !== undefined ? { brokenLine, file } : {}), ...(recent.length ? { head: recent[recent.length - 1] } : {}) };
+}
+
 export function audit(entry: {
   op: string;
   id?: number;
@@ -568,7 +664,9 @@ export function audit(entry: {
     const path = auditPath();
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     rotateAuditIfNeeded(path);
-    appendFileSync(path, JSON.stringify({ ts: new Date().toISOString(), ...entry }) + "\n", { mode: 0o600 });
+    // Hash chain: `prev` = sha256 of the previous line (carried across rotation from audit.log.1).
+    const prev = lastAuditLineHash(path);
+    appendFileSync(path, JSON.stringify({ ts: new Date().toISOString(), prev, ...entry }) + "\n", { mode: 0o600 });
   } catch {
     // Audit logging must never break a request.
   }
@@ -577,10 +675,19 @@ export function audit(entry: {
 /**
  * Text that came from an untrusted file or peer (titles, server ids, error text) made safe to print on
  * a terminal or into a log: control characters (escape sequences, carriage returns, newlines) become "?",
- * and it is cut to `max` characters, so it cannot clear the line or fake a "run this command" line.
+ * bidi overrides (RLO etc.) too, and it is cut to `max` characters, so it cannot clear the line or fake a "run this command" line.
  */
 export function printable(s: unknown, max = 120): string {
   // eslint-disable-next-line no-control-regex
-  const t = String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, "?");
+  const t = String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "?");
   return t.length > max ? t.slice(0, max) + "..." : t;
+}
+
+/** printable(), but a cut falls on a word boundary ("deploy the lau..." becomes "deploy the..."), unless there is no space in the back half. */
+export function printableWords(s: unknown, max = 120): string {
+  const t = printable(s, Number.MAX_SAFE_INTEGER);
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > max / 2 ? cut.slice(0, sp).trimEnd() : cut) + "...";
 }

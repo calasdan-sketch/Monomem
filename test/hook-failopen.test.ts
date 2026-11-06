@@ -1,5 +1,6 @@
 // `monomem hook <event>` is fail-open: whatever goes wrong it exits 0, prints nothing or one valid hook JSON object,
 // and keeps the (redacted) event in the spool instead of losing it or blocking the agent.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";

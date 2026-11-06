@@ -36,8 +36,11 @@ export interface MeterStats {
 /** Add to one session's counters (fail-silent). */
 export function meterAdd(store: Store, sessionId: string, namespace: string, add: { injected?: number; saved?: number; llm?: number }): void {
   if (!sessionId) return;
+  const db = store.captureDb();
+  // Session start must never wait behind another process's write lock for a meter row: fail fast, say so, keep going.
+  const prev = Number((db.prepare("PRAGMA busy_timeout").get() as Record<string, unknown> | undefined)?.timeout ?? 0);
   try {
-    const db = store.captureDb();
+    db.exec("PRAGMA busy_timeout = 0;");
     db.exec(SCHEMA);
     const inj = add.injected !== undefined ? 1 : 0;
     db.prepare(
@@ -47,6 +50,12 @@ export function meterAdd(store: Store, sessionId: string, namespace: string, add
     ).run(sessionId, namespace, inj, Math.max(0, Math.round(add.injected ?? 0)), Math.max(0, Math.round(add.saved ?? 0)), Math.max(0, Math.round(add.llm ?? 0)), new Date().toISOString());
   } catch (e) {
     process.stderr.write(`monomem: meter not updated (${(e as Error).message})\n`);
+  } finally {
+    try {
+      db.exec(`PRAGMA busy_timeout = ${prev};`);
+    } catch {
+      /* the connection is gone; nothing to restore */
+    }
   }
 }
 
@@ -83,11 +92,14 @@ export function meterStats(store: Store, namespaces?: string[]): MeterStats {
   };
 }
 
-/** One line for `monomem doctor`. */
+const plural = (n: number, one: string, many = one + "s"): string => `${n} ${n === 1 ? one : many}`;
+
+/** One line for `monomem doctor`. "Injected" counts everything the hook added: note text plus index lines, legend and footer. */
 export function meterLine(m: MeterStats): string {
   const t = m.totals;
+  const standIn = t.saved_tokens > 0 ? `, standing in for ~${t.saved_tokens} tokens of captured work` : "";
   return (
-    `footprint: ${t.sessions} session(s), ~${t.injected_tokens} tokens injected (${t.injections} time(s)), ~${t.saved_tokens} tokens of captured work stood in for, ` +
-    `${t.llm_tokens} local-model tokens, ${m.capture_events} capture event(s), database ${(m.db_bytes / 1048576).toFixed(1)} MB`
+    `footprint: ${plural(t.sessions, "session")}, ${plural(t.injections, "injection")} of ~${t.injected_tokens} tokens in total (notes plus headers and footer)${standIn}, ` +
+    `${t.llm_tokens} local-model tokens, ${plural(m.capture_events, "capture event")}, database ${(m.db_bytes / 1048576).toFixed(1)} MB`
   );
 }

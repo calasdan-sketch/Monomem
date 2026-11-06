@@ -1,4 +1,5 @@
 // 1.4.2: regression tests for the third expert review (RV5). Each test pins one verified defect of 1.4.1.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, statSync, readFileSync, writeFileSync, mkdirSync, readdirSync, symlinkSync, copyFileSync, utimesSync, chmodSync } from "node:fs";
@@ -53,11 +54,11 @@ function cli(home: string, args: string[], env: Record<string, string> = {}) {
 
 describe("the harness is hermetic", () => {
   test("no MONOMEM_* variable from the developer's shell reaches the suite (npm test preloads dist/test/setup-env.js)", () => {
-    // MONOMEM_HOME and MONOMEM_TOOLS are set BY setup-env.js on purpose
+    // MONOMEM_HOME, MONOMEM_TOOLS and MONOMEM_FLOOD_WRITES_PER_HOUR are set BY setup-env.js on purpose
     // (a throwaway data directory, and the full tool surface so the suite can
-    // exercise the operator tools a plain install no longer registers). Any
+    // exercise the operator tools a plain install no longer registers; the flood guard off for bulk tests). Any
     // other MONOMEM_* variable means the developer's shell leaked in.
-    const deliberate = new Set(["MONOMEM_HOME", "MONOMEM_TOOLS"]);
+    const deliberate = new Set(["MONOMEM_HOME", "MONOMEM_TOOLS", "MONOMEM_FLOOD_WRITES_PER_HOUR"]);
     const left = Object.keys(process.env).filter((k) => k.startsWith("MONOMEM_") && !deliberate.has(k));
     assert.deepEqual(left, []);
     assert.equal(process.env.MONOMEM_TOOLS, "all", "the suite runs against the full tool surface");
@@ -715,7 +716,7 @@ describe("8: backups and upgrades", () => {
       s.close();
       downgradeTo(p, 13);
       // an older copy with fewer notes (an earlier upgrade of this database, before it was rolled back and used)
-      const old = p + ".pre-v16-backup";
+      const old = p + ".pre-v18-backup";
       copyFileSync(p, old);
       const db = new DatabaseSync(old);
       db.exec("DELETE FROM notes WHERE id > 1");
@@ -724,7 +725,7 @@ describe("8: backups and upgrades", () => {
       s2.close();
       const copies = Store.preMigrationBackups(p).map((c) => c.path.slice(dir.length + 1)).sort();
       assert.equal(copies.length, 2, copies.join(", "));
-      assert.ok(copies.some((c) => /^state\.db\.pre-v16-backup-\d{8}-\d{6}$/.test(c)), copies.join(", "));
+      assert.ok(copies.some((c) => /^state\.db\.pre-v18-backup-\d{8}-\d{6}$/.test(c)), copies.join(", "));
       assert.equal(Store.verifyBackupFile(old).ok && (Store.verifyBackupFile(old) as any).notes, 3, "the fresh copy holds the live state");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -738,8 +739,8 @@ describe("8: backups and upgrades", () => {
       const s = new Store(p);
       as("alice", () => s.create({ title: "n", body: "b" }));
       s.close();
-      const stale = [p + ".pre-v16-backup.123abc.partial", p + ".pre-v16-backup.123abc.partial-journal"];
-      const fresh = p + ".pre-v16-backup.999fff.partial";
+      const stale = [p + ".pre-v18-backup.123abc.partial", p + ".pre-v18-backup.123abc.partial-journal"];
+      const fresh = p + ".pre-v18-backup.999fff.partial";
       for (const f of [...stale, fresh]) writeFileSync(f, "x");
       const old = new Date(Date.now() - 3600_000);
       for (const f of stale) utimesSync(f, old, old);
@@ -818,11 +819,14 @@ describe("doctor and the primary token", () => {
     const id = cli(home, ["trust", "identity", "--json"]);
     assert.equal(id.status, 0, id.stderr);
     const k = loadOrCreateSigningKey(tmp("om-142-pk-"));
-    const noPin = cli(home, ["trust", "attester-add", k.publicKey]);
-    assert.equal(noPin.status, 1);
-    assert.match(noPin.stderr, /--any-server/);
-    const add = cli(home, ["trust", "attester-add", k.publicKey, "--server-id", "55555555-5555-4555-8555-555555555555"]);
-    assert.equal(add.status, 0, add.stderr);
+    // attester-add lowers protection: from a script it is refused (no terminal), so add through the store.
+    const refused = cli(home, ["trust", "attester-add", k.publicKey, "--server-id", "55555555-5555-4555-8555-555555555555"]);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /person must run it in a terminal/);
+    const st = new Store(join(home, "state.db"));
+    assert.throws(() => st.attesterAdd({ public_key: k.publicKey }), /--any-server|server_id is required/);
+    st.attesterAdd({ public_key: k.publicKey, server_id: "55555555-5555-4555-8555-555555555555" });
+    st.close();
     // a key id may begin with "-" (base64url); it is a value, never "Unknown option"
     const dash = cli(home, ["trust", "attester-revoke", "-Abc123notarealkeyid", "--reason", "x"]);
     assert.doesNotMatch(dash.stderr, /Unknown option/);
@@ -830,7 +834,10 @@ describe("doctor and the primary token", () => {
     assert.equal(rev.status, 0, rev.stderr);
     assert.match(rev.stdout, /Revoked key/);
     assert.match(cli(home, ["trust", "list"]).stdout, /Revoked keys \(1\)/);
-    assert.match(cli(home, ["trust", "attester-unrevoke", k.keyId]).stdout, /no longer revoked/);
+    const unrevoke = cli(home, ["trust", "attester-unrevoke", k.keyId]);
+    assert.equal(unrevoke.status, 1, "unrevoke lowers protection: refused without a terminal");
+    assert.match(unrevoke.stderr, /person must run it in a terminal/);
+    assert.match(cli(home, ["trust", "list"]).stdout, /Revoked keys \(1\)/);
     const rot = cli(home, ["trust", "rotate"]);
     assert.equal(rot.status, 0, rot.stderr);
     assert.match(rot.stdout, /retired key of this server/);
@@ -882,7 +889,7 @@ describe("docs and CI stay in step with the code", () => {
 
   test("docs/upgrading.md exists and is linked from the README and the CHANGELOG", () => {
     const up = read("docs", "upgrading.md");
-    for (const must of ["Upgrading from 1.3", "pre-v16-backup", "1.3.4", "roll back", "imported_unverified", "MONOMEM_ATTEST_MIN_VERSION", "EXPERIMENTAL"]) assert.ok(up.includes(must) || up.toLowerCase().includes(must.toLowerCase()), `upgrading.md lacks ${must}`);
+    for (const must of ["Older upgrade notes (OneMemory)", "Monomem 1.2.0", "pre-v18-backup", "1.3.4", "roll back", "imported_unverified", "MONOMEM_ATTEST_MIN_VERSION", "EXPERIMENTAL"]) assert.ok(up.includes(must) || up.toLowerCase().includes(must.toLowerCase()), `upgrading.md lacks ${must}`);
     assert.match(read("README.md"), /docs\/upgrading\.md/);
     assert.match(read("CHANGELOG.md"), /docs\/upgrading\.md/);
   });

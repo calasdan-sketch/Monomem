@@ -1,4 +1,5 @@
 // `monomem import --claude`: layout as documented at https://code.claude.com/docs/en/memory
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -231,6 +232,13 @@ describe("import --claude: running it", () => {
     assert.ok(notes.every((n) => parseSourceKey(n.source) !== null));
     assert.ok(notes.some((n) => n.title === "Project Atlas / Deploy" && n.body.includes("Thursday")));
     assert.match(x.all(), /written by "import:claude"/);
+  });
+  test("without a terminal and without --yes it refuses and writes nothing", async () => {
+    const f = fixture();
+    const x = io();
+    assert.equal(await runClaudeImport(f.e, x, o(f.db, { yes: false })), 1);
+    assert.match(x.all(), /Not an interactive terminal.*nothing was written.*--yes/);
+    assert.equal(existsSync(f.db), false);
   });
   test("running it again adds nothing (idempotent), and says so", async () => {
     const f = fixture();

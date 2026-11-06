@@ -1,6 +1,7 @@
 // Tests for the state_relevant tool: keyword extraction, the permissive
 // relevant search, the MCP tool wrapper (including Tier 1 namespace gating),
 // and POST /relevant.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";

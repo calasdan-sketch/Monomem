@@ -35,14 +35,16 @@ import {
   TASK_LIMITS,
 } from "./tasks.js";
 import { ackChanges } from "./changes.js";
+import { rollbackPreview, rollbackConfirm, embedRestored } from "./rollback.js";
 import { supersedePreview, supersedeConfirm, supersedeUndo, noteHistory, restoreVersion, purgeNoteHistory, SupersedeError, type Caller } from "./supersede.js";
 import { runnerStatus } from "./liveness.js";
 import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
+import { withFacts, factFeedback, COMMON_FACT_KEYS, type FactFeedback } from "./facts.js";
 import { waitForChanges, parseWait, WAIT_MAX_SECONDS, WAIT_RECOMMENDED_SECONDS } from "./change-wait.js";
 import { type Scope, PACKAGE_VERSION } from "./config.js";
 export { PACKAGE_VERSION };
 import { scopeAllows, UNTRUSTED_BANNER, provenanceBanner, audit } from "./security.js";
-import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, SEARCH_MODES, type SearchOpts, type RelevantOpts, type ExplainedHit } from "./search-service.js";
+import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, describeWhen, SEARCH_MODES, type SearchOpts, type RelevantOpts, type ExplainedHit } from "./search-service.js";
 import {
   type ServerNamespaceOpts,
   canRead,
@@ -51,7 +53,12 @@ import {
 import { parseTimePhrase } from "./time-parse.js";
 import { TIME_ZONE } from "./config.js";
 import { annotateStaleness } from "./staleness.js";
+
+/** Staleness fields plus a compact `when` ("2023-05-08, 5 months ago") so the reader sees the note's date and age. */
+const withWhen = (n: NoteRecord) => ({ ...annotateStaleness(n), when: describeWhen(n.created_at) });
 import { meterStats } from "./meter.js";
+import { receiptList, receiptGet } from "./receipts.js";
+import { noteWhy } from "./why.js";
 import {
   findCandidatesGuarded,
   resolveConsolidationNotes,
@@ -163,11 +170,18 @@ function quarantinedResult(e: QuarantinedError) {
       // given -- the user was asked for an action nobody could take. Point at
       // the surfaces that always exist instead.
       message:
-        "This write was held for admin review by the memory linter and is not stored as a note yet. " +
+        (e.findings.some((f) => f.category === "approval")
+          ? "This write was held for admin review because its namespace requires approval (approve-first), and is not stored as a note yet. "
+          : "This write was held for admin review by the memory linter and is not stored as a note yet. ") +
         "An admin can approve or reject it in the Monomem dashboard, or with `monomem quarantine` " +
         "(and through the memory_quarantine tool where MONOMEM_TOOLS makes it available).",
     },
   });
+}
+
+/** Adds `conflicts` (other writers' different values for this note's fact keys) and `similar_keys` (existing keys that look like a new one) when the write carried facts. The write already succeeded. */
+function withConflicts<T extends object>(payload: T, store: Store, note: NoteRecord, facts: unknown): T & FactFeedback {
+  return facts === undefined ? payload : { ...payload, ...factFeedback(store, note) };
 }
 
 /** Attach linter warnings (MONOMEM_LINT=warn) to a write payload. */
@@ -226,9 +240,29 @@ export const OPERATOR_ONLY_TOOLS: readonly string[] = [
   "memory_quarantine",
   "trust_policy",
   "memory_history_purge",
+  "memory_rollback",
   "memory_consolidate",
   "task_approve",
 ];
+
+/** Tools that hand memory to the caller: each successful call is one row in the read access log (Store.logAccess). */
+const READ_TOOLS = new Set([
+  "state_read",
+  "state_search",
+  "state_relevant",
+  "state_list",
+  "catch_up",
+  "memory_since",
+  "memory_get",
+  "memory_index",
+  "memory_timeline",
+  "memory_history",
+  "memory_stats",
+  "memory_consolidation_candidates",
+  "session_list",
+  "task_get",
+  "task_list",
+]);
 
 const STDIO_ADMIN_HINT =
   "This is an operator action and is off over the local stdio connection. Do it yourself in the dashboard " +
@@ -253,6 +287,10 @@ const stdioAdminToolsAllowed = (env: NodeJS.ProcessEnv = process.env): boolean =
  * forget, the session catch-up, and the two-step replace that lets an agent
  * correct a memory without silently overwriting one.
  *
+ * state_relevant left the default set: state_search mode "relevant" does
+ * the same thing, so the separate tool only cost context. It is still
+ * registered for MONOMEM_TOOLS=all or an explicit list (old prompts keep working).
+ *
  * Everything else -- history and version restore, consolidation, edge rebuild,
  * quarantine, trust policy, stats, timelines, the command-task queue and the
  * runner status -- is operator tooling. It stays available behind
@@ -263,7 +301,6 @@ export const DEFAULT_TOOLS: readonly string[] = [
   "state_write",
   "state_read",
   "state_search",
-  "state_relevant",
   "state_list",
   "state_delete",
   "catch_up",
@@ -341,8 +378,32 @@ export function createMcpServer(
           `include_distrusted is honoured only for this connection's own namespace ("${ownNs}"): pass namespace "${ownNs}". The namespaces it can only read are governed by their own admins.`
         );
       }
-      return actorStore.run({ label: conn.label ?? "", authed: conn.authed === true }, () => (handler as (...x: unknown[]) => unknown)(...args));
+      return actorStore.run({ label: conn.label ?? "", authed: conn.authed === true }, () => {
+        const out = (handler as (...x: unknown[]) => unknown)(...args);
+        return READ_TOOLS.has(name as string) ? logRead(name as string, args[0] as Record<string, unknown> | undefined, out) : out;
+      });
     });
+  };
+
+  // Read access log (Store.logAccess): one row per successful read tool call, written inside the caller's actor context
+  // so it carries the same identity a write would be stamped with. No tool reads the log back.
+  const logRead = (tool: string, a: Record<string, unknown> | undefined, out: unknown): unknown => {
+    const record = (r: unknown): unknown => {
+      const res = r as { isError?: boolean; content?: Array<{ text?: unknown }> } | undefined;
+      const text = res?.content?.[0]?.text;
+      if (res?.isError || typeof text !== "string") return r;
+      let payload: unknown;
+      try {
+        payload = JSON.parse(text.startsWith(UNTRUSTED_BANNER) ? text.slice(UNTRUSTED_BANNER.length) : text);
+      } catch {
+        payload = undefined;
+      }
+      if (payload && typeof payload === "object" && "error" in payload) return r;
+      const query = typeof a?.query === "string" ? a.query : typeof a?.message === "string" ? a.message : a;
+      store.logAccess({ tool, namespaces: typeof a?.namespace === "string" ? [a.namespace] : [], query, payload });
+      return r;
+    };
+    return out instanceof Promise ? out.then(record) : record(out);
   };
 
   const denyIfUnder = (need: Scope): string | null =>
@@ -407,6 +468,7 @@ export function createMcpServer(
       title: "Write shared state",
       description:
         "Create a new note in the shared cross-surface state store, or update an existing one if `id` is given. Returns the resulting note." +
+        " When the note records a decision or setting, also pass `facts`: other agents then read the exact value, and a disagreement is caught." +
         (nsActive
           ? " SERVER-RESOLVED NAMESPACE: this server writes to its own namespace; no `namespace` parameter is accepted."
           : ""),
@@ -435,6 +497,12 @@ export function createMcpServer(
           .describe("Note title. Required when creating a new note."),
         body: z.string().optional().describe("Note body/content."),
         tags: z.array(z.string()).optional().describe("Tags for the note."),
+        facts: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe(
+            "Settings as key/value pairs, e.g. {\"package_manager\":\"pnpm\",\"test_runner\":\"vitest\"}. Use a common key when one fits: " + COMMON_FACT_KEYS.join(", ") + ". Add a subject prefix only when the project has several (api.deploy_target). At most 10; keys are lowercase a-z 0-9 _ . - (max 40 chars), values one line of at most 80 chars. The reply may carry `conflicts` (another writer states a different value; your write still succeeds, so tell the user) or `similar_keys` and a `hint` (an existing key looks like the same setting; follow the hint)."
+          ),
         source: z
           .string()
           .optional()
@@ -466,8 +534,9 @@ export function createMcpServer(
           ),
       },
     },
-    async ({ id, namespace, title, body, tags, source, if_rev, forget_after, confidence }) => {
+    async ({ id, namespace, title, body, tags: plainTags, facts, source, if_rev, forget_after, confidence }) => {
       const warnings: LintFinding[] = [];
+      let tags = plainTags;
       try {
         const denied = denyIfUnder("write");
         if (denied) return errorResult(denied);
@@ -485,9 +554,6 @@ export function createMcpServer(
           // update-by-id could rewrite notes from a granted namespace. A
           // missing or foreign note reports the same "no note" so the caller
           // can't probe which ids exist in namespaces it may not write.
-          const patch = nsActive
-            ? { title, body, tags, source, forget_after, confidence }
-            : { namespace, title, body, tags, source, forget_after, confidence };
           // A note the distrust list hides reads as missing here too (only an admin may rewrite it).
           // hideArchived: updating a forgotten note would echo its text back; it must be restored first.
           const target = store.readVisible(id, { hideArchived: true, includeDistrusted: scopeAllows(scope, "admin") });
@@ -495,18 +561,23 @@ export function createMcpServer(
           if (nsActive && target.namespace !== ownNs) {
             return errorResult(`no note with id ${id}`);
           }
+          if (facts !== undefined) tags = withFacts(plainTags, facts, target.tags);
+          const patch = nsActive
+            ? { title, body, tags, source, forget_after, confidence }
+            : { namespace, title, body, tags, source, forget_after, confidence };
           const updated = store.update(id, patch, { ifRev: if_rev, lintWarnings: warnings });
           if (!updated) return errorResult(`no note with id ${id}`);
           await maybeEmbed(store, updated);
           // A partial update echoes back the merged note, which can include a
           // pre-existing body planted by someone else -- wrap it as untrusted.
-          return untrustedResult(withWarnings({ note: updated }, warnings));
+          return untrustedResult(withConflicts(withWarnings({ note: updated }, warnings), store, updated, facts));
         }
         if (!title || !title.trim()) {
           return errorResult("title is required when creating a new note");
         }
         // Writes always go to the server-resolved namespace when active; the
         // model-supplied `namespace` is ignored (prompt-injection guard).
+        tags = withFacts(plainTags, facts);
         const created = store.create(
           nsActive
             ? { namespace: ownNs, title, body, tags, source, forget_after, ...(typeof confidence === "number" ? { confidence } : {}) }
@@ -514,7 +585,7 @@ export function createMcpServer(
           { lintWarnings: warnings }
         );
         await maybeEmbed(store, created);
-        return untrustedResult(withWarnings({ note: created }, warnings));
+        return untrustedResult(withConflicts(withWarnings({ note: created }, warnings), store, created, facts));
       } catch (e) {
         if (e instanceof QuarantinedError) return quarantinedResult(e);
         return errorFor(e);
@@ -568,7 +639,7 @@ export function createMcpServer(
         if (!note) return errorResult(`no note with id ${id}`);
         // Round edge scores to 3 decimals for readability (stored raw in
         // SQLite), mirroring memory_consolidation_candidates.
-        const annotated = annotateStaleness(note);
+        const annotated = withWhen(note);
         const payload = note.neighbors
           ? {
               ...annotated,
@@ -590,7 +661,7 @@ export function createMcpServer(
     {
       title: "Search shared state",
       description:
-        "Search notes in the shared state store by title/body/tags. Keyword (full-text) by default; set mode to 'semantic' or 'hybrid' for meaning-based search when embeddings are enabled (falls back to keyword otherwise). Always reflects the latest writes." +
+        "Search notes in the shared state store by title/body/tags. Keyword (full-text) by default; set mode to 'semantic' or 'hybrid' for meaning-based search when embeddings are enabled (falls back to keyword otherwise). Set mode to 'relevant' and pass a natural conversational message as `query` to extract keywords from it and return notes matching ANY of them (default limit 5; returns the extracted keywords too). Always reflects the latest writes." +
         (nsActive
           ? " The `namespace` parameter is an untrusted hint: only namespaces this server may read are searched."
           : ""),
@@ -606,10 +677,10 @@ export function createMcpServer(
           ),
         limit: z.number().int().optional().describe("Max results (default 20, max 200)."),
         mode: z
-          .enum(SEARCH_MODES)
+          .enum([...SEARCH_MODES, "relevant"])
           .optional()
           .describe(
-            "keyword = full-text (default when embeddings off); semantic = meaning only; hybrid = fuse both. Falls back to keyword if embeddings are unavailable."
+            "keyword = full-text (default when embeddings off); semantic = meaning only; hybrid = fuse both. Falls back to keyword if embeddings are unavailable. relevant = treat `query` as a conversational message: extract its keywords and match notes on ANY one of them (what state_relevant does; `when`, `explain` and `include_superseded` do not apply)."
           ),
         when: z
           .string()
@@ -623,12 +694,54 @@ export function createMcpServer(
           .describe(
             "Attach a `breakdown` to each result: the base relevance, access boost and staleness factors that produced its rank. Default false."
           ),
+        as_of: z
+          .string()
+          .optional()
+          .describe(
+            "Admin only. Read-only time travel: search memory as it stood at this time (ISO date/time or an age like 7d, 2h), rebuilt from note history. Keyword match on the old text only; notes whose old text is no longer kept are counted, not shown. Cannot be combined with mode, when, explain, written_by, not_written_by or include_superseded."
+          ),
         ...WRITER_FILTER_SHAPE,
         ...SUPERSEDED_SHAPE,
       },
     },
-    async ({ query, namespace, limit, mode, when, explain, written_by, not_written_by, include_distrusted, include_superseded }) => {
+    async ({ query, namespace, limit, mode, when, explain, as_of, written_by, not_written_by, include_distrusted, include_superseded }) => {
       try {
+        if (as_of !== undefined) {
+          if (mode !== undefined || when !== undefined || explain !== undefined || written_by || not_written_by || include_superseded !== undefined) {
+            return errorResult("as_of cannot be combined with mode, when, explain, written_by, not_written_by or include_superseded");
+          }
+          // Admin only, like note history: a past version can hold text that was taken out on purpose, and a
+          // forgotten note comes back in a past view.
+          const denied = denyIfUnder("admin");
+          if (denied) return errorResult(denied);
+          if (limit !== undefined && limit < 1) return errorResult("limit must be an integer >= 1");
+          const { parseAsOf, asOfView, asOfSearch, asOfFields } = await import("./asof.js");
+          let at: Date;
+          try {
+            at = parseAsOf(as_of);
+          } catch (e) {
+            return errorResult((e as Error).message);
+          }
+          // Same namespace gating as the live search: the hint is untrusted when namespaces are enforced.
+          const hint = nsActive ? trustedHint(namespace) : namespace;
+          const spaces = nsActive ? (hint ? [hint] : readable()) : hint ? [hint] : undefined;
+          const view = asOfView(store, at, { ...(spaces ? { namespaces: spaces } : {}), ...(include_distrusted === true ? { includeDistrusted: true } : {}) });
+          const hits = asOfSearch(view, query, clampInt(limit, 20, 1, 200));
+          return untrustedResult({
+            as_of: at.toISOString(),
+            note: "Reconstructed from note history; hard-deleted notes cannot be shown.",
+            not_kept: view.notKept,
+            archived_then: view.archivedThen,
+            results: hits.map((h) => asOfFields(h, withWhen)),
+            searchedNamespaces: spaces ?? [],
+          });
+        }
+        if (mode === "relevant") {
+          if (when !== undefined || explain !== undefined || include_superseded !== undefined) {
+            return errorResult("when, explain and include_superseded do not apply to mode 'relevant'");
+          }
+          return await relevantTool({ message: query, limit, namespace, written_by, not_written_by, include_distrusted });
+        }
         const denied = denyIfUnder("read");
         if (denied) return errorResult(denied);
         // A time phrase the parser doesn't recognize is ignored, never an
@@ -661,7 +774,7 @@ export function createMcpServer(
               ? perNs[0].map((h) => h.note)
               : roundRobin(perNs.map((l) => l.map((h) => h.note)), clampInt(limit, 20, 1, 200));
           return untrustedResult({
-            results: merged.map((n) => ({ ...annotateStaleness(n), breakdown: byId.get(n.id) })),
+            results: merged.map((n) => ({ ...withWhen(n), breakdown: byId.get(n.id) })),
             timeRange: timePhrase ? timePhrase.label : null,
             searchedNamespaces: nsActive ? spaces : namespace ? [namespace] : [],
           });
@@ -688,7 +801,7 @@ export function createMcpServer(
               ...wf,
             });
             return untrustedResult({
-              results: results.map((n) => annotateStaleness(n)),
+              results: results.map((n) => withWhen(n)),
               timeRange: timePhrase ? timePhrase.label : null,
               searchedNamespaces: [hint],
             });
@@ -700,7 +813,7 @@ export function createMcpServer(
             ...wf,
           });
           return untrustedResult({
-            results: results.map((n) => annotateStaleness(n)),
+            results: results.map((n) => withWhen(n)),
             timeRange: timePhrase ? timePhrase.label : null,
             searchedNamespaces,
           });
@@ -713,7 +826,7 @@ export function createMcpServer(
           ...wf,
         });
         return untrustedResult({
-          results: results.map((n) => annotateStaleness(n)),
+          results: results.map((n) => withWhen(n)),
           timeRange: timePhrase ? timePhrase.label : null,
           searchedNamespaces: namespace ? [namespace] : [],
         });
@@ -749,55 +862,72 @@ export function createMcpServer(
         ...WRITER_FILTER_SHAPE,
       },
     },
-    async ({ message, limit, namespace, written_by, not_written_by, include_distrusted }) => {
-      try {
-        const denied = denyIfUnder("read");
-        if (denied) return errorResult(denied);
-        if (limit !== undefined && limit < 1) return errorResult("limit must be an integer >= 1");
-        if (!message || !message.trim()) {
-          return errorResult("message is required");
-        }
-        // The tool's own default (5) overrides the service-level default
-        // (10): a relevance probe returns a handful of notes, not a page.
-        const effLimit = limit ?? 5;
-        // Attach the staleness fields (stale/ageDays, plus staleWarning when
-        // stale): the vague-message path is the one most likely to act on
-        // outdated facts, so it gets the same staleness contract as search.
-        const withStaleness = (r: { keywords: string[]; results: NoteRecord[] }) => ({
-          keywords: r.keywords,
-          results: r.results.map((n) => annotateStaleness(n)),
-        });
-        if (nsActive) {
-          // Same gating as state_search: the model-supplied namespace is an
-          // UNTRUSTED HINT, intersected with the readable set. A hint naming
-          // an unreadable namespace is ignored (readable namespaces are
-          // searched instead). searchedNamespaces echoes which namespaces
-          // were actually searched.
-          const hint = trustedHint(namespace);
-          if (hint) {
-            const out = await runRelevantSearch(store, message, {
-              namespace: hint,
-              limit: effLimit,
-              ...writerFilterArgs(written_by, not_written_by, include_distrusted),
-            });
-            return untrustedResult({ ...withStaleness(out), searchedNamespaces: [hint] });
-          }
-          const out = await relevantReadable(message, { limit: effLimit, ...writerFilterArgs(written_by, not_written_by, include_distrusted) });
-          return untrustedResult({
-            ...withStaleness(out),
-            searchedNamespaces: out.searchedNamespaces,
+    relevantTool
+  );
+
+  // state_relevant's handler, also state_search's mode "relevant" (a declaration, so state_search above can call it).
+  async function relevantTool({
+    message,
+    limit,
+    namespace,
+    written_by,
+    not_written_by,
+    include_distrusted,
+  }: {
+    message: string;
+    limit?: number;
+    namespace?: string;
+    written_by?: string;
+    not_written_by?: string;
+    include_distrusted?: boolean;
+  }) {
+    try {
+      const denied = denyIfUnder("read");
+      if (denied) return errorResult(denied);
+      if (limit !== undefined && limit < 1) return errorResult("limit must be an integer >= 1");
+      if (!message || !message.trim()) {
+        return errorResult("message is required");
+      }
+      // The tool's own default (5) overrides the service-level default
+      // (10): a relevance probe returns a handful of notes, not a page.
+      const effLimit = limit ?? 5;
+      // Attach the staleness fields (stale/ageDays, plus staleWarning when
+      // stale): the vague-message path is the one most likely to act on
+      // outdated facts, so it gets the same staleness contract as search.
+      const withStaleness = (r: { keywords: string[]; results: NoteRecord[] }) => ({
+        keywords: r.keywords,
+        results: r.results.map((n) => withWhen(n)),
+      });
+      if (nsActive) {
+        // Same gating as state_search: the model-supplied namespace is an
+        // UNTRUSTED HINT, intersected with the readable set. A hint naming
+        // an unreadable namespace is ignored (readable namespaces are
+        // searched instead). searchedNamespaces echoes which namespaces
+        // were actually searched.
+        const hint = trustedHint(namespace);
+        if (hint) {
+          const out = await runRelevantSearch(store, message, {
+            namespace: hint,
+            limit: effLimit,
+            ...writerFilterArgs(written_by, not_written_by, include_distrusted),
           });
+          return untrustedResult({ ...withStaleness(out), searchedNamespaces: [hint] });
         }
-        const out = await runRelevantSearch(store, message, { namespace, limit: effLimit, ...writerFilterArgs(written_by, not_written_by, include_distrusted) });
+        const out = await relevantReadable(message, { limit: effLimit, ...writerFilterArgs(written_by, not_written_by, include_distrusted) });
         return untrustedResult({
           ...withStaleness(out),
-          searchedNamespaces: namespace ? [namespace] : [],
+          searchedNamespaces: out.searchedNamespaces,
         });
-      } catch (e) {
-        return errorFor(e);
       }
+      const out = await runRelevantSearch(store, message, { namespace, limit: effLimit, ...writerFilterArgs(written_by, not_written_by, include_distrusted) });
+      return untrustedResult({
+        ...withStaleness(out),
+        searchedNamespaces: namespace ? [namespace] : [],
+      });
+    } catch (e) {
+      return errorFor(e);
     }
-  );
+  }
 
   server.registerTool(
     "state_list",
@@ -938,6 +1068,74 @@ export function createMcpServer(
         // returned pre-prompt -- so the untrusted-data banner applies, like
         // every other tool that echoes stored note content.
         return untrustedResult({ ...store.accessStats(namespaces, { hideDistrusted: !scopeAllows(scope, "admin") }), meter: meterStats(store, namespaces) });
+      } catch (e) {
+        return errorFor(e);
+      }
+    }
+  );
+
+  // Opt-in (MONOMEM_TOOLS=memory_receipt), not in DEFAULT_TOOLS: the default surface stays ten tools.
+  server.registerTool(
+    "memory_receipt",
+    {
+      title: "Memory receipt",
+      annotations: { readOnlyHint: true },
+      description:
+        "Read-only: which memories a session start showed the agent and why (note id, rank, why-tag, approximate tokens). With session_id: that session, with note titles looked up now (a note deleted since is marked). Without: the most recent sessions. Receipts store ids and tags only, never note text." +
+        (nsActive ? " Scoped to the namespaces this server may read." : ""),
+      inputSchema: {
+        session_id: z.string().max(200).optional().describe("The session to show; omit to list recent sessions."),
+        namespace: z.string().optional().describe(nsActive ? "Untrusted hint: restrict to this namespace. Ignored unless this server may read it." : "Restrict to this namespace."),
+      },
+    },
+    async ({ session_id, namespace }) => {
+      try {
+        const denied = denyIfUnder("read");
+        if (denied) return errorResult(denied);
+        let namespaces: string[] | undefined;
+        if (nsActive) {
+          const hint = trustedHint(namespace);
+          namespaces = hint ? [hint] : readable();
+        } else if (namespace) {
+          namespaces = [namespace];
+        }
+        if (!session_id) return untrustedResult({ sessions: receiptList(store, namespaces) });
+        const r = receiptGet(store, session_id, namespaces);
+        return r ? untrustedResult(r) : errorResult(`no receipt for session ${session_id}`);
+      } catch (e) {
+        return errorFor(e);
+      }
+    }
+  );
+
+  // Opt-in (MONOMEM_TOOLS=memory_why), not in DEFAULT_TOOLS, like memory_receipt. Titles only, never the body.
+  server.registerTool(
+    "memory_why",
+    {
+      title: "Why a memory is what it is",
+      annotations: { readOnlyHint: true },
+      description:
+        "Read-only: the story of one note in time order: who wrote it (server-stamped or a config label), its versions, what replaced it or it replaced, held edits, pin, which session starts were shown it and why, and its status. Titles only, never note text. A note from a distrusted writer reads as missing. Ends with what is NOT recorded (for example who read it)." +
+        (nsActive ? " Scoped to the namespaces this server may read." : ""),
+      inputSchema: {
+        id: z.number().int().describe("The note id."),
+        namespace: z.string().optional().describe(nsActive ? "Untrusted hint: restrict to this namespace. Ignored unless this server may read it." : "Restrict to this namespace."),
+      },
+    },
+    async ({ id, namespace }) => {
+      try {
+        const denied = denyIfUnder("read");
+        if (denied) return errorResult(denied);
+        let namespaces: string[] | undefined;
+        if (nsActive) {
+          const hint = trustedHint(namespace);
+          namespaces = hint ? [hint] : readable();
+        } else if (namespace) {
+          namespaces = [namespace];
+        }
+        const note = store.readVisible(id);
+        if (!note || (namespaces && !namespaces.includes(note.namespace))) return errorResult(`no note ${id}`);
+        return untrustedResult(noteWhy(store, note, { namespaces }));
       } catch (e) {
         return errorFor(e);
       }
@@ -1960,6 +2158,38 @@ export function createMcpServer(
         if (denied) return errorResult(denied);
         return textResult(purgeNoteHistory(store, callerNow(), id));
       } catch (e) {
+        return supersedeFailure(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "memory_rollback",
+    {
+      title: "Roll back what one writer did since a time",
+      annotations: { destructiveHint: true },
+      description:
+        "Admin only, operator tool. Without code: a preview of undoing everything one writer did since a time (notes it created are archived, " +
+        "notes whose text it changed get their earlier text back) plus a one-time code; nothing changes. With code: applies exactly that preview, " +
+        "all or nothing. Notes another writer changed later are skipped unless include_conflicts. Pinned notes and approve-first namespaces " +
+        "are skipped here (the monomem CLI does those). Show the preview to the person and ask before confirming.",
+      inputSchema: {
+        writer: z.string().optional().describe('The exact writer name (written_by), e.g. "token:ci" or "stdio:cursor"; "stdio" means every local app.'),
+        since: z.string().optional().describe("An ISO time, or a duration back from now: 30m, 2h, 7d."),
+        include_conflicts: z.boolean().optional().describe("Also roll back notes another writer changed afterwards (their text stays in the history)."),
+        code: z.string().optional().describe("The one-time code from the preview, to apply it."),
+      },
+    },
+    async ({ writer, since, include_conflicts, code }) => {
+      try {
+        const denied = denyIfUnder("admin");
+        if (denied) return errorResult(denied);
+        if (code === undefined) return untrustedResult(rollbackPreview(store, callerNow(), { writer, since, include_conflicts }));
+        const out = rollbackConfirm(store, callerNow(), { token: code });
+        await embedRestored(store, out);
+        return textResult(out);
+      } catch (e) {
+        if (e instanceof QuarantinedError) return quarantinedResult(e);
         return supersedeFailure(e);
       }
     }

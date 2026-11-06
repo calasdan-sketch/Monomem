@@ -4,6 +4,7 @@
 // canRead, validateSpacePaths, resolveStartupNamespace) plus MCP- and
 // REST-level enforcement when resolution is active, and backward
 // compatibility when it is not configured.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, beforeEach, afterEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { tmpdir } from "node:os";

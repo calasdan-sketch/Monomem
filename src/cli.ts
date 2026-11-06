@@ -4,6 +4,7 @@ import "./legacy-env.js"; // second: read the old CLAUDE_BRIDGE_* variables as M
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { setProcessWriter } from "./actor.js";
+import { gatePinned, requireOperator } from "./operator-gate.js";
 // monomem CLI: one command to run, check, or wire up the bridge.
 //   monomem [start]   start the API + dashboard AND MCP-over-HTTP (default)
 //   monomem mcp       start the MCP server over stdio (for Claude Code/Cursor/...)
@@ -11,7 +12,88 @@ import { setProcessWriter } from "./actor.js";
 //   monomem init      print the config snippet to wire it into your agent
 //   monomem help      show help
 
-function usage(): void {
+/** Every command main() accepts, for the unknown-command check and the "did you mean" hint. */
+const COMMANDS = [
+  "start", "serve", "mcp", "mcp:stdio", "doctor", "init", "setup", "uninstall", "sync", "reindex", "recall", "hook",
+  "consolidate", "rebuild-edges", "relevant", "search", "token", "changes", "backup", "runner-status", "watch", "export", "import", "trust",
+  "quarantine", "approve-first", "access", "flood", "resume", "decay", "archive", "restore", "delete", "quality", "conflicts", "facts", "fact",
+  "encrypt", "meter", "receipts", "why", "never-show", "supersede", "history", "pin", "unpin", "rollback", "bench", "drill", "health", "audit",
+  "help", "--help", "-h", "--version", "-v", "version",
+];
+
+/** Plain edit distance; the command list is tiny, so the simple version is fine. */
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** The closest known command, or undefined when nothing is plausibly what the person meant. */
+function suggestCommand(cmd: string): string | undefined {
+  let best: string | undefined;
+  let bestDistance = 3; // 1 or 2 edits; farther is a guess, not a hint
+  for (const c of COMMANDS.filter((x) => !x.startsWith("-"))) {
+    const d = editDistance(cmd.toLowerCase(), c);
+    if (d < bestDistance) {
+      best = c;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+function shortUsage(): void {
+  console.log(
+    [
+      "monomem <command>      (the most-used commands; 'monomem help --all' lists every one)",
+      "",
+      "Get started",
+      "  setup [--dry-run]       Connect Monomem to the AI apps on this computer (shows the changes, asks first)",
+      "  doctor                  Check Node, the database, the token and the setup",
+      "  import --claude         Bring in what Claude Code already remembers (add --dry-run to look first)",
+      "  start                   Run the dashboard, REST API and MCP-over-HTTP (the default)",
+      "  mcp                     Run the MCP server over stdio (what your apps launch)",
+      "",
+      "Daily",
+      "  relevant \"message\"      Show the notes that relate to a sentence (search \"words\" does the same)",
+      "  search|relevant \"message\" --as-of 7d [--json]   The same, as memory stood then (ISO time or 7d/2h; no message lists notes)",
+      "  changes                 What changed while you were away",
+      "  history <id>            A note's earlier versions (history restore <id> <version> puts one back)",
+      "  pin <id> | unpin <id>   Pin a note so agents can read it but not change it",
+      "",
+      "Trust",
+      "  quarantine              Review writes that were held (by the linter or an approve-first namespace)",
+      "  approve-first           Hold every agent write to a namespace until you approve it",
+      "  trust                   Distrust a writer; decide which other servers' exports to believe",
+      "  token                   Make, list or remove access tokens for your apps (add needs a terminal)",
+      "  rollback --writer w --since 2h   Undo what one writer did (shows a plan first)",
+      "  why <id> [--json]       The story of one note: who wrote it, versions, replacements, holds, sessions shown it",
+      "  receipts [session] [--json]   Which notes a session start showed, and why (ids and tags, never note text)",
+      "  conflicts               Notes from different writers that disagree (flag only)",
+      "  facts [--check]         The decisions agents recorded; --check exits 1 if writers disagree (for CI)",
+      "  access                  Who read memory, and when",
+      "  drill [--json]          Replay known memory-poisoning attacks on a copy of your store and your settings",
+      "  health [--json] [--card [file.svg]]   One grade A-F with the reason: setup, settings, drill, audit chain, held writes (rule: health --help)",
+      "",
+      "Maintenance",
+      "  backup [--out <dir>]    Copy the database safely, even while the server runs",
+      "  export | import         Move notes in and out (JSON or Markdown)",
+      "  quality                 Duplicates, stale notes and flagged notes worth a look",
+      "  delete <id>             Delete a note permanently, with its earlier versions",
+      "  uninstall               Take Monomem out of every app setup connected",
+      "",
+      "Per-command options: 'monomem help --all'. Docs: https://github.com/calasdan-sketch/monomem",
+      "",
+    ].join("\n")
+  );
+}
+
+function usage(all = false): void {
+  if (!all) return shortUsage();
   console.log(
     [
       "monomem <command>",
@@ -47,6 +129,12 @@ function usage(): void {
       "            Off switch: MONOMEM_CAPTURE=off. When: installed by `monomem setup --capture`.",
       "            file-context (PreToolUse on Read) lists what memory knows about the file, once per session; it never",
       "            blocks or changes the Read.",
+      "  why <note-id> [--json] [--body]",
+      "            The story of one note in time order: who wrote it, versions, replacements, holds, pin, sessions shown it, status.",
+      "  receipts [session-id] [--json]",
+      "            List recent sessions, or show which memories one session start showed and why (ids and tags are stored, never note text).",
+      "  meter [--json] [--card [file.svg]]",
+      "            What Monomem costs, as numbers. --card writes a shareable SVG savings card (default monomem-card.svg).",
       "  never-show <id> [--undo]",
       "            Keep one note out of the session-start context for good (tags it never-show; it stays searchable).",
       "            When: a memory keeps being shown that does not help. The dashboard has the same button.",
@@ -64,8 +152,11 @@ function usage(): void {
       "            progress to stderr. Reports {created, removed} edge",
       "            counts. O(n^2) — maintenance, not interactive.",
       "            When: after a bulk import, or after changing the threshold.",
-      "  relevant \"some natural language message\" [--limit 5] [--namespace ns] [--written-by w] [--not-written-by w] [--include-distrusted]",
+      "  relevant|search \"some natural language message\" [--limit 5] [--namespace ns] [--written-by w] [--not-written-by w] [--include-distrusted] [--as-of <ISO|7d|2h>] [--json]",
       "            Extract keywords from a message and show the relevant notes.",
+      "            --as-of (same for search and relevant): memory as it stood then, rebuilt from note history. Shows a snippet,",
+      "            an [edited since] marker and the writer then (\"not recorded\" when history lacks it). Times are local with the UTC",
+      "            offset. --json prints it as JSON. No message = list the notes.",
       "            Prints the keywords used alongside the results.",
       "            When: you have a vague message and want the memory it touches.",
       "  changes [--since 24h|ISO|last] [--consumer name] [--namespace ns] [--source s] [--limit 100]",
@@ -112,6 +203,10 @@ function usage(): void {
       "         | export-key --out file | rotate] [--json]   (monomem trust --help)",
       "            The trust policy: writers whose notes are left out of every read (and never run),",
       "            and the other servers whose signed exports an import will believe. See docs/trust.md.",
+      "  token add --label <name> --scope read|write|admin [--namespace ns] | token list | token remove <label>",
+      "            Make a random access token for an app and save it in tokens.json (shown once; restart a running server after).",
+      "            list shows labels and scopes only. Commands that lower protection (token add, trust undistrust/attester-add/",
+      "            attester-unrevoke, quarantine approve, unpin, approve-first off, resume) need a real terminal and a typed yes.",
       "  sync --git <repo-folder> [--remote name] [--encrypt] [--key-file f] [--dry-run] [--no-push] [--yes]",
       "            Keep your notes in step across your own computers through a PRIVATE git repository you own: fetch, merge,",
       "            three-way merge into the database, write back, commit, push. No Monomem server. --encrypt seals every",
@@ -120,7 +215,7 @@ function usage(): void {
       "            Import what Claude Code already remembers: CLAUDE.md files (user, this folder or --project) and auto memory",
       "            (~/.claude/projects/*/memory). Cut into separate notes at headings, tagged with their source file and project; running",
       "            it again adds only what is new. Anything that looks like a secret is skipped and never shown. Local only.",
-      "  import --from claude-mem|mem0|basic-memory [--path p] [--dry-run] [--yes] [--namespace ns]",
+      "  import --from claude-mem|mem0|basic-memory|mcp-memory [--path p] [--dry-run] [--yes] [--namespace ns]",
       "            Import another memory tool's notes: claude-mem's database (~/.claude-mem/claude-mem.db, opened read only;",
       "            observations and session summaries keep their type, files, project and dates), a mem0 JSON export (--path),",
       "            or a basic-memory folder (~/basic-memory). Same rules as --claude: secrets skipped, re-runs add only what is new.",
@@ -130,16 +225,37 @@ function usage(): void {
       "            reported and the losing version is saved under <dir>/.conflicts/.",
       "            Runs through the memory linter.",
       "  quarantine [list | approve <id> | reject <id>]",
-      "            Review writes the memory linter held (MONOMEM_LINT).",
+      "            Review writes the memory linter held (MONOMEM_LINT) or an approve-first namespace held.",
+      "  approve-first [<namespace> on|off | --all on|off]",
+      "            Hold every agent write to a namespace in the quarantine queue until you approve it.",
+      "            --all on|off: the same for every namespace, including ones created later. No arguments: list the namespaces with it on, and the --all switch. Writes from monomem commands are not held.",
+      "  access [--since 24h|ISO] [--writer label] [--limit 100] [--json]",
+      "            Who read memory: time, writer label, tool or route, result count, namespaces and a short",
+      "            redacted query preview (never note text). Kept MONOMEM_ACCESS_LOG_DAYS (30; 0 = off).",
+      "  flood | resume <label>",
+      "            Writers the flood guard paused (more than MONOMEM_FLOOD_WRITES_PER_HOUR writes, default 500,",
+      "            in an hour) / let one write again. Local stdio apps all share the label \"stdio\".",
       "  quality [--json] [--namespace ns]",
       "            What is worth a look: near-duplicates, stale notes with a newer twin, quarantined writes, notes",
       "            the linter flags, and captured rows about to decay. Each comes with the command that fixes it.",
+      "  conflicts [--json] [--namespace ns]",
+      "            Live notes from different writers that give different values for the same key (deploy target, package",
+      "            manager, a version, a URL). Flag only: you choose supersede, pin, distrust, or remove just the fact.",
+      "  facts [--namespace ns] [--json] [--as-of <ISO|7d|2h>] [--check]",
+      "            The decisions agents recorded as facts: key, current value(s), writers, since. Marks disputed keys and keys",
+      "            two or more writers agree on. --check prints one line and exits 1 if any fact is disputed (0 if none): for CI.",
+      "  fact remove <note id> <key>",
+      "            Drop one fact from a note. The note stays and gets a fact-removed:<key> tag; its text may still mention the old value.",
       "  decay [--dry-run] [--namespace ns]",
       "            Archive (never delete) captured observations idle MONOMEM_DECAY_DAYS (30) and summaries idle",
       "            MONOMEM_DECAY_SUMMARY_DAYS (180). Never: your own notes, decisions, anything tagged \"pinned\".",
       "            Also runs on its own in the expiry sweep and at the end of a captured session.",
       "  archive <id> | restore <id>",
       "            Soft-archive a note, or bring an archived one back (the undo for decay and archive).",
+      "  audit verify [--expect <head-hash>]",
+      "            Walk the audit log's hash chain and report the first broken line (edits/deletions inside the chain).",
+      "            Keep the printed head hash off this machine (a git commit, a password manager). --expect <hash> exits 1 if",
+      "            that line is no longer in the log (rewritten or cut off); the log growing past it is fine. Usage errors exit 2.",
       "  delete <id> [--yes]",
       "            Delete a note permanently, with all its earlier versions. Asks first; cannot be undone.",
       "  encrypt <enable|status|disable>",
@@ -160,12 +276,22 @@ function usage(): void {
       "            Bring a replaced note back exactly as it was (recorded).",
       "  history <id> [--json] [--include-distrusted] | history restore <id> <version> [--if-rev n] | history purge <id> [--yes]",
       "            A note's earlier versions: list them, put one back (as a new version, nothing is overwritten), or forget them.",
+      "  pin [<id>] | unpin <id>",
+      "            Pin a note so agents can read it but only this CLI can change, archive, replace or restore it. No id: list pins.",
+      "  rollback --writer <name> --since <iso|30m|2h|7d> [--include-conflicts] [--yes] [--json]",
+      "            Undo what one writer did since then: archive notes it created, put back the text of notes it changed.",
+      "            Shows the plan first; notes others changed later are skipped unless --include-conflicts. \"stdio\" = every local app.",
       "  bench [--json] [--suite name] [--only id] [--seed n] [--dir folder] [--strict-gaps] [--verbose]",
       "            Run the provenance benchmark on a throwaway store: stale memory, contradiction recovery,",
       "            permission isolation, provenance retention. Offline, deterministic, exits 1 on a failure.",
       "            Your own data is never touched. See docs/BENCHMARK.md.",
       "  bench --longmemeval | --locomo [--data file] [--limit n] [--mode keyword|hybrid] [--granularity session|turn] [--json]",
       "            Retrieval benchmark (recall@k, nDCG, MRR) on a public dataset, in a temp folder. No LLM.",
+      "  drill [--json]",
+      "            Replay known memory-poisoning attacks on a copy of your store and your settings; your data is not changed.",
+      "            With no store yet it says so (run setup first).",
+      "  health [--json] [--card [file.svg]]",
+      "            One grade A-F with the reason: setup, settings, drill, audit chain, held writes. Rule: monomem health --help",
       "  help      Show this help",
       "",
     ].join("\n")
@@ -175,6 +301,12 @@ function usage(): void {
 /** doctor warns above these (docs/footprint.md). */
 const DOCTOR_MAX_DATA_BYTES = 1e9;
 const DOCTOR_MAX_BACKLOG = 10_000;
+
+/** doctor: settings that weaken protection, plus a data folder a cloud-sync client may copy. Warnings only; the list is shared with `monomem health`. */
+async function doctorSecurityChecks(dataDir: string, bindHost: string, warn: (m: string) => void): Promise<void> {
+  const { securityFindings } = await import("./health.js");
+  for (const f of await securityFindings(dataDir, bindHost)) if (f.status !== "info") warn(f.detail);
+}
 
 async function doctor(): Promise<void> {
   const {
@@ -192,8 +324,13 @@ async function doctor(): Promise<void> {
   const { existsSync } = await import("node:fs");
   const { resolve: resolvePath } = await import("node:path");
   const { Store } = await import("./store.js");
-  const ok = (m: string) => console.log("  [ok]   " + m);
-  const warn = (m: string) => console.log("  [warn] " + m);
+  // Colour only for a person at a terminal: not when piped, and not when NO_COLOR is set (no-color.org).
+  // FORCE_COLOR=0 / false means off (even on a terminal); any other value forces colour on.
+  const force = process.env.FORCE_COLOR;
+  const colour = (force === undefined || force === "" ? process.stdout.isTTY : force !== "0" && force !== "false") && !process.env.NO_COLOR;
+  const tag = (t: string, code: number) => (colour ? `\x1b[${code}m${t}\x1b[0m` : t);
+  const ok = (m: string) => console.log("  " + tag("[ok]", 32) + "   " + m);
+  const warn = (m: string) => console.log("  " + tag("[warn]", 33) + " " + m);
   console.log("monomem doctor\n");
 
   const { nodeIsOk, MIN_NODE_TEXT, sqliteHasFts5 } = await import("./setup.js");
@@ -258,6 +395,7 @@ async function doctor(): Promise<void> {
     const s = new Store(DB_PATH);
     const r = s.list({ limit: 1 });
     const edges = s.edgeCount();
+    const sample = edges === 0 && r.total >= 2 ? s.list({ limit: 60 }).notes : [];
     distrustCount = s.distrustRules().length;
     const { meterStats, meterLine } = await import("./meter.js");
     const footprint = meterLine(meterStats(s));
@@ -267,7 +405,14 @@ async function doctor(): Promise<void> {
     // Migration v4 adds the similarity-edge table but does not score
     // existing notes: a store upgraded from 1.0.0 has notes and no edges
     // until a one-time rebuild.
-    if (r.total >= 2 && edges === 0) {
+    // A new store of unrelated notes also has no edges, so warn only when two notes ARE similar enough
+    // to have been linked. ponytail: looks at the 60 newest notes only; widen if old stores slip through.
+    const { cosineSimilarity } = await import("./consolidate.js");
+    const { EDGE_SIMILARITY_THRESHOLD } = await import("./store.js");
+    const similarPair = sample.some((a, i) =>
+      sample.slice(i + 1).some((b) => a.namespace === b.namespace && cosineSimilarity(`${a.title} ${a.body}`, `${b.title} ${b.body}`) >= EDGE_SIMILARITY_THRESHOLD)
+    );
+    if (similarPair) {
       warn(
         "notes but no similarity edges (store created before 1.1?) — run " +
           "`monomem rebuild-edges` once to link existing notes"
@@ -277,6 +422,8 @@ async function doctor(): Promise<void> {
     dbProblem = true;
     warn("database problem: " + (e as Error).message);
   }
+
+  await doctorSecurityChecks(DATA_DIR, BIND_HOST, warn);
 
   // Pre-upgrade copies (`<db>.pre-v*-backup`) hold the notes as they were before an upgrade, outside
   // retention, deletes and at-rest encryption. Say that they exist, how big and how old, and how to remove them.
@@ -407,8 +554,11 @@ async function doctor(): Promise<void> {
     const entries = parsed?.hooks?.SessionStart;
     const wired =
       Array.isArray(entries) &&
-      /(monomem|cli\.js)[\s\S]{0,60}\b(recall|hook session-start)\b/.test(JSON.stringify(entries));
-    if (wired) {
+      /(monomem|onememory|cli\.js)[\s\S]{0,60}\b(recall|hook session-start)\b/.test(JSON.stringify(entries));
+    // The old package's hook line (`npx -y onememory-mcp@<v> recall`) still runs, but it is the old code: setup rewrites it.
+    if (wired && /npx\s+(?:-y\s+)?onememory-mcp\b/.test(JSON.stringify(entries))) {
+      warn("SessionStart hook is the old onememory-mcp one: old hook, run `monomem setup --hook` to update it");
+    } else if (wired) {
       ok("SessionStart hook wired in ~/.claude/settings.json");
     } else {
       warn(
@@ -416,7 +566,7 @@ async function doctor(): Promise<void> {
           "see https://github.com/calasdan-sketch/monomem/blob/main/docs/sessionstart-hook.md"
       );
     }
-    const captureWired = /(monomem|cli\.js)[\s\S]{0,60}\bhook post-tool\b/.test(JSON.stringify(parsed?.hooks ?? {}));
+    const captureWired = /(monomem|onememory|cli\.js)[\s\S]{0,60}\bhook post-tool\b/.test(JSON.stringify(parsed?.hooks ?? {}));
     console.log(`  [info] ${captureWired ? "automatic memory hooks wired" : "automatic memory hooks not installed (monomem setup --capture)"}`);
   } catch {
     warn(
@@ -709,6 +859,7 @@ async function consolidate(): Promise<void> {
       return;
     }
 
+    await gatePinned(store, groups.flat(), "merge (it deletes the source notes)");
     let mergedCount = 0;
     for (const g of groups) {
       try {
@@ -716,7 +867,7 @@ async function consolidate(): Promise<void> {
         // Make the merged note visible to semantic search (consolidateNotes
         // itself doesn't embed; store.create is embedding-agnostic).
         await maybeEmbed(store, merged);
-        console.log(`Merged [${g.join(", ")}] -> #${merged.id} "${merged.title}"`);
+        console.log(`Merged [${g.join(", ")}] -> #${merged.id} "${printable(merged.title)}"`);
         mergedCount += 1;
       } catch (e) {
         console.error(`Skipped [${g.join(", ")}]: ${(e as Error).message}`);
@@ -742,10 +893,15 @@ async function relevant(): Promise<void> {
   let writtenBy: string | undefined;
   let notWrittenBy: string | undefined;
   let includeDistrusted = false;
+  let asOfRaw: string | undefined;
+  let asJson = false;
   const parts: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === "--limit" && i + 1 < args.length) limit = Number(args[++i]);
+    if (a === "--json") asJson = true;
+    else if (a === "--as-of" && i + 1 < args.length) asOfRaw = args[++i];
+    else if (a.startsWith("--as-of=")) asOfRaw = a.slice("--as-of=".length);
+    else if (a === "--limit" && i + 1 < args.length) limit = Number(args[++i]);
     else if (a.startsWith("--limit=")) limit = Number(a.slice("--limit=".length));
     else if (a === "--namespace" && i + 1 < args.length) namespace = args[++i];
     else if (a.startsWith("--namespace=")) namespace = a.slice("--namespace=".length);
@@ -760,9 +916,49 @@ async function relevant(): Promise<void> {
     } else parts.push(a);
   }
   const message = parts.join(" ");
-  if (!message.trim()) {
-    console.error('Usage: monomem relevant "some natural language message" [--limit 5] [--namespace ns]');
+  if (!message.trim() && !asOfRaw) {
+    console.error('Usage: monomem relevant "some natural language message" [--limit 5] [--namespace ns] [--as-of <ISO|7d|2h>] [--json]');
     process.exit(1);
+  }
+  if (asOfRaw) {
+    if (writtenBy || notWrittenBy) {
+      console.error("--as-of cannot be combined with --written-by / --not-written-by (who wrote a note at that time is not reconstructed).");
+      process.exit(1);
+    }
+    const { parseAsOf, asOfView, asOfSearch, asOfHeader, asOfFields, localTimeOffset } = await import("./asof.js");
+    let when: Date;
+    try {
+      when = parseAsOf(asOfRaw);
+    } catch (e) {
+      console.error((e as Error).message);
+      process.exit(1);
+    }
+    const store = new Store(DB_PATH);
+    try {
+      const view = asOfView(store, when, { ...(namespace ? { namespace } : {}), ...(includeDistrusted ? { includeDistrusted: true } : {}) });
+      const hits = asOfSearch(view, message, limit ?? (message.trim() ? 5 : 20));
+      if (asJson) {
+        console.log(
+          JSON.stringify(
+            { as_of: when.toISOString(), as_of_local: localTimeOffset(when), not_kept: view.notKept, archived_then: view.archivedThen, archive_log_since: view.archiveSince, results: hits.map((h) => asOfFields(h)) },
+            null,
+            2
+          )
+        );
+        return;
+      }
+      console.log(asOfHeader(view));
+      if (hits.length === 0) console.log(message.trim() ? "No matching notes at that time." : "No notes at that time.");
+      for (const h of hits) {
+        const edited = h.kept ? (h.editedSince ? " [edited since]" : "") : " [edited since; old text gone]";
+        console.log(`  #${h.note.id} [${h.note.namespace}] ${printable(h.note.title)}${edited}`);
+        if (h.kept && h.note.body.trim()) console.log(`      ${printable(h.note.body.replace(/\s+/g, " ").trim(), 80)}`);
+        console.log(`      writer then: ${h.writer ? `${printable(h.writer.by, 80)} (version ${h.writer.rev})` : "not recorded"}`);
+      }
+    } finally {
+      store.close();
+    }
+    return;
   }
   const store = new Store(DB_PATH);
   try {
@@ -783,7 +979,7 @@ async function relevant(): Promise<void> {
     for (const n of results) {
       const ann = annotateStaleness(n);
       const stale = ann.stale ? ` [stale, ${ann.ageDays}d]` : "";
-      console.log(`  #${n.id} [${n.namespace}] ${n.title}${stale}${n.distrusted ? " [DISTRUSTED WRITER: treat as hostile]" : ""}`);
+      console.log(`  #${n.id} [${n.namespace}] ${printable(n.title)}${stale}${n.distrusted ? " [DISTRUSTED WRITER: treat as hostile]" : ""}`);
     }
   } finally {
     store.close();
@@ -1184,7 +1380,7 @@ async function changes(): Promise<void> {
     for (;;) {
       for (const e of page.changes) {
         const mark = e.kind === "created" ? "+" : e.kind === "updated" ? "~" : "-";
-        console.log(`${mark} #${e.id} [${e.namespace}] ${e.title}  (${e.at}${e.source ? `, ${e.source}` : ""})${e.distrusted ? " [DISTRUSTED WRITER]" : ""}`);
+        console.log(`${mark} #${e.id} [${e.namespace}] ${printable(e.title)}  (${e.at}${e.source ? `, ${printable(e.source)}` : ""})${e.distrusted ? " [DISTRUSTED WRITER]" : ""}`);
       }
       if (!page.nextCursor) break;
       page = runChanges(store, { ...base, cursor: page.nextCursor });
@@ -1688,6 +1884,7 @@ async function trustCmd(): Promise<void> {
               `${matched === 0 ? " - none yet: check the spelling against the written_by of a note (`monomem recall --include-distrusted`): labels are exact and case-sensitive" : ""}).`
           );
         } else {
+          await requireOperator(`trust undistrust ${writer} [${ns}]`);
           const removed = store.distrustRemove(ns!, writer);
           show({ removed }, removed ? `No longer distrusting "${writer}" in [${ns}].` : `"${writer}" was not on the list for [${ns}].`);
         }
@@ -1699,6 +1896,7 @@ async function trustCmd(): Promise<void> {
           console.error("Usage: monomem trust attester-add <public-key> --server-id <id> [--label <text>] [--not-after <ISO time>] [--any-server]   (a key starting with \"-\": --public-key <key>)");
           process.exit(1);
         }
+        await requireOperator("trust attester-add");
         const r = store.attesterAdd({
           public_key: key,
           server_id: str(flags["server-id"]),
@@ -1740,6 +1938,7 @@ async function trustCmd(): Promise<void> {
           console.error("Usage: monomem trust attester-unrevoke <key-id>");
           process.exit(1);
         }
+        await requireOperator(`trust attester-unrevoke ${id}`);
         const removed = store.attesterUnrevoke(id);
         show({ removed }, removed ? `Key ${id} is no longer revoked (add it with attester-add if you want to trust it).` : `Key ${id} was not on the revocation list.`);
         return;
@@ -1759,6 +1958,45 @@ async function trustCmd(): Promise<void> {
   }
 }
 
+// `monomem token add --label <name> --scope read|write|admin [--namespace ns] | list | remove <label>`: edits tokens.json.
+// `add` hands out access, so it needs the operator gate; `list` and `remove` lower nothing.
+async function tokenCmd(): Promise<void> {
+  const { DATA_DIR } = await import("./config.js");
+  const { addToken, listTokens, removeToken, envTokenLabels, TokenFileError, tokensPath } = await import("./token-file.js");
+  const { flags, rest } = parseFlags(process.argv.slice(3), { values: ["label", "scope", "namespace"], bools: [] });
+  const action = rest[0];
+  try {
+    if (action === "add") {
+      const label = str(flags.label);
+      const scope = str(flags.scope);
+      if (!label || !scope) throw new TokenFileError("Usage: monomem token add --label <name> --scope read|write|admin [--namespace ns]");
+      await requireOperator(`token add (${scope} token "${label}")`);
+      const row = addToken(DATA_DIR, label, scope, str(flags.namespace));
+      console.log(`Added token "${row.label}" (${row.scope}${row.namespace ? `, pinned to namespace "${row.namespace}"` : ""}) to ${tokensPath(DATA_DIR)}.`);
+      console.log(`\n  ${row.token}\n`);
+      console.log("This is shown ONCE and cannot be shown again: copy it into the app that will use it now. Anyone holding it has that access.");
+      console.log("A running server reads tokens.json at start-up: restart it for the new token to work.");
+      const { MCP_HTTP_PORT } = await import("./config.js");
+      console.log(`\nFor the app that will use it (change the host if it is not on this computer):\n  MCP URL: http://127.0.0.1:${MCP_HTTP_PORT}/mcp\n  Header:  Authorization: Bearer ${row.token}`);
+      console.log("Client setup (Claude Code, Cursor, Codex): INSTALL.md, section 'Connect to a shared server'.");
+    } else if (action === "list" && rest.length === 1) {
+      const rows = listTokens(DATA_DIR);
+      const fromEnv = envTokenLabels();
+      if (!rows.length) console.log(`No tokens in ${tokensPath(DATA_DIR)} (the primary token is not listed here).`);
+      for (const r of rows) console.log(`${printable(r.label)}  ${r.scope}${r.namespace ? `  namespace=${printable(r.namespace)}` : ""}`);
+      if (fromEnv?.length) console.log(`${fromEnv.length} more token(s) come from MONOMEM_TOKENS (labels: ${fromEnv.map((l) => printable(l, 40)).join(", ")}). They are not editable here.`);
+    } else if (action === "remove" && rest.length === 2) {
+      console.log(removeToken(DATA_DIR, rest[1]) ? `Removed token "${printable(rest[1])}". The server reads tokens.json once at start-up: RESTART a running server, or the token keeps working until you do.` : `No token labelled "${printable(rest[1])}" in ${tokensPath(DATA_DIR)}.`);
+    } else {
+      throw new TokenFileError("Usage: monomem token add --label <name> --scope read|write|admin [--namespace ns] | token list | token remove <label>");
+    }
+  } catch (e) {
+    if (!(e instanceof TokenFileError)) throw e;
+    console.error(e.message);
+    process.exit(1);
+  }
+}
+
 // `monomem quarantine [list | approve <id> | reject <id>]`.
 async function quarantineCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
@@ -1775,13 +2013,14 @@ async function quarantineCmd(): Promise<void> {
       }
       for (const q of items) {
         const what = q.op === "update" ? `update of #${q.target_id}` : "new note";
-        console.log(`#${q.id} [${q.namespace}] ${what}: ${q.title ?? "(title unchanged)"}  (${q.created_at})`);
+        console.log(`#${q.id} [${q.namespace}] ${what}: ${q.title == null ? "(title unchanged)" : printable(q.title)}  (${q.created_at})`);
         console.log(`    reasons: ${q.reasons.map((r) => `${r.label} in ${r.field}`).join("; ")}`);
         if (q.body) {
           const preview = q.body.length > 200 ? q.body.slice(0, 200) + "…" : q.body;
           console.log(`    body: ${preview.replace(/\n/g, "\n          ")}`);
         }
       }
+      console.log("\nTo decide: monomem quarantine approve <id> | reject <id>  (in a terminal)");
       return;
     }
     const id = Number(idRaw);
@@ -1797,15 +2036,117 @@ async function quarantineCmd(): Promise<void> {
       console.log(`Rejected quarantined write #${id}.`);
       return;
     }
+    await requireOperator(`quarantine approve ${id}`);
     const note = store.approveQuarantine(id);
     await maybeEmbed(store, note);
-    console.log(`Approved #${id} -> note #${note.id} "${note.title}"`);
+    console.log(`Approved #${id} -> note #${note.id} "${printable(note.title)}"`);
   } catch (e) {
     if (e instanceof ValidationError) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
     }
     throw e;
+  } finally {
+    store.close();
+  }
+}
+
+// `monomem approve-first [<namespace> on|off]`: operator-only switch (no MCP tool sets it).
+async function approveFirstCmd(): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { Store } = await import("./store.js");
+  const [ns, state] = process.argv.slice(3);
+  if (ns !== undefined && (!ns.trim() || (state !== "on" && state !== "off"))) {
+    console.error("Usage: monomem approve-first [<namespace> on|off | --all on|off]");
+    process.exit(1);
+  }
+  const store = new Store(DB_PATH);
+  try {
+    if (ns === undefined) {
+      const list = store.approveFirstNamespaces();
+      console.log(`All namespaces: ${store.approveFirstAll() ? "on (every namespace, including new ones)" : "off"}`);
+      console.log(list.length ? `Approve-first for these namespaces: ${list.join(", ")}` : "Approve-first for individual namespaces: none.");
+      return;
+    }
+    if (ns === "--all") {
+      if (state === "off") await requireOperator("approve-first off for all namespaces");
+      store.setApproveFirstAll(state === "on");
+      console.log(
+        state === "on"
+          ? "Approve-first is on for every namespace, including ones created later: agent writes wait in `monomem quarantine`."
+          : "Approve-first is off for all namespaces (any per-namespace setting still applies). Writes already held stay in `monomem quarantine`."
+      );
+      return;
+    }
+    if (state === "off") await requireOperator(`approve-first off for "${ns.trim()}"`);
+    store.setApproveFirst(ns, state === "on");
+    console.log(
+      state === "on"
+        ? `Approve-first is on for "${ns.trim()}": agent writes there now wait in \`monomem quarantine\`.`
+        : `Approve-first is off for "${ns.trim()}". Writes already held stay in \`monomem quarantine\`.`
+    );
+  } finally {
+    store.close();
+  }
+}
+
+// `monomem access [--since <iso|duration>] [--writer <label>] [--limit N] [--json]`: the read access log (operator only).
+async function accessCmd(): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { Store, ValidationError } = await import("./store.js");
+  const { resolveSince } = await import("./changes.js");
+  const { printable } = await import("./security.js");
+  const { flags } = parseFlags(process.argv.slice(3), { values: ["since", "writer", "limit"], bools: ["json"] });
+  const store = new Store(DB_PATH);
+  try {
+    const since = typeof flags.since === "string" ? resolveSince(flags.since) ?? undefined : undefined;
+    const entries = store.accessLog({
+      ...(since ? { since } : {}),
+      ...(typeof flags.writer === "string" ? { writer: flags.writer } : {}),
+      ...(typeof flags.limit === "string" ? { limit: Number(flags.limit) } : {}),
+    });
+    const paused = store.pausedWriters();
+    if (flags.json) {
+      console.log(JSON.stringify({ entries, paused }, null, 2));
+      return;
+    }
+    if (!entries.length) console.log("No reads logged" + (since || flags.writer ? " for that filter." : " yet."));
+    for (const e of entries) {
+      const q = e.query ? `  "${printable(e.query, 120)}"` : "";
+      console.log(`${e.at.slice(0, 19).replace("T", " ")}  ${printable(e.writer || "(unknown)", 40).padEnd(16)} ${e.tool.padEnd(18)} ${String(e.results).padStart(4)} result(s)  ${printable(e.namespaces || "-", 60)}${q}`);
+    }
+    if (paused.length) console.log(`\nPaused by the flood guard: ${paused.join(", ")} (monomem resume <label>)`);
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    throw e;
+  } finally {
+    store.close();
+  }
+}
+
+// `monomem flood`: writers the flood guard paused. `monomem resume <label>`: lift a pause (operator only).
+async function floodCmd(resume: boolean): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { Store, floodWritesPerHour } = await import("./store.js");
+  const label = process.argv[3];
+  if (resume && !label?.trim()) {
+    console.error("Usage: monomem resume <writer label>   (see `monomem flood` for the paused ones)");
+    process.exit(1);
+  }
+  const store = new Store(DB_PATH);
+  try {
+    if (resume) {
+      await requireOperator(`resume ${label.trim()}`);
+      console.log(store.resumeWriter(label) ? `Resumed "${label.trim()}": its writes are accepted again.` : `"${label.trim()}" was not paused.`);
+      return;
+    }
+    const limit = floodWritesPerHour();
+    const paused = store.pausedWriters();
+    console.log(limit ? `Flood guard: a writer is paused after ${limit} writes in an hour.` : "Flood guard: off (MONOMEM_FLOOD_WRITES_PER_HOUR=0).");
+    console.log(paused.length ? `Paused: ${paused.join(", ")}. Resume with: monomem resume <label>` : "No writer is paused.");
   } finally {
     store.close();
   }
@@ -1831,7 +2172,7 @@ async function decayCmd(): Promise<void> {
         console.log("Nothing would be archived.");
         return;
       }
-      for (const r of rows) console.log(`#${r.id} [${r.namespace}] ${r.obs_type || r.kind}: ${r.title}  (idle ${r.idleDays} days)`);
+      for (const r of rows) console.log(`#${r.id} [${r.namespace}] ${r.obs_type || r.kind}: ${printable(r.title)}  (idle ${r.idleDays} days)`);
       console.log(`${rows.length} row(s) would be archived. Run \`monomem decay\` to archive them; \`monomem restore <id>\` brings one back.`);
       return;
     }
@@ -1859,6 +2200,7 @@ async function deleteCmd(): Promise<void> {
       console.error(`No note #${id}.`);
       process.exit(1);
     }
+    await gatePinned(store, [id], "delete");
     if (!process.argv.includes("--yes")) {
       if (!process.stdin.isTTY) {
         console.error("A permanent delete cannot be undone: run it at a terminal and answer the question, or add --yes.");
@@ -1894,8 +2236,9 @@ async function archiveCmd(action: "archive" | "restore"): Promise<void> {
       console.error(before ? `Note #${id} is ${action === "archive" ? "already archived" : "not archived"}.` : `No note #${id}.`);
       process.exit(1);
     }
+    await gatePinned(store, [id], action);
     const note = action === "archive" ? store.archive(id) : store.restore(id);
-    console.log(`${action === "archive" ? "Archived" : "Restored"} #${id} "${note?.title}".${action === "archive" ? ` Undo: monomem restore ${id}` : ""}`);
+    console.log(`${action === "archive" ? "Archived" : "Restored"} #${id} "${printable(note?.title)}".${action === "archive" ? ` Undo: monomem restore ${id}` : ""}`);
   } catch (e) {
     if (e instanceof ValidationError) {
       console.error(`Error: ${e.message}`);
@@ -1921,11 +2264,13 @@ async function qualityCmd(): Promise<void> {
       console.log(JSON.stringify(report, null, 2));
       return;
     }
-    if (!report.issues.length) {
+    const { conflictLines, reportHeader } = await import("./conflicts.js");
+    if (!report.issues.length && !report.conflict_groups.length) {
       console.log("No quality issues found.");
       return;
     }
-    console.log(QUALITY_TYPES.map((t) => `${report.counts[t]} ${t}`).join(", "));
+    console.log(QUALITY_TYPES.map((t) => `${report.counts[t]} ${t}`).join(", ") + `, ${reportHeader({ groups: report.conflict_groups, total: report.conflict_total, capped: report.conflict_capped })}`);
+    for (const l of conflictLines(report.conflict_groups)) console.log(l);
     for (const i of report.issues) {
       console.log(`\n[${i.type}] [${i.namespace}] ${i.detail}`);
       console.log(`    fix: ${i.fix}${i.alt ? `   (or: ${i.alt})` : ""}`);
@@ -2044,10 +2389,10 @@ async function encryptCmd(): Promise<void> {
 }
 
 /** `monomem supersede ...` and `monomem history ...` (see supersede-cli.ts). */
-async function supersedeCmd(kind: "supersede" | "history"): Promise<void> {
+async function supersedeCmd(kind: "supersede" | "history" | "pin" | "unpin" | "rollback"): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
-  const { supersedeCli, historyCli } = await import("./supersede-cli.js");
+  const { supersedeCli, historyCli, pinCli, rollbackCli } = await import("./supersede-cli.js");
   const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const io = {
     out: (t: string): void => console.log(t),
@@ -2065,10 +2410,32 @@ async function supersedeCmd(kind: "supersede" | "history"): Promise<void> {
   const store = new Store(DB_PATH);
   try {
     const args = process.argv.slice(3);
-    process.exitCode = kind === "supersede" ? await supersedeCli(store, args, io) : await historyCli(store, args, io);
+    if (kind === "unpin") await requireOperator(`unpin ${args[0] ?? ""}`.trim());
+    if (kind === "supersede" || kind === "history") await gatePinned(store, pinnedTargets(kind, args), kind === "supersede" ? "supersede" : `history ${args[0]}`);
+    process.exitCode =
+      kind === "supersede"
+        ? await supersedeCli(store, args, io)
+        : kind === "history"
+          ? await historyCli(store, args, io)
+          : kind === "rollback"
+            ? await rollbackCli(store, args, io)
+            : await pinCli(store, kind, args, io);
   } finally {
     store.close();
   }
+}
+
+/** Note ids a supersede / history command would change or retire (empty for reads and for arguments it cannot parse). */
+function pinnedTargets(kind: "supersede" | "history", args: string[]): number[] {
+  const first = args.find((a) => !a.startsWith("--"));
+  if (kind === "history") {
+    if (first !== "restore" && first !== "purge") return [];
+    return [Number(args.filter((a) => !a.startsWith("--"))[1])].filter(Number.isInteger);
+  }
+  if (first === "undo") return [Number(args.filter((a) => !a.startsWith("--"))[1])].filter(Number.isInteger);
+  const i = args.findIndex((a) => a === "--old" || a.startsWith("--old="));
+  const v = i < 0 ? "" : args[i].includes("=") ? args[i].slice(args[i].indexOf("=") + 1) : (args[i + 1] ?? "");
+  return v.split(",").map(Number).filter(Number.isInteger);
 }
 
 /** TTY yes/no prompt; anything but y/yes aborts. */
@@ -2168,6 +2535,9 @@ async function uninstallCmd(): Promise<void> {
   });
 }
 
+// Untrusted text (note titles, imported text) printed to the terminal goes through this; bound in main() once config is loaded.
+let printable: typeof import("./security.js").printable = (s) => String(s ?? "");
+
 function askYesNo(prompt: string): Promise<boolean> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
@@ -2191,10 +2561,18 @@ async function main(): Promise<void> {
       console.error(
         `Monomem needs Node.js ${MIN_NODE_TEXT} or newer, and this computer has Node ${process.versions.node}.\n` +
           "  Fix: install Node 22.16+ or 24 LTS (https://nodejs.org), open a NEW terminal, check with:  node -v\n" +
+          "  Just want to set it up now? This runs setup with a temporary Node 24 (nothing to install):\n" +
+          "      npx -y -p node@24 -p monomem monomem setup\n" +
+          "  Your apps will still start Monomem with the Node on this computer, so upgrade Node before relying on it.\n" +
           "  Nothing was changed. (Can't upgrade Node? Docker works too: see INSTALL.md.)"
       );
       process.exit(1);
     }
+  }
+  if (!COMMANDS.includes(cmd)) {
+    const guess = suggestCommand(cmd);
+    console.error(`Unknown command '${cmd}'.${guess ? ` Did you mean '${guess}'?` : ""}\nRun 'monomem help' to see the commands.`);
+    process.exit(1);
   }
   if (cmd === "--version" || cmd === "-v" || cmd === "version") {
     const { PACKAGE_VERSION } = await import("./config.js");
@@ -2206,7 +2584,10 @@ async function main(): Promise<void> {
   // A dry run of `import --claude` / `import --from` or `sync` must not create anything, not even the data folder.
   const dry = process.argv.includes("--dry-run") && ((cmd === "import" && (process.argv.includes("--claude") || process.argv.includes("--from"))) || cmd === "sync");
   // The capture hooks (`hook`) never move or create data folders: they run on every tool call and must stay quick and quiet.
-  if (!dry && !["help", "--help", "-h", "init", "bench", "setup", "uninstall", "hook"].includes(cmd)) (await import("./config.js")).prepareDataDir();
+  if (!dry && !["help", "--help", "-h", "init", "bench", "setup", "uninstall", "hook"].includes(cmd)) {
+    (await import("./config.js")).prepareDataDir();
+    printable = (await import("./security.js")).printable;
+  }
   // Fixed writer marker for notes this process writes with no token behind
   // them (written_by): the long-running server's own jobs, the stdio MCP
   // server, or an `monomem ...` command run by the machine owner.
@@ -2253,6 +2634,7 @@ async function main(): Promise<void> {
       await rebuildEdges();
       break;
     case "relevant":
+    case "search":
       await relevant();
       break;
     case "changes":
@@ -2276,8 +2658,23 @@ async function main(): Promise<void> {
     case "trust":
       await trustCmd();
       break;
+    case "token":
+      await tokenCmd();
+      break;
     case "quarantine":
       await quarantineCmd();
+      break;
+    case "approve-first":
+      await approveFirstCmd();
+      break;
+    case "access":
+      await accessCmd();
+      break;
+    case "flood":
+      await floodCmd(false);
+      break;
+    case "resume":
+      await floodCmd(true);
       break;
     case "decay":
       await decayCmd();
@@ -2289,12 +2686,59 @@ async function main(): Promise<void> {
     case "delete":
       await deleteCmd();
       break;
+    case "audit": {
+      const usage = "Usage: monomem audit verify [--expect <head-hash>]";
+      const rest = process.argv.slice(4);
+      const ei = rest.indexOf("--expect");
+      const expect = ei >= 0 ? rest[ei + 1]?.trim().toLowerCase() : undefined;
+      const extraArgs = rest.filter((_, k) => k !== ei && k !== ei + 1 || ei < 0);
+      if (process.argv[3] !== "verify" || extraArgs.length > 0 || (ei >= 0 && !/^[0-9a-f]{64}$/.test(expect ?? ""))) {
+        console.error(usage + (ei >= 0 ? " (the head hash is 64 hex characters, as printed by `monomem audit verify`)" : ""));
+        process.exit(2);
+      }
+      const { verifyAuditChain } = await import("./security.js");
+      const r = verifyAuditChain(undefined, expect);
+      const extra = `${r.forks} fork(s) (two processes writing at once, or a line inserted), ${r.unchained} line(s) from before the chain`;
+      if (!r.ok) {
+        console.error(`Audit chain BROKEN: ${r.breaks} break(s), first at line ${r.brokenLine} of ${r.file} (it follows from none of the lines before it). ${extra}.`);
+        process.exit(1);
+      }
+      console.log(`Audit chain intact: ${r.lines} line(s), ${extra}.`);
+      console.log(`Head ${r.head ?? "(empty)"}: keep it somewhere that is not this machine (a git commit, a password manager), then check later with: monomem audit verify --expect <head>.`);
+      console.log("Detects lines edited or removed inside the chain. Not: a line inserted (it looks like a fork), rotated files deleted, or a full rewrite by anyone who can write the file. Without a saved head it also cannot see the newest lines cut off.");
+      if (r.anchor) {
+        if (!r.anchor.found) {
+          console.error("Anchor NOT FOUND: no line in the log has the hash you gave. The log was rewritten or cut off before that point (or the hash is from another log).");
+          process.exit(1);
+        }
+        console.log(r.anchor.linesAfter === 0 ? "Anchor OK: the hash you gave is the current head." : `Anchor OK: the line you noted is still in the chain, ${r.anchor.linesAfter} line(s) older than the head (the log has grown since).`);
+      }
+      break;
+    }
     case "quality":
       await qualityCmd();
+      break;
+    case "conflicts":
+      await (await import("./conflicts.js")).conflictsCmd(process.argv.slice(3));
+      break;
+    case "facts":
+      await (await import("./facts.js")).factsCmd(process.argv.slice(3));
+      break;
+    case "fact":
+      await (await import("./facts.js")).factRemoveCmd(process.argv.slice(3));
       break;
     case "encrypt":
       await encryptCmd();
       break;
+    case "why":
+      await (await import("./why.js")).whyCmd(process.argv.slice(3));
+      break;
+    case "receipts":
+    case "meter": {
+      const r = await import("./receipts.js");
+      await (cmd === "meter" ? r.meterCmd : r.receiptsCmd)(process.argv.slice(3));
+      break;
+    }
     case "never-show":
       await neverShowCmd();
       break;
@@ -2304,6 +2748,21 @@ async function main(): Promise<void> {
     case "history":
       await supersedeCmd("history");
       break;
+    case "pin":
+    case "unpin":
+    case "rollback":
+      await supersedeCmd(cmd);
+      break;
+    case "drill": {
+      const { drillMain } = await import("./drill.js");
+      process.exitCode = await drillMain(process.argv.slice(3));
+      break;
+    }
+    case "health": {
+      const { healthMain } = await import("./health.js");
+      process.exitCode = await healthMain(process.argv.slice(3));
+      break;
+    }
     case "bench": {
       const args = process.argv.slice(3);
       if (args.includes("--longmemeval") || args.includes("--locomo")) {
@@ -2319,11 +2778,10 @@ async function main(): Promise<void> {
     case "help":
     case "--help":
     case "-h":
-      usage();
+      usage(process.argv.includes("--all"));
       break;
     default:
-      console.error(`Unknown command: ${cmd}\n`);
-      usage();
+      console.error(`Unknown command '${cmd}'. Run 'monomem help' to see the commands.`);
       process.exit(1);
   }
 }

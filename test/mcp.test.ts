@@ -3,6 +3,7 @@
 // into the same Store used by the HTTP API tests. This is not a mock --
 // state_write really inserts into the store, state_read/search/list really
 // query it back.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -37,7 +38,7 @@ describe("MCP tool wrappers", () => {
     store.close();
   });
 
-  test("server advertises exactly the thirty-two tools", async () => {
+  test("server advertises exactly the thirty-five tools", async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     assert.deepEqual(names, [
@@ -51,13 +52,16 @@ describe("MCP tool wrappers", () => {
       "memory_index",
       "memory_quarantine",
       "memory_rebuild_edges",
+      "memory_receipt",
       "memory_restore_version",
+      "memory_rollback",
       "memory_since",
       "memory_stats",
       "memory_supersede_confirm",
       "memory_supersede_preview",
       "memory_supersede_undo",
       "memory_timeline",
+      "memory_why",
       "runner_status",
       "session_handoff",
       "session_list",

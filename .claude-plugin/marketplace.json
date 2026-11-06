@@ -1,0 +1,12 @@
+{
+  "name": "monomem",
+  "description": "Monomem: shared local memory for AI coding agents",
+  "owner": { "name": "Calas Automations Inc." },
+  "plugins": [
+    {
+      "name": "monomem",
+      "source": "./",
+      "description": "Shared local memory for AI coding agents: MCP server, start-of-session recall hook and skill."
+    }
+  ]
+}

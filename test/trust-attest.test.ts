@@ -2,6 +2,7 @@
 // the exporting server's Ed25519 key; an import believes the signature only for
 // keys the importing admin chose to trust. These tests pin what it does prove
 // (the record was not altered) and the ways it must NOT be fooled.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, statSync, readFileSync, writeFileSync } from "node:fs";
@@ -436,11 +437,14 @@ describe("attestations: HTTP export / import and the CLI", () => {
       const first = run("b.db", "import", "--file", out, "--json", "--no-dedupe");
       assert.equal(first.status, 0, first.stderr);
       assert.equal(JSON.parse(first.stdout).attestations.verified, 0);
-      const unpinned = run("b.db", "trust", "attester-add", "--public-key", aid.public_key);
-      assert.equal(unpinned.status, 1, "a key without a server id is refused");
-      assert.match(unpinned.stderr, /server_id is required/);
-      const add = run("b.db", "trust", "attester-add", "--public-key", aid.public_key, "--server-id", aid.server_id, "--label", "a");
-      assert.equal(add.status, 0, add.stderr + add.stdout);
+      // attester-add lowers protection: refused from a script (no terminal); add through the store instead.
+      const refused = run("b.db", "trust", "attester-add", "--public-key", aid.public_key, "--server-id", aid.server_id, "--label", "a");
+      assert.equal(refused.status, 1);
+      assert.match(refused.stderr, /person must run it in a terminal/);
+      const b = new Store(join(dir, "b.db", "state.db"));
+      assert.throws(() => b.attesterAdd({ public_key: aid.public_key }), /server_id is required/);
+      b.attesterAdd({ public_key: aid.public_key, server_id: aid.server_id, label: "a" });
+      b.close();
       const second = run("b.db", "import", "--file", out, "--json", "--no-dedupe");
       assert.equal(JSON.parse(second.stdout).attestations.verified, 1);
       assert.equal(run("b.db", "trust", "distrust", "alice", "--namespace", "*").status, 0);
@@ -451,9 +455,7 @@ describe("attestations: HTTP export / import and the CLI", () => {
       // a base64url key (and a label) may start with "-": it must not be read as an option
       const dashKey = Buffer.from([0xfb, 0xef, ...new Array(30).fill(7)]).toString("base64url");
       assert.ok(dashKey.startsWith("-"));
-      assert.equal(run("b.db", "trust", "attester-add", dashKey).status, 1, "bare, it is an unknown option (clear error, not a crash)");
-      assert.equal(run("b.db", "trust", "attester-add", "--public-key", dashKey, "--label", "dash", "--any-server").status, 0);
-      assert.equal(run("b.db", "trust", "attester-add", "--any-server", "--", dashKey).status, 0, "after -- it is positional (already present: idempotent)");
+      assert.equal(run("b.db", "trust", "attester-add", dashKey).status, 1, "bare, it is an unknown option or refused: never a crash");
       assert.equal(run("b.db", "trust", "distrust", "--writer", "-odd", "--namespace", "*").status, 0);
       assert.ok(JSON.parse(run("b.db", "trust", "list", "--json").stdout).distrust.some((r: any) => r.writer === "-odd"));
       const plainOut = run("a.db", "export", "--format", "json");

@@ -9,6 +9,7 @@
 //           150-pair sweep (reviews/tier2-threshold-sweep/).
 // I-HIGH-2  recency-aware access boost + graded stale penalty.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";

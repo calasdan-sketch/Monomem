@@ -2,6 +2,7 @@
 // - state_delete over MCP archives (restorable); permanent delete is for a person (dashboard, CLI).
 // - On the local stdio transport (admin by default) the operator-only tools stay off unless
 //   MONOMEM_STDIO_ADMIN_TOOLS=1, even under MONOMEM_TOOLS=all.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

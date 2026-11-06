@@ -1,6 +1,7 @@
 // Command tasks: task_put({command, target}) -> admin approval -> the PC's
 // runner executes it through the same gates as a signed command note.
 // Mostly NEGATIVE tests: nothing may run unless every gate holds.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";

@@ -18,8 +18,10 @@ whose rendered ink box is the same height as the wordmark it replaces.
 
 Run with a Python that has Pillow:
     ~/tools/motion-venv/Scripts/python.exe scripts/make-brand-wordmark.py
+    ~/tools/motion-venv/Scripts/python.exe scripts/make-brand-wordmark.py --favicon   (only the tab icon)
 """
 
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -66,10 +68,186 @@ def redraw(path: Path, size: int, ink_xy: tuple[int, int], clear: tuple[int, int
     print(f"{path}: wordmark redrawn as {NAME!r} at {size}px")
 
 
+GOLD = (240, 193, 113)  # the colour of the claim lines, sampled from the originals
+
+# The claim lines used to end in "undoable". Deleting a note is permanent (on
+# purpose), so the artwork now says "reviewable": writes can be held and reviewed.
+# "ink_x" is the ink's left edge, or its right edge when "right" is true.
+CLAIMS = [
+    {
+        "path": "docs/brand/monomem-banner.png",
+        "text": "reviewable",
+        "size": 36,
+        "ink_x": 1609,
+        "right": True,
+        "ink_top": 214,
+        "clear": (1400, 205, 1625, 250),
+    },
+    {
+        "path": "docs/brand/social-preview.png",
+        "text": "Every note sourced, versioned and reviewable.",
+        "size": 38,
+        "ink_x": 297,
+        "right": False,
+        "ink_top": 430,
+        "clear": (285, 420, 1200, 480),
+    },
+]
+
+
+def redraw_claim(path: Path, c: dict) -> None:
+    image = Image.open(path).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle(c["clear"], fill=NAVY)
+    font = ImageFont.truetype(FONT, c["size"])
+    left, top, right, _ = draw.textbbox((0, 0), c["text"], font=font)
+    x = c["ink_x"] - (right if c["right"] else left)
+    draw.text((x, c["ink_top"] - top), c["text"], fill=GOLD, font=font)
+    image.save(path)
+    print(f"{path}: claim redrawn as {c['text']!r}")
+
+
+# The one tagline, used on both images (and everywhere else the product is described in one line).
+TAGLINE = "Shared memory for AI agents that holds poisoned writes."
+SLATE = (159, 179, 196)  # the subtitle colour, sampled from the originals
+
+# Where the old subtitle's ink started, and the size that fits the new, longer line.
+TAGLINES = [
+    {"path": "docs/brand/monomem-banner.png", "size": 36, "ink_x": 405, "ink_top": 220, "clear": (395, 212, 1400, 265)},
+    {"path": "docs/brand/social-preview.png", "size": 34, "ink_x": 295, "ink_top": 360, "clear": (285, 350, 1260, 412)},
+]
+
+
+def redraw_tagline(path: Path, c: dict) -> None:
+    image = Image.open(path).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle(c["clear"], fill=NAVY)
+    font = ImageFont.truetype(FONT, c["size"])
+    left, top, right, _ = draw.textbbox((0, 0), TAGLINE, font=font)
+    assert c["ink_x"] + (right - left) < c["clear"][2] - 10, "tagline would run off its box"
+    draw.text((c["ink_x"] - left, c["ink_top"] - top), TAGLINE, fill=SLATE, font=font)
+    image.save(path)
+    print(f"{path}: tagline redrawn")
+
+
+# The mark has a thin straight stroke on its right that is joined to the crescent only at the top and
+# hangs free below it: it reads as a rendering artefact, and it vanishes at small sizes. It is removed
+# by erasing everything right of that stroke's left edge. Coordinates are in the banner's pixels (the
+# mark spans x 120..265, y 80..280 there); every other image maps onto them by an offset and a scale.
+STROKE_LEFT_AT_Y134 = 211.0
+STROKE_SLOPE = 0.439  # pixels of x per pixel of y
+STROKE_Y = (120, 250)
+MARKS = [
+    # path, mark origin in that image, scale relative to the banner, erase colour (None = transparent)
+    ("docs/brand/monomem-banner.png", (120, 80), 1.0, NAVY),
+    ("docs/brand/social-preview.png", (120, 200), 0.9, NAVY),
+    ("docs/brand/mark-gold-48.png", (0, 0), 0.24, None),
+    ("docs/brand/mark-navy-48.png", (0, 0), 0.24, None),
+]
+
+
+def remove_stroke(path: Path, origin: tuple[int, int], scale: float, fill) -> None:
+    image = Image.open(path).convert("RGBA" if fill is None else "RGB")
+    px = image.load()
+    erased = fill if fill is not None else (0, 0, 0, 0)
+    for y in range(image.height):
+        for x in range(image.width):
+            bx = 120 + (x + 0.5 - origin[0]) / scale
+            by = 80 + (y + 0.5 - origin[1]) / scale
+            if STROKE_Y[0] <= by <= STROKE_Y[1] and 200 <= bx <= 280:
+                if bx > STROKE_LEFT_AT_Y134 + STROKE_SLOPE * (by - 134) - 4:
+                    px[x, y] = erased
+    image.save(path)
+    print(f"{path}: thin stroke removed")
+
+
+# The cut above leaves the inner horn's tip squared off: a small notch where it should taper to a point.
+# This repaints the missing taper as a triangle, in banner pixels. The top edge is flat at y = 131.55 (read
+# off the pixels); the bottom edge continues the horn's own lower edge, which rises 1 px for every 1.35 px
+# of x through (207, 137.5). Drawn with 4x4 supersampling, over whatever is there, so the edge stays smooth.
+TIP = [(205.0, 131.55), (205.0, 137.9), (215.6, 131.55)]
+TIP_SAMPLE = (195, 138)  # a banner pixel well inside the horn: its colour is the mark's colour
+
+
+def _inside(px: float, py: float) -> bool:
+    (ax, ay), (bx, by), (cx, cy) = TIP
+    d = [(bx - ax) * (py - ay) - (by - ay) * (px - ax), (cx - bx) * (py - by) - (cy - by) * (px - bx), (ax - cx) * (py - cy) - (ay - cy) * (px - cx)]
+    return all(v >= 0 for v in d) or all(v <= 0 for v in d)
+
+
+def add_tip(path: Path, origin: tuple[int, int], scale: float, fill) -> None:
+    image = Image.open(path).convert("RGBA" if fill is None else "RGB")
+    px = image.load()
+    sx = int(origin[0] + (TIP_SAMPLE[0] - 120) * scale)
+    sy = int(origin[1] + (TIP_SAMPLE[1] - 80) * scale)
+    colour = px[sx, sy][:3]
+    n = 4
+    x0, x1 = int(origin[0] + (200 - 120) * scale), int(origin[0] + (220 - 120) * scale) + 1
+    y0, y1 = int(origin[1] + (125 - 80) * scale), int(origin[1] + (140 - 80) * scale) + 1
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            hits = sum(
+                _inside(120 + (x + (i + 0.5) / n - origin[0]) / scale, 80 + (y + (j + 0.5) / n - origin[1]) / scale)
+                for i in range(n)
+                for j in range(n)
+            )
+            cov = hits / (n * n)
+            if not cov:
+                continue
+            old = px[x, y]
+            if fill is None:
+                px[x, y] = (*colour, max(old[3], round(255 * cov)))
+            else:
+                px[x, y] = tuple(round(o + (c - o) * cov) for o, c in zip(old, colour))
+    image.save(path)
+    print(f"{path}: inner tip tapered")
+
+
+# The tab icon: square, a navy rounded square with the gold crescent, so it reads on light and dark tabs and at 16 px.
+# Drawn at 8x and shrunk. Writes docs/brand/favicon-64.png and puts the same bytes into FAVICON_PNG in src/dashboard.ts.
+def make_favicon(root: Path) -> None:
+    import base64
+    import re
+
+    size, k = 64, 8
+    big = Image.new("RGBA", (size * k, size * k), (0, 0, 0, 0))
+    d = ImageDraw.Draw(big)
+    d.rounded_rectangle((0, 0, size * k - 1, size * k - 1), radius=14 * k, fill=NAVY + (255,))
+    # crescent: a gold disc minus a disc nudged up and to the right
+    disc = Image.new("L", big.size, 0)
+    ImageDraw.Draw(disc).ellipse((14 * k, 12 * k, 52 * k, 50 * k), fill=255)
+    bite = Image.new("L", big.size, 0)
+    ImageDraw.Draw(bite).ellipse((24 * k, 6 * k, 58 * k, 44 * k), fill=255)
+    mask = Image.composite(Image.new("L", big.size, 0), disc, bite)
+    big.paste(Image.new("RGBA", big.size, GOLD + (255,)), (0, 0), mask)
+    icon = big.resize((size, size), Image.LANCZOS)
+    out = root / "docs/brand/favicon-64.png"
+    icon.save(out, optimize=True)
+    b64 = base64.b64encode(out.read_bytes()).decode()
+    dash = root / "src/dashboard.ts"
+    with open(dash, encoding="utf8", newline="") as f:
+        text = f.read()
+    text, n = re.subn(r'(export const FAVICON_PNG = Buffer\.from\(\s*")[A-Za-z0-9+/=]+(")', lambda m: m.group(1) + b64 + m.group(2), text)
+    assert n == 1, "FAVICON_PNG not found"
+    with open(dash, "w", encoding="utf8", newline="") as f:
+        f.write(text)
+    print(f"{out}: favicon written and embedded in src/dashboard.ts")
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
+    if "--favicon" in sys.argv:
+        return make_favicon(root)
     for target in TARGETS:
         redraw(root / target["path"], target["size"], target["ink_xy"], target["clear"])
+    for claim in CLAIMS:
+        redraw_claim(root / claim["path"], claim)
+    for line in TAGLINES:
+        redraw_tagline(root / line["path"], line)
+    for path, origin, scale, fill in MARKS:
+        remove_stroke(root / path, origin, scale, fill)
+        add_tip(root / path, origin, scale, fill)
+    make_favicon(root)
 
 
 if __name__ == "__main__":

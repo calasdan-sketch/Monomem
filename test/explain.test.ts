@@ -2,6 +2,7 @@
 // retrieved?" Verifies the breakdown reports the real factors the scorer
 // used, that describeBreakdown reads naturally, and -- critically -- that
 // adding explain never reorders results versus the plain search path.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

@@ -5,15 +5,15 @@ description: >-
   user states a fact, decision, or preference worth remembering, or when
   starting a task where past context would help — save with state_write and
   recall with state_search / state_list. Backed by the Monomem MCP server.
-  REGISTERED BY DEFAULT (these ten are always callable): state_write, state_read,
-  state_search, state_relevant, state_list, state_delete, catch_up,
+  REGISTERED BY DEFAULT (these nine are always callable): state_write, state_read,
+  state_search, state_list, state_delete, catch_up,
   memory_supersede_preview, memory_supersede_confirm, memory_supersede_undo.
   REQUIRE MONOMEM_TOOLS=all ON THE SERVER (otherwise not callable, and a call
-  returns "unknown tool"): memory_since, memory_ack, task_put, task_get,
+  returns "unknown tool"): state_relevant (use state_search mode "relevant"), memory_since, memory_ack, task_put, task_get,
   task_list, task_claim, task_approve, runner_status, trust_policy,
-  session_handoff, memory_stats, memory_quarantine,
+  session_handoff, memory_stats, memory_receipt, memory_why, memory_quarantine,
   memory_consolidation_candidates, memory_consolidate, memory_rebuild_edges,
-  memory_history, memory_restore_version, memory_history_purge,
+  memory_history, memory_restore_version, memory_history_purge, memory_rollback,
   memory_index, memory_timeline, memory_get, session_list.
   Works in any MCP-capable agent (Claude Code, Claude Desktop,
   Cursor, Copilot, Windsurf, Cline, and more).
@@ -22,8 +22,8 @@ license: MIT
 
 # Monomem
 
-> **Only ten tools are registered by default.** `state_write`, `state_read`,
-> `state_search`, `state_relevant`, `state_list`, `state_delete`, `catch_up`,
+> **Only nine tools are registered by default.** `state_write`, `state_read`,
+> `state_search`, `state_list`, `state_delete`, `catch_up`,
 > `memory_supersede_preview`, `memory_supersede_confirm` and
 > `memory_supersede_undo`. The change feed, task board, trust, quarantine,
 > consolidation, history and session-index tools used further down need
@@ -54,14 +54,18 @@ Use a short `title`, put detail in `body`, add `tags` to group related
 notes, and use `namespace` to separate projects or clients. To update an
 existing note, pass its `id`.
 
+When the note states a decision or setting, ALSO pass `facts`, e.g. `facts: {"deploy_target":"render"}`. Other agents then read the exact value, and a disagreement is caught.
+Example: `{"package_manager":"pnpm","test_runner":"vitest"}` (at most 10; lowercase keys, values one line of at most 80
+characters). Reuse a key from `similar_keys` or this list: `deploy_target`, `package_manager`, `test_runner`, `database`, `node_version`, `base_url`, `ci_provider`, `formatter`. Prefix a subject only when the project has several (`api.deploy_target`). If another writer's live note in the same namespace states a different value for a key (or a synonym such as `hosting`), the write still succeeds and the reply has a `conflicts` list: tell the user and ask which is right; do not decide yourself. If the key is new and an existing key looks like the same thing, the reply has `similar_keys` (each with the existing value, note id and writer) and a `hint`: reuse that key. `fact_warnings` means the note's own text may state another value than its fact: check which is right.
+
 ## When to RECALL (call `state_search` or `state_list`)
 
 **At the start of a task**, before asking the user for context they may have
 already given, check the store:
 
 - `state_search` with a few keywords for anything relevant.
-- `state_relevant` with a natural-language message when you don't know the
-  exact wording — it extracts keywords itself (hashtags like `#status` kept
+- `state_search` with `mode: "relevant"` and a natural-language message as
+  `query` when you don't know the exact wording — it extracts keywords itself (hashtags like `#status` kept
   as-is) and returns notes matching any of them, plus the keywords it used.
 - `state_list` (optionally by `namespace`) to see recent notes.
 - `state_search` accepts `when` ("yesterday evening", "last week", "in july") to scope results to a time range — day boundaries follow `MONOMEM_TIMEZONE`.

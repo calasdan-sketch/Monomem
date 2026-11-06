@@ -1,6 +1,7 @@
 // "Runner offline, N commands waiting": the read-only status, its MCP/REST
 // surfaces, the catch_up / recall notice, and that it never leaks other
 // namespaces or command text.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
@@ -495,7 +496,7 @@ describe("runner status: recall hook, CLI, dashboard", () => {
       const out = JSON.parse(await runRecall({ dbPath: db }));
       assert.equal(out.hookSpecificOutput.additionalContext, "");
       assert.equal(Store.peekSchemaVersion(db), 12, "still v12: the hook did not migrate it");
-      assert.ok(!existsSync(db + ".pre-v16-backup"));
+      assert.ok(!existsSync(db + ".pre-v18-backup"));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

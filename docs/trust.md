@@ -1,13 +1,13 @@
 # Trust: distrusted writers, writer ids and signed attestations
 
-Since 1.3.3 a note says who wrote it ([provenance.md](./provenance.md)). Since 1.4.0 an admin can
+Every note says who wrote it ([provenance.md](./provenance.md)). An admin can
 also say **whom not to believe**, and a server can **vouch for the writers it exports**. This page
 says exactly what each piece does, and what it does not prove.
 
 > **EXPERIMENTAL.** The signed attestations, cross-server writer ids (`<server_id>/<label>`), `trust rotate`,
 > `trust attester-revoke` and the `--any-server` escape hatch are new and have had little use outside tests.
 > Their formats, flags and verdict texts may change in a minor release. The local distrust list is the
-> stable part. Upgrading from 1.3.x: [upgrading.md](./upgrading.md).
+> stable part. Upgrading from an early release: [upgrading.md](./upgrading.md).
 
 ## Vocabulary
 
@@ -68,7 +68,7 @@ A note is treated as touched by a writer when any of these names that writer:
 
 1. its **current `written_by`** (the last content writer);
 2. its **`attested_writer`**, the original author a *verified* attestation vouched for (below);
-3. its **`merged_from_writers`**, the **taint set**. It only ever grows (1.4.1). It holds the writers
+3. its **`merged_from_writers`**, the **taint set**. It only ever grows. It holds the writers
    whose notes a consolidation merged into this one, **every earlier content writer** (when someone
    rewrites a note, the previous writer, and the attested author it carried, are added), and the
    names an imported file *claims* (`written_by`, `created_by`, `imported_*`, `origin_writer` in a
@@ -123,7 +123,7 @@ found" to a non-admin for read, update (so a tags-only change cannot echo its bo
 and `task_put`; `client_key` replays and the janitor never touch it; consolidating a mix of hidden and
 visible notes is refused.
 
-**Also honoured since 1.4.1:** the markdown vault export (`monomem export --format md --dir <path>`) leaves hidden notes out
+**Also honoured:** the markdown vault export (`monomem export --format md --dir <path>`) leaves hidden notes out
 and prunes their earlier files; `--include-distrusted` writes them with `distrusted: true` in the front
 matter. The auto-merge janitor ignores hidden notes.
 
@@ -168,14 +168,14 @@ safe, and it loses the information. An attestation brings it back **for servers 
   unsigned notes. (Two databases in one directory share a key file; use one directory per database.)
 - `GET /export?attest=1` and `monomem export --format json --attest` write a header
   (`"export": {format, format_version, server_id, key_id, public_key, algorithm}`) and, on every
-  note, a detached `attestation`. **The default export is unchanged from 1.3.x**: `{"notes": [...]}`
-  with no header and no signatures (1.4.0 added them by default; 1.4.1 puts it back, because a plain
+  note, a detached `attestation`. **The default export is the plain shape**: `{"notes": [...]}`
+  with no header and no signatures (an early release added them by default and was changed back, because a plain
   backup consumer expects the old shape). `/import` and `import --file` accept the plain object, the
   attested envelope and a bare array alike.
 - The signature (version 2) covers `{server_id, exported_at, note id, namespace, content hash,
   written_by, created_by, updated_at, created_at, source, expires_at, archived_at, rev,
   attested_writer, attested_by, merged_from_writers}`; the content hash is a SHA-256 of the title,
-  body and sorted tags. Version 1 attestations (from 1.4.0 exports) still verify, but they do not
+  body and sorted tags. Version 1 attestations (from early exports) still verify, but they do not
   cover `created_at`, `source`, `expires_at`, `archived_at` or `rev`, and they carry no signed export
   time, so a key with a `not_after` rejects them. If the key cannot be created (read-only directory)
   the export is still written, without signatures.
@@ -195,7 +195,7 @@ safe, and it loses the information. An attestation brings it back **for servers 
   <key-id>` (a list kept in the database that wins over every other source, including
   `MONOMEM_TRUSTED_ATTESTERS`; `attester-unrevoke` lifts it). Notes already imported keep their
   recorded provenance either way.
-- **Minimum version.** `MONOMEM_ATTEST_MIN_VERSION=2` refuses version 1 attestations (the 1.4.0 format,
+- **Minimum version.** `MONOMEM_ATTEST_MIN_VERSION=2` refuses version 1 attestations (the first format,
   which does not cover `created_at`, `source`, `expires_at`, `archived_at` or `rev`).
 - **Imported without a verified attestation.** A note that arrived without a verifiable attestation is
   marked `imported_unverified: true` (shown in reads and in the provenance banner an agent sees). The
@@ -285,9 +285,9 @@ The step-by-step version is [upgrading.md](./upgrading.md). In short:
 
 
 Schema v14 adds columns and three small tables; no note text is touched. The first time a database at
-v1 to v13 is opened by 1.4.x, Monomem writes a consistent snapshot to
-`<database>.pre-v16-backup.<pid><random>.partial`, **checks it** (non-empty, the old schema version, the same
-number of notes as the database, an integrity check) and only then renames it to `<database>.pre-v16-backup`.
+v1 to v13 is opened by an early release of this line, Monomem writes a consistent snapshot to
+`<database>.pre-v18-backup.<pid><random>.partial`, **checks it** (non-empty, the old schema version, the same
+number of notes as the database, an integrity check) and only then renames it to `<database>.pre-v18-backup`.
 A crash leaves a `.partial` file (swept at the next upgrade), never a half-written backup under the real name.
 A valid copy already there is kept when it holds the same notes, otherwise it is moved to a dated name; an
 empty or garbage one is replaced, and one that merely cannot be read is moved aside, never deleted. The upgrade
@@ -299,7 +299,7 @@ not in the backup. When you are happy: `monomem backup --prune-premigration`. If
 at-rest encryption (`monomem encrypt enable`), those copies are still **plaintext**: it tells you to
 prune them. `monomem recall` never upgrades a database.
 
-Runners older than 1.3.4 write a heartbeat with no writer marker, which 1.4.0 no longer believes: see
+Runners from an early release write a heartbeat with no writer marker, which Monomem no longer believes: see
 [RUNNER.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/RUNNER.md) for the one-step upgrade (or `MONOMEM_RUNNER_ACCEPT_LEGACY=1` as a stopgap).
 
 ## Limits
@@ -319,8 +319,8 @@ Runners older than 1.3.4 write a heartbeat with no writer marker, which 1.4.0 no
   matches the same names, a rule only in the old one no longer applies.
 - The taint set is capped (200 names per note, on import and on edit; names that match a rule are kept first), and a rule list is bounded (50 per namespace).
 - Performance: with rules, `list`/`changes` evaluate the policy per row, with one `json_each` membership test
-  over the taint set (1.4.2; 1.4.1 ran one `instr` probe per label). Measured on 100,000 notes that each carry a
-  30-name taint set (median of 7, first page of `list`, 1.4.1 -> 1.4.2): no rules 0.17 s -> 0.17 s, 10 `*` rules
+  over the taint set (an earlier version ran one `instr` probe per label). Measured on 100,000 notes that each carry a
+  30-name taint set (median of 7, first page of `list`, before -> after that change): no rules 0.17 s -> 0.17 s, 10 `*` rules
   1.31 s -> 1.09 s, 100 `*` rules 10.9 s -> 1.06 s; `/changes` with 100 rules 11.2 s -> 0.96 s. Cost grows with
   the number of notes scanned times the taint-set size, not with the number of rules. Typical deployments have a
   handful of rules and empty taint sets. Numbers from one Linux machine; yours will differ.

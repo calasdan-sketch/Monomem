@@ -63,7 +63,7 @@ immediately visible through the others:
   `rev` for compare-and-swap, a provenance `source`, tags, and namespaces.
 - **`src/api.ts`** — a small HTTP/JSON API + a built-in web dashboard, on
   plain `node:http` (no framework).
-- **`src/mcp-server-core.ts`** — the transport-agnostic MCP server with thirty-two tools, ten of them registered by default (see MONOMEM_TOOLS),
+- **`src/mcp-server-core.ts`** — the transport-agnostic MCP server with thirty-five tools, nine of them registered by default (see MONOMEM_TOOLS),
   tools, shared by both MCP transports.
 - **`src/mcp-stdio.ts`** — stdio entry point for local Claude Code / Desktop
   / editors.
@@ -92,11 +92,13 @@ immediately visible through the others:
 |---|---|---|
 | `state_write` | write | Create a note, or update one by `id` (optional `if_rev` compare-and-swap, `source` provenance) |
 | `state_read` | read | Read one note; `neighbors: true` attaches up to 10 similar notes |
-| `state_search` | read | Keyword / semantic / hybrid search, optional `when` time filter |
-| `state_relevant` | read | Extract keywords from a natural message, permissive OR search |
+| `state_search` | read | Keyword / semantic / hybrid search, optional `when` time filter; `mode: "relevant"` does what `state_relevant` does |
+| `state_relevant` | read | Extract keywords from a natural message, permissive OR search (not registered by default) |
 | `state_list` | read | Newest-first page of notes |
 | `state_delete` | admin | Forget a note: archives it (restorable); permanent delete is dashboard/CLI only |
 | `memory_stats` | read | Totals, most-read notes, never-read and stale counts |
+| `memory_receipt` | read | Opt-in: which memories a session start showed and why (ids, ranks, why-tags; titles looked up live) |
+| `memory_why` | read | Opt-in: the story of one note in time order (writer, versions, replacements, holds, pin, sessions shown it, status); titles only, ends with what is not recorded |
 | `memory_since` | read | Change feed: what was created/updated/deleted since a time ([change-feed.md](./change-feed.md)) |
 | `task_put` | write | Create/update a task on the shared board (status, next_step, owner, priority, due, parent, blockers, `client_key`, `if_rev`; `command` + `target` queues a runner command) ([tasks.md](./tasks.md)) |
 | `task_get` | read | One task in full (notes, command, approval state, result) |
@@ -117,8 +119,9 @@ immediately visible through the others:
 | `memory_history` | admin | Earlier versions of a note (bounded per note) |
 | `memory_restore_version` | admin | Put an earlier version back as a new version (`if_rev` supported) |
 | `memory_history_purge` | admin | Forget a note's earlier versions (cannot be undone) |
+| `memory_rollback` | admin | Undo what one writer did since a time: preview (writes nothing, returns a one-time code), then confirm with `code` (all or nothing). Operator-only: off over stdio unless `MONOMEM_STDIO_ADMIN_TOOLS=1`; skips pinned notes and approve-first namespaces ([replacing-memories.md](./replacing-memories.md#rolling-back-one-writer)) |
 | `trust_policy` | admin | The distrust list and the trusted export signers: `list`, `distrust`, `undistrust`, `add_attester`, `remove_attester`. A namespace-pinned admin sees and changes only its own namespace's rules ([trust.md](./trust.md)) |
-| `memory_index` | read | Automatic memory, step 1: compact rows (id, kind, type, title, date, files, ~tokens) over notes, captured observations and session summaries; filter by query / kind / obs_type / file / session / since (`GET /index`) |
+| `memory_index` | read | Automatic memory, step 1: compact rows (id, kind, type, title, date, files, ~tokens) over notes, captured observations and session summaries; filter by query / kind / obs_type / file / session / since (`GET /index`). The query runs the same keyword search as `state_search` (a whole question works), and a captured row next to another hit in the same session ranks higher |
 | `memory_timeline` | read | Step 2: compact rows before and after an anchor (a note id, or the best match for query / file / session), oldest first (`GET /timeline`) |
 | `memory_get` | read | Step 3: full notes for up to 20 ids, with their files, session and an `om:#id` citation (`POST /get`) |
 | `session_list` | read | Recorded agent sessions with their summary; one session's observations (`GET /sessions`, `GET /sessions/:id`) |
@@ -197,6 +200,9 @@ similarity edges, v5 `_meta` + gated FTS trigger, v6 edge indexes, v7
 rules, per namespace), `trust_attesters` (trusted export signers: key, pinned `server_id`, `label`, optional
 `not_after`) and `trust_log` (who changed the policy; newest 1000 rows kept); see [trust.md](./trust.md), v15 (1.6.0) `notes.confidence` /
 `confidence_by` / `superseded_by` / `superseded_at` / `superseded_by_writer` and tables `note_history` (earlier versions, bounded per note),
-`supersede_used` (single-use confirmation codes) and `supersede_log`; see [replacing-memories.md](./replacing-memories.md). Opening a
-v1-v14 database first writes a verified `<db>.pre-v16-backup`. There is no downgrade path: once a 1.1.0 binary
+`supersede_used` (single-use confirmation codes) and `supersede_log`; see [replacing-memories.md](./replacing-memories.md), v17
+`access_log` (the read access log) and `write_rate` (the flood guard's per-writer counter); see [access-log.md](./access-log.md), v18
+`notes.pinned` (CLI-only notes) and `note_history_dropped` (when versions left the history, per writer; no text, for rollback); see
+[replacing-memories.md](./replacing-memories.md#pinned-notes-cli-only). Opening an
+older database first writes a verified `<db>.pre-v18-backup`. There is no downgrade path: once a 1.1.0 binary
 has opened a database, don't go back to 1.0.x.

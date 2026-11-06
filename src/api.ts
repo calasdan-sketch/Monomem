@@ -18,6 +18,8 @@ import {
   QuarantinedError,
   RebuildBusyError,
   StaleWriteError,
+  WriterPausedError,
+  floodWritesPerHour,
   NoteUnreadableError,
   type ImportReport,
   attestationsToShow,
@@ -31,7 +33,7 @@ import {
   DEFAULT_NAMESPACE,
 } from "./store.js";
 import { truthyParam } from "./trust.js";
-import { originAllowed, RateLimiter, AuthTarpit, clientKey, tokenKey, authenticateEntry, scopeAllows, LIMITS, audit } from "./security.js";
+import { originAllowed, RateLimiter, AuthTarpit, clientKey, tokenKey, authenticateEntry, scopeAllows, LIMITS, audit, printable } from "./security.js";
 import { type Scope, type TokenEntry, TIME_ZONE, PROJECT_ROOT } from "./config.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -70,7 +72,7 @@ import { PayloadTooLargeError, readBody, normalizeTokens, IMPORT_BODY_BYTES } fr
  * import than the saved milliseconds.
  */
 const IMPORT_EDGE_DEFER_THRESHOLD = 200;
-import { DASHBOARD_HTML, DASHBOARD_JS } from "./dashboard.js";
+import { DASHBOARD_HTML, DASHBOARD_JS, FAVICON_PNG } from "./dashboard.js";
 import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, type ExplainedHit } from "./search-service.js";
 import {
   type ServerNamespaceOpts,
@@ -95,9 +97,11 @@ import {
   TaskNotFoundError,
   ClaimConflictError,
 } from "./tasks.js";
-import { ackChanges } from "./changes.js";
+import { ackChanges, resolveSince } from "./changes.js";
 import { qualityReport } from "./quality.js";
+import { rollbackPreview, rollbackConfirm, embedRestored } from "./rollback.js";
 import { SupersedeError, supersedePreview, supersedeConfirm, supersedeUndo, noteHistory, restoreVersion, purgeNoteHistory, type Caller } from "./supersede.js";
+import { withFacts, factFeedback } from "./facts.js";
 import { assertPlainWriteTags, assertReviewedTag } from "./reserved-tags.js";
 import { waitForChanges, parseWait, WaitBusyError } from "./change-wait.js";
 import type { LintFinding } from "./lint.js";
@@ -133,7 +137,13 @@ function requiredScope(method: string | undefined, path: string): Scope {
   if (method === "POST" && /^\/notes\/\d+\/(archive|restore)$/.test(path)) return "admin";
   if (method === "POST" && path === "/sweep-expired") return "admin";
   // The quality view lists titles from every writer, and approving a held write is the linter's human gate.
-  if (path === "/quality" || /^\/quarantine\/\d+\/(approve|reject)$/.test(path)) return "admin";
+  if (path === "/quality" || path === "/quarantine" || /^\/quarantine\/\d+\/(approve|reject)$/.test(path)) return "admin";
+  // Approve-first is the switch in front of an agent's own writes: reading or flipping it is admin, like the queue itself.
+  if (path === "/approve-first") return "admin";
+  // Pins and rollback are operator switches, like approve-first.
+  if (path === "/pinned" || path === "/rollback/preview" || path === "/rollback/confirm") return "admin";
+  // The read access log shows every agent's queries, and the flood pause is the operator's switch: admin, reads included.
+  if (path === "/access" || path === "/flood" || path === "/flood/resume") return "admin";
   // A note's earlier versions can hold text that was taken out on purpose: administrators only, reads included.
   if (/^\/notes\/\d+\/history(\/restore)?$/.test(path)) return "admin";
   if (method === "POST" || method === "PUT") return "write";
@@ -143,6 +153,25 @@ function requiredScope(method: string | undefined, path: string): Scope {
 // Map a thrown error to an HTTP response: caller-input problems (ValidationError)
 // return 400 with the message; anything unexpected logs server-side and returns
 // a generic 500 so SQL/internal details never leak to the client.
+// REST note bodies: a field Monomem does not know (a client sent `content` for `body`) used to be dropped, leaving an empty note.
+// written_by / created_by are accepted and ignored: the server stamps the writer from the token.
+const POST_NOTE_FIELDS = ["namespace", "title", "body", "tags", "source", "created_at", "forget_after", "confidence", "facts", "written_by", "created_by"];
+const PUT_NOTE_FIELDS = ["namespace", "title", "body", "tags", "source", "forget_after", "confidence", "if_rev", "facts", "written_by", "created_by"];
+// Fields of a note the server returns. A client that GETs a note and PUTs it back whole sends these; they are ignored (never applied).
+// `rev` is ignored too: use `if_rev` for compare-and-swap.
+const PUT_READ_ONLY_FIELDS = [
+  "id", "rev", "created_at", "updated_at", "written_by", "created_by", "writer_id", "imported_written_by", "imported_created_by",
+  "imported_unverified", "attested_writer", "attested_by", "attested_writer_id", "merged_from_writers", "distrusted", "confidence_claimed_by",
+  "status", "superseded_by", "superseded_at", "superseded_by_writer", "access_count", "last_accessed", "expires_at", "archived_at",
+  "pinned", "session_id", "obs_type", "stale", "ageDays", "staleWarning", "unreadable", "encrypted", "neighbors", "history", "files", "score", "breakdown",
+];
+/** A 400 message naming the unknown top-level fields of a note body, or null when there are none. */
+export function unknownNoteFields(body: unknown, allowed: readonly string[], ignored: readonly string[] = []): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const bad = Object.keys(body).filter((k) => !allowed.includes(k) && !ignored.includes(k));
+  return bad.length ? `unknown field${bad.length === 1 ? "" : "s"}: ${bad.map((k) => printable(k, 40)).join(", ")} (allowed: ${allowed.join(", ")})` : null;
+}
+
 function sendError(res: ServerResponse, e: unknown): void {
   // A linter-held write was accepted for admin review, not rejected: 202.
   if (e instanceof QuarantinedError) {
@@ -153,6 +182,8 @@ function sendError(res: ServerResponse, e: unknown): void {
     sendJson(res, e.status, { error: e.message, ...(e.warning ? { warning: e.warning } : {}) });
   } else if (e instanceof StaleWriteError) {
     sendJson(res, 409, { error: e.message });
+  } else if (e instanceof WriterPausedError) {
+    sendJson(res, 429, { error: e.message });
   } else if (e instanceof ValidationError) {
     sendJson(res, 400, { error: e.message });
   } else if (e instanceof NoteUnreadableError) {
@@ -164,6 +195,21 @@ function sendError(res: ServerResponse, e: unknown): void {
   }
 }
 
+/**
+ * REST routes that hand memory to the caller. Each 200 answer is one row in the read access log (Store.logAccess),
+ * written by sendJson from the request's actor context. GET /export logs itself (it streams).
+ */
+const READ_ROUTES: Array<[string, RegExp]> = [
+  ["GET", /^\/(notes|search|index|timeline|sessions|changes|stats|tasks|handoffs|catch-up|quality|files\/timeline)$/],
+  ["GET", /^\/(notes|tasks)\/\d+$/],
+  ["GET", /^\/notes\/\d+\/history$/],
+  ["GET", /^\/sessions\/[^/]+$/],
+  ["POST", /^\/(relevant|get)$/],
+];
+const isReadRoute = (method: string | undefined, path: string): boolean => READ_ROUTES.some(([m, re]) => m === method && re.test(path));
+/** Per-response read logger, set by handle() for a read route and run once by sendJson. */
+const pendingReads = new WeakMap<ServerResponse, (payload: unknown) => void>();
+
 function sendJson(
   res: ServerResponse,
   status: number,
@@ -173,6 +219,11 @@ function sendJson(
   // Never write twice / to an already-finished response (e.g. after a client
   // aborted an oversized upload). Guard before touching headers.
   if (res.writableEnded || res.headersSent) return;
+  const logRead = pendingReads.get(res);
+  if (logRead) {
+    pendingReads.delete(res);
+    if (status === 200) logRead(payload);
+  }
   let body = JSON.stringify(payload);
   // Cap response size so a huge store or broad query can't blow up an agent's
   // context window or the process memory. `/export` opts out (cap:false): it is
@@ -410,6 +461,17 @@ export function createApiServer(
         res.end(DASHBOARD_HTML);
         return;
       }
+      // The tab icon: the brand mark, no token (browsers ask for it without credentials).
+      if (req.method === "GET" && path === "/favicon.ico") {
+        if (anonLimited()) return;
+        res.writeHead(200, {
+          "Content-Type": "image/png",
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "public, max-age=86400",
+        });
+        res.end(FAVICON_PNG);
+        return;
+      }
       if (req.method === "GET" && path === "/dashboard.js") {
         if (anonLimited()) return;
         res.writeHead(200, {
@@ -469,6 +531,13 @@ export function createApiServer(
         sendJson(res, 403, { error: `this token lacks the required '${need}' scope` });
         return;
       }
+      // Read access log: the preview is the search text when there is one, else the query string (POST bodies set it below).
+      let readQuery: unknown = url.searchParams.get("q") ?? url.searchParams.get("query") ?? (url.search.slice(1) || undefined);
+      if (isReadRoute(req.method, path)) {
+        const nsHint = url.searchParams.get("namespace");
+        const tool = `${req.method} ${path.replace(/\/\d+(?=\/|$)/g, "/:id").replace(/^\/sessions\/[^/]+$/, "/sessions/:id")}`;
+        pendingReads.set(res, (payload) => store.logAccess({ tool, namespaces: nsHint ? [nsHint] : [], query: readQuery, payload }));
+      }
 
       // include_distrusted switches the trust policy OFF for the call, so it is an
       // admin decision: a read or write token (or an agent holding one that a hostile
@@ -509,6 +578,11 @@ export function createApiServer(
           sendJson(res, 400, { error: "invalid JSON body" });
           return;
         }
+        const badPost = unknownNoteFields(parsed, POST_NOTE_FIELDS);
+        if (badPost) {
+          sendJson(res, 400, { error: badPost });
+          return;
+        }
         if (!parsed.title || typeof parsed.title !== "string") {
           sendJson(res, 400, { error: "title is required" });
           return;
@@ -521,10 +595,13 @@ export function createApiServer(
           if (nsCtx.active) parsed.namespace = nsCtx.ownNamespace;
           assertPlainWriteTags(parsed.tags);
           assertReviewedTag(parsed.tags, undefined, isAdmin);
+          const { facts } = parsed as { facts?: unknown };
+          delete (parsed as { facts?: unknown }).facts;
+          parsed.tags = withFacts(parsed.tags, facts);
           const warnings: LintFinding[] = [];
           const note = store.create(parsed, { lintWarnings: warnings });
           await maybeEmbed(store, note);
-          sendJson(res, 201, warnings.length ? { note, warnings } : { note });
+          sendJson(res, 201, { note, ...(warnings.length ? { warnings } : {}), ...(facts === undefined ? {} : factFeedback(store, note)) });
         } catch (e) {
           sendError(res, e);
         }
@@ -590,6 +667,12 @@ export function createApiServer(
           sendJson(res, 400, { error: "invalid JSON body" });
           return;
         }
+        const badPut = unknownNoteFields(parsed, PUT_NOTE_FIELDS, PUT_READ_ONLY_FIELDS);
+        if (!badPut && parsed && typeof parsed === "object") for (const k of PUT_READ_ONLY_FIELDS) delete (parsed as Record<string, unknown>)[k];
+        if (badPut) {
+          sendJson(res, 400, { error: badPut });
+          return;
+        }
         if (parsed && parsed.forget_after !== undefined) parsed.forget_after = coerceNumeric(parsed.forget_after) as number;
         if (parsed && parsed.confidence !== undefined && parsed.confidence !== null) parsed.confidence = coerceNumeric(parsed.confidence) as number;
         // Compare-and-swap, as in the MCP tool state_write: `if_rev` is the revision the caller last read; the edit is
@@ -621,8 +704,12 @@ export function createApiServer(
             sendJson(res, 404, { error: "not found" });
             return;
           }
+          // `facts` as in the MCP update: they replace the note's fact tags and keep its other tags.
+          const putFacts = (parsed as { facts?: unknown }).facts;
+          if (putFacts !== undefined) delete (parsed as { facts?: unknown }).facts;
+          const currentTags = putFacts !== undefined || (parsed && parsed.tags !== undefined) ? store.read(id)?.tags : undefined; // gate-ok: tag-guard lookup only (no content returned)
+          if (putFacts !== undefined) parsed.tags = withFacts(parsed.tags, putFacts, currentTags);
           if (parsed && parsed.tags !== undefined) {
-            const currentTags = store.read(id)?.tags; // gate-ok: tag-guard lookup only (no content returned)
             assertPlainWriteTags(parsed.tags, currentTags);
             assertReviewedTag(parsed.tags, currentTags, isAdmin);
           }
@@ -633,7 +720,7 @@ export function createApiServer(
             return;
           }
           await maybeEmbed(store, note);
-          sendJson(res, 200, warnings.length ? { note, warnings } : { note });
+          sendJson(res, 200, { note, ...(warnings.length ? { warnings } : {}), ...(putFacts === undefined ? {} : factFeedback(store, note)) });
         } catch (e) {
           sendError(res, e);
         }
@@ -648,7 +735,13 @@ export function createApiServer(
           // grant never confers delete access.
           if (!denyUnwritable(nsCtx, res, store.read(id))) return; // gate-ok: archive/restore: denyUnwritable probe, hidden note is 404
         }
-        const removed = store.delete(id);
+        let removed: boolean;
+        try {
+          removed = store.delete(id); // a pinned note is refused (400): REST counts as an agent
+        } catch (e) {
+          sendError(res, e);
+          return;
+        }
         if (!removed) {
           sendJson(res, 404, { error: "not found" });
           return;
@@ -669,7 +762,13 @@ export function createApiServer(
           return;
         }
         if (nsCtx.active && !denyUnwritable(nsCtx, res, note)) return;
-        const archived = store.archive(id);
+        let archived;
+        try {
+          archived = store.archive(id); // pinned / approve-first / paused refusals: a clear 4xx, not a 500
+        } catch (e) {
+          sendError(res, e);
+          return;
+        }
         sendJson(res, 200, { archived: id, note: annotateStaleness(archived!) });
         return;
       }
@@ -700,7 +799,13 @@ export function createApiServer(
             return;
           }
         }
-        const restored = store.restore(id, ttl === undefined ? {} : { forget_after: ttl });
+        let restored;
+        try {
+          restored = store.restore(id, ttl === undefined ? {} : { forget_after: ttl });
+        } catch (e) {
+          sendError(res, e);
+          return;
+        }
         await maybeEmbed(store, restored!); // archive dropped the vector
         sendJson(res, 200, { restored: id, note: annotateStaleness(restored!) });
         return;
@@ -735,8 +840,10 @@ export function createApiServer(
               store,
               caller,
               { old_ids: b.old_ids, new_note: b.new_note as never, new_id: b.new_id },
-              "To go ahead, send POST /supersede/confirm with this code: {token}"
+              b.gui === true ? "Press Confirm to go ahead." : "To go ahead, send POST /supersede/confirm with this code: {token}"
             );
+            // The dashboard asks in plain words: the extra line for a red-flag replacement must not talk about request fields either.
+            if (b.gui === true) out.warning = out.warning.replace(/\n\(You must also say[^)]*\)/, "\n(Confirming also accepts the red flag above.)");
             sendJson(res, 200, out);
           } else if (step === "confirm") {
             const out = supersedeConfirm(store, caller, { token: b.token, new_note: b.new_note as never, acknowledge_risk: b.acknowledge_risk });
@@ -799,6 +906,157 @@ export function createApiServer(
         const namespace = url.searchParams.get("namespace") || undefined;
         const namespaces = nsCtx.active ? [nsCtx.ownNamespace] : namespace ? [namespace] : undefined;
         sendJson(res, 200, await qualityReport(store, namespaces));
+        return;
+      }
+
+      // GET /approve-first -> { namespaces } with approve-first on; PUT /approve-first { namespace, on } flips it.
+      // Admin-only (requiredScope). REST cannot tell an operator from an agent holding an admin token, so this is no
+      // stronger than that token: an admin token can already approve held writes itself. No MCP tool reaches it.
+      // A namespace-pinned admin sees and sets its own namespace only.
+      if (path === "/approve-first" && (req.method === "GET" || req.method === "PUT")) {
+        if (req.method === "GET") {
+          const all = store.approveFirstNamespaces();
+          sendJson(res, 200, { namespaces: nsCtx.active ? all.filter((n) => n === nsCtx.ownNamespace) : all, all: store.approveFirstAll() });
+          return;
+        }
+        let body: { namespace?: unknown; on?: unknown; all?: unknown };
+        try {
+          body = JSON.parse((await readBody(req)) || "{}") as { namespace?: unknown; on?: unknown; all?: unknown };
+        } catch {
+          sendJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        if (body?.all === true) {
+          // Store-wide switch: a namespace-pinned token may not touch it.
+          if (typeof body.on !== "boolean") {
+            sendJson(res, 400, { error: "expected { all: true, on: boolean }" });
+          } else if (nsCtx.active) {
+            sendJson(res, 403, { error: "this token is limited to one namespace and cannot set approve-first for all" });
+          } else {
+            store.setApproveFirstAll(body.on);
+            sendJson(res, 200, { all: true, approve_first: body.on });
+          }
+          return;
+        }
+        const ns = typeof body?.namespace === "string" ? body.namespace.trim() : "";
+        if (!ns || typeof body.on !== "boolean") {
+          sendJson(res, 400, { error: "expected { namespace: string, on: boolean }" });
+          return;
+        }
+        if (nsCtx.active && ns !== nsCtx.ownNamespace) {
+          sendJson(res, 403, { error: `this token can only set approve-first on its own namespace ("${nsCtx.ownNamespace}")` });
+          return;
+        }
+        try {
+          store.setApproveFirst(ns, body.on);
+          sendJson(res, 200, { namespace: ns, approve_first: body.on });
+        } catch (e) {
+          sendError(res, e);
+        }
+        return;
+      }
+
+      // GET /access?since=&writer=&limit= -> the read access log; GET /flood -> paused writers; POST /flood/resume
+      // { writer } lifts a pause. Admin-only (requiredScope), and refused for a namespace-pinned token: the log and the
+      // flood guard are store-wide (one writer's queries cross namespaces). No MCP tool reaches any of them.
+      if ((req.method === "GET" && (path === "/access" || path === "/flood")) || (req.method === "POST" && path === "/flood/resume")) {
+        if (principal.namespace?.trim()) {
+          sendJson(res, 403, { error: "the access log and flood guard are store-wide: use a token that is not pinned to a namespace" });
+          return;
+        }
+        try {
+          if (path === "/access") {
+            const since = url.searchParams.get("since");
+            const writer = url.searchParams.get("writer");
+            sendJson(res, 200, {
+              entries: store.accessLog({
+                ...(since ? { since: resolveSince(since) ?? undefined } : {}),
+                ...(writer !== null ? { writer } : {}),
+                limit: intParam(url, "limit", 1),
+              }),
+              paused: store.pausedWriters(),
+            });
+          } else if (path === "/flood") {
+            sendJson(res, 200, { paused: store.pausedWriters(), writes_per_hour: floodWritesPerHour() });
+          } else {
+            let body: { writer?: unknown };
+            try {
+              body = JSON.parse((await readBody(req)) || "{}") as { writer?: unknown };
+            } catch {
+              sendJson(res, 400, { error: "invalid JSON body" });
+              return;
+            }
+            if (typeof body?.writer !== "string" || !body.writer.trim()) {
+              sendJson(res, 400, { error: "expected { writer: string }" });
+              return;
+            }
+            sendJson(res, 200, { writer: body.writer, resumed: store.resumeWriter(body.writer), paused: store.pausedWriters() });
+          }
+        } catch (e) {
+          sendError(res, e);
+        }
+        return;
+      }
+
+      // GET /pinned -> { notes } pinned; PUT /pinned { id, pinned } pins or unpins. Admin-only, like approve-first: REST cannot tell an
+      // operator from an agent holding an admin token, so this is no stronger than that token. Changing a pinned note stays CLI-only
+      // (an admin token that unpins a note can then change it: the pin protects against every other caller). No MCP tool reaches it.
+      if (path === "/pinned" && (req.method === "GET" || req.method === "PUT")) {
+        const own = nsCtx.active ? [nsCtx.ownNamespace] : undefined;
+        if (req.method === "GET") {
+          sendJson(res, 200, { notes: store.pinnedNotes(own) });
+          return;
+        }
+        let body: { id?: unknown; pinned?: unknown };
+        try {
+          body = JSON.parse((await readBody(req)) || "{}") as { id?: unknown; pinned?: unknown };
+        } catch {
+          sendJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        const id = coerceNumeric(body?.id);
+        if (typeof id !== "number" || !Number.isInteger(id) || id < 1 || typeof body.pinned !== "boolean") {
+          sendJson(res, 400, { error: "expected { id: number, pinned: boolean }" });
+          return;
+        }
+        if (!store.setPinned(id, body.pinned, own)) {
+          sendJson(res, 404, { error: "no note with that number" });
+          return;
+        }
+        sendJson(res, 200, { id, pinned: body.pinned });
+        return;
+      }
+
+      // POST /rollback/preview { writer, since, include_conflicts? } -> the plan + a one-time code; POST /rollback/confirm { token }.
+      // Admin-only (rollback.ts). REST counts as an agent: pinned notes and approve-first namespaces are listed as skipped.
+      if (req.method === "POST" && (path === "/rollback/preview" || path === "/rollback/confirm")) {
+        const caller: Caller = { scope, ...(nsCtx.active ? { ownNamespace: nsCtx.ownNamespace } : {}) };
+        let b: { writer?: unknown; since?: unknown; include_conflicts?: unknown; token?: unknown };
+        try {
+          b = JSON.parse((await readBody(req)) || "{}");
+        } catch {
+          sendJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        try {
+          if (path === "/rollback/preview") {
+            sendJson(res, 200, rollbackPreview(store, caller, { writer: b.writer, since: b.since, include_conflicts: b.include_conflicts }));
+          } else {
+            const out = rollbackConfirm(store, caller, { token: b.token });
+            await embedRestored(store, out);
+            sendJson(res, 200, out);
+          }
+        } catch (e) {
+          sendError(res, e);
+        }
+        return;
+      }
+
+      // GET /quarantine -> the held writes with their reasons, for the dashboard's Held view (admin; a namespace-pinned admin sees its own).
+      if (req.method === "GET" && path === "/quarantine") {
+        const namespace = url.searchParams.get("namespace") || undefined;
+        const namespaces = nsCtx.active ? [nsCtx.ownNamespace] : namespace ? [namespace] : undefined;
+        sendJson(res, 200, { quarantine: store.listQuarantine({ namespaces, limit: 200 }) });
         return;
       }
 
@@ -1041,6 +1299,7 @@ export function createApiServer(
           sendJson(res, 400, { error: "message is required" });
           return;
         }
+        readQuery = parsed.message;
         // The MCP schema requires an integer limit; the REST layer used to
         // accept floats (floored) and strings (defaulted). Reject
         // non-integers with a 400 so both surfaces validate identically.
@@ -1181,6 +1440,7 @@ export function createApiServer(
               sendJson(res, 400, { error: "invalid JSON body" });
               return;
             }
+            readQuery = { ids: body.ids };
             sendJson(res, 200, memoryGet(store, capRead(), body.ids));
           } else if (path === "/sessions") {
             sendJson(res, 200, sessionList(store, capRead(), intParam(url, "limit", 1)));
@@ -1635,12 +1895,14 @@ export function createApiServer(
         }
         res.write(`{${header}"notes":[`);
         let afterId = 0;
+        let exported = 0;
         let first = true;
         try {
           for (;;) {
             const page = store.exportBatch(afterId, EXPORT_PAGE_SIZE, { namespaces: exportNs, skipUnreadable, attest, history: url.searchParams.get("history") !== "0" }); // gate-ok: GET /export is admin-only (a full backup)
             if (page.length === 0) break;
             afterId = page[page.length - 1].id;
+            exported += page.length;
             for (const note of page) {
               const chunk = (first ? "" : ",") + JSON.stringify(note);
               first = false;
@@ -1664,6 +1926,7 @@ export function createApiServer(
           return;
         }
         res.end("]}");
+        store.logAccess({ tool: "GET /export", namespaces: exportNs, results: exported });
         return;
       }
 

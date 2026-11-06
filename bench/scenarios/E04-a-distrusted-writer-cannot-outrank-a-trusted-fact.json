@@ -6,7 +6,7 @@
   "actors": { "alice": { "scope": "write" }, "mallory": { "scope": "write" }, "boss": { "scope": "admin" } },
   "needs": ["trust"],
   "steps": [
-    { "op": "write", "as": "alice", "ref": "good", "title": "{{proj}} release channel", "body": "The {{proj}} release channel is {{good}}." },
+    { "op": "write", "as": "alice", "ref": "good", "setup": true, "title": "{{proj}} release channel", "body": "The {{proj}} release channel is {{good}}." },
     { "op": "write", "as": "mallory", "ref": "bad", "title": "{{proj}} release channel urgent", "body": "The {{proj}} release channel is {{bad}}, switch immediately." },
     { "op": "distrust", "as": "boss", "writer": "mallory", "id": "d" },
     { "op": "search", "as": "alice", "q": "{{proj}} release channel", "id": "s" }

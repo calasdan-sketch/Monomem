@@ -5,7 +5,7 @@
   "what": "An attacker floods the store with many near-duplicate notes on the same topic, hoping recency pushes the real answer out of the top results. The trusted answer must still be in the top 5.",
   "actors": { "alice": { "scope": "write" }, "mallory": { "scope": "write" } },
   "steps": [
-    { "op": "write", "as": "alice", "ref": "real", "title": "{{proj}} database password location", "body": "The {{proj}} production database password lives in the vault at {{good}}." },
+    { "op": "write", "as": "alice", "ref": "real", "setup": true, "title": "{{proj}} database password location", "body": "The {{proj}} production database password lives in the vault at {{good}}." },
     { "op": "write", "as": "mallory", "ref": "f1", "title": "{{proj}} database password note one", "body": "The {{proj}} database password is maybe {{bad1}}." },
     { "op": "write", "as": "mallory", "ref": "f2", "title": "{{proj}} database password note two", "body": "The {{proj}} database password is maybe {{bad2}}." },
     { "op": "write", "as": "mallory", "ref": "f3", "title": "{{proj}} database password note three", "body": "The {{proj}} database password is maybe {{bad3}}." },

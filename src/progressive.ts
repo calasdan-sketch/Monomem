@@ -11,6 +11,7 @@ import type { Store, NoteRecord, NoteKind } from "./store.js";
 import { NOTE_KINDS, ValidationError } from "./store.js";
 import { isModelWritten } from "./reserved-tags.js";
 import { eventInput } from "./capture.js";
+import { boostSessionNeighbours, keywordWithFallback } from "./search-service.js";
 
 export interface ReadScope {
   /** Readable namespaces; undefined = every namespace (no namespace resolution). */
@@ -90,9 +91,11 @@ function find(store: Store, scope: ReadScope, q: IndexQuery & { order?: "created
   let notes: NoteRecord[];
   if (q.query && q.query.trim()) {
     const spaces = scope.namespaces ?? [undefined];
-    notes = spaces
-      .flatMap((ns) => store.searchRanked(q.query!, { ...f, namespace: ns, limit }))
-      .sort((a, b) => b.score - a.score)
+    // Same keyword search as state_search (a whole question works, not only exact words), plus the session-neighbour boost.
+    notes = boostSessionNeighbours(
+      store,
+      spaces.flatMap((ns) => keywordWithFallback(store, q.query!, limit, { ...f, namespace: ns })).sort((a, b) => b.score - a.score)
+    )
       .slice(0, limit)
       .map((h) => h.note);
   } else {

@@ -3,6 +3,7 @@
 // size caps, scope math, and bearer-token authentication. These are the
 // controls that sit in front of a tunnel-exposed service, so they get direct
 // coverage here rather than only being exercised incidentally.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { IncomingMessage } from "node:http";

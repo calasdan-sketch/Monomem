@@ -1,4 +1,5 @@
 // Replacing a memory on every surface (1.6.0): REST, MCP and the command line all go through the same two steps.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
@@ -17,7 +18,12 @@ describe("REST", () => {
   let store: Store;
   let srv: Server;
   let base = "";
+  let savedRate: string | undefined;
   before(async () => {
+    // The API allows 120 requests per token per 10 s window. This block sends more than that when the machine is fast,
+    // so on a quiet run the later tests got 429 where they expect 400/410. The limiter reads this at server creation.
+    savedRate = process.env.MONOMEM_RATE_MAX;
+    process.env.MONOMEM_RATE_MAX = "100000";
     store = new Store(":memory:");
     srv = createApiServer(store, [
       { token: TOK.write, scope: "write", label: "alice", namespace: "tenantA" },
@@ -31,6 +37,8 @@ describe("REST", () => {
     base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
   });
   after(async () => {
+    if (savedRate === undefined) delete process.env.MONOMEM_RATE_MAX;
+    else process.env.MONOMEM_RATE_MAX = savedRate;
     srv.closeAllConnections();
     await new Promise<void>((r) => srv.close(() => r()));
     store.close();
@@ -82,10 +90,15 @@ describe("REST", () => {
     const old = await mk(TOK.write, "bravo lock", "l1");
     const nw = await mk(TOK.write, "bravo lock now", "l2");
     const p = await call(TOK.write, "POST", "/supersede/preview", { old_ids: [old.id], new_id: nw.id });
-    assert.equal((await call(TOK.write2, "POST", "/supersede/confirm", { token: p.json.token })).status, 400);
-    assert.equal((await call(TOK.write, "POST", "/supersede/confirm", { token: p.json.token.slice(0, -2) + "zz" })).status, 400);
-    assert.equal((await call(TOK.write, "POST", "/supersede/confirm", { token: p.json.token })).status, 200);
-    assert.equal((await call(TOK.write, "POST", "/supersede/confirm", { token: p.json.token })).status, 410);
+    const other = await call(TOK.write2, "POST", "/supersede/confirm", { token: p.json.token });
+    assert.equal(other.status, 400, `code used by someone else: ${other.status} ${JSON.stringify(other.json)}`);
+    const damaged = p.json.token.slice(0, -2) + (p.json.token.endsWith("zz") ? "yy" : "zz"); // always differs from the real code
+    const bad = await call(TOK.write, "POST", "/supersede/confirm", { token: damaged });
+    assert.equal(bad.status, 400, `damaged code: ${bad.status} ${JSON.stringify(bad.json)}`);
+    const first = await call(TOK.write, "POST", "/supersede/confirm", { token: p.json.token });
+    assert.equal(first.status, 200, `first use: ${first.status} ${JSON.stringify(first.json)}`);
+    const again = await call(TOK.write, "POST", "/supersede/confirm", { token: p.json.token });
+    assert.equal(again.status, 410, `same code twice: ${again.status} ${JSON.stringify(again.json)}`);
   });
 
   test("an edit made after the preview makes the confirm a 409", async () => {

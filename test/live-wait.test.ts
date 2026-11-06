@@ -1,6 +1,7 @@
 // Live wait on the change feed: GET /changes?wait=N and memory_since
 // wait_seconds. Covers wake-ups (in-process and cross-process), scope,
 // timeouts, client disconnects, caps, and that nothing leaks afterwards.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

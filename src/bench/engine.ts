@@ -223,6 +223,10 @@ class Run {
   previewed = new Map<string, unknown>();
   constructor(private readonly scenario: Scenario) {}
 
+  /** True when some step's write was held for review (also an import that held some of its notes). */
+  anyHeld(): boolean {
+    return [...this.results.values()].some((r) => r.outcome === "quarantined" || Number((r.data as { quarantined?: unknown } | undefined)?.quarantined) > 0);
+  }
   idOf(ref: string): string {
     const id = this.refs.get(ref);
     if (id === undefined) throw new Error(`scenario error: ref "${ref}" has no note (its write did not succeed)`);
@@ -270,6 +274,7 @@ async function execStep(a: MemoryAdapter, run: Run, step: AnyStep): Promise<void
         confidence: step.confidence as number | undefined,
         forget_after: step.forget_after as number | undefined,
         namespace: step.namespace as string | undefined,
+        setup: step.setup === true || undefined,
       });
       if (r.outcome === "ok" && r.note) run.refs.set(step.ref as string, r.note.id);
       keep(r);
@@ -553,6 +558,23 @@ function judge(run: Run, c: Check): CheckResult {
   }
 }
 
+/**
+ * A check the adapter cannot be judged on: it reads a step the adapter answered "unsupported", or a note field the
+ * adapter declared it never has (MemoryAdapter.fields). Such a check is neither passed nor failed.
+ */
+function unsupportedIf(adapter: MemoryAdapter, run: Run, c: Check, r: CheckResult): CheckResult {
+  const steps = [c.step, ...(c.steps ?? []), c.same_as?.step, c.differs_from?.step].filter((x): x is string => x !== undefined);
+  const stepUnsupported = steps.some((sid) => run.results.get(sid)?.outcome === "unsupported");
+  const f = adapter.fields;
+  const lacks = (p: string | undefined): boolean => f !== undefined && p !== undefined && !f.has(p as keyof BenchNote);
+  let fieldUnsupported = false;
+  if (c.check === "field") fieldUnsupported = lacks(c.path) || lacks(c.same_as?.path) || lacks(c.differs_from?.path);
+  if (c.check === "recoverable") fieldUnsupported = [...(c.verified_in ?? []), ...(c.claim_in ?? [])].every((p) => lacks(p));
+  if (!stepUnsupported && !fieldUnsupported) return r;
+  const { measure: _drop, ...rest } = r;
+  return { ...rest, pass: false, unsupported: true, actual: stepUnsupported ? "the adapter does not support this operation" : `the adapter has no ${c.path ?? "such"} field` };
+}
+
 export async function runScenario(adapter: MemoryAdapter, scenario: Scenario, gaps: Record<string, KnownGap>, opts: RunOptions): Promise<ScenarioResult> {
   const s = fill(scenario, opts.seed, scenario.id);
   const head = { id: s.id, suite: s.suite, title: s.title, what: s.what, ...(s.known_gap ? { known_gap: s.known_gap } : {}), ...(s.limit ? { limit: s.limit } : {}) };
@@ -574,12 +596,24 @@ export async function runScenario(adapter: MemoryAdapter, scenario: Scenario, ga
       }
     }
     for (const step of s.steps as unknown as AnyStep[]) await execStep(adapter, run, step);
-    const checks = s.expect.map((c) => judge(run, c));
-    const allPass = checks.every((c) => c.pass);
+    const checks = s.expect.map((c) => unsupportedIf(adapter, run, c, judge(run, c)));
+    const judged = checks.filter((c) => !c.unsupported);
+    const allPass = judged.every((c) => c.pass);
+    // Every check the system could be judged on passed, but some it could not be judged on: not a pass, not a fail.
+    if (allPass && judged.length < checks.length) {
+      const why = checks.filter((c) => c.unsupported).map((c) => c.desc);
+      return { ...head, status: "skipped", skipped_reason: `adapter "${adapter.name}" ${judged.length ? `partly unsupported (${judged.length} of ${checks.length} checks judged, all passed)` : "unsupported (no check could be judged)"}; unsupported: ${why.join("; ")}`, checks };
+    }
     const status = s.known_gap ? (allPass ? "gap_closed" : "known_gap") : allPass ? "pass" : "fail";
-    return { ...head, status, checks };
+    const held = status !== "pass" && run.anyHeld();
+    return { ...head, status, checks, ...(held ? { held: true as const } : {}) };
   } catch (e) {
-    return { ...head, status: "fail", checks: [], error: (e as Error).message };
+    // A scenario that broke because an earlier step was unsupported (so a later step had no note to act on) was never
+    // judged: it is skipped, not failed.
+    const unsupported = [...run.results.entries()].filter(([, r]) => r.outcome === "unsupported").map(([k]) => k);
+    if (unsupported.length) return { ...head, status: "skipped", skipped_reason: `adapter "${adapter.name}" does not support step(s) ${unsupported.join(", ")}`, checks: [] };
+    const held = run.anyHeld();
+    return { ...head, status: "fail", checks: [], error: (e as Error).message, ...(held ? { held: true as const } : {}) };
   } finally {
     await adapter.close().catch(() => undefined);
   }

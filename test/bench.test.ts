@@ -709,7 +709,7 @@ describe("the command line", () => {
     const h = spawnSync(process.execPath, [cli, "bench", "--help"], { env: env(), encoding: "utf8", timeout: 60000 });
     assert.equal(h.status, 0);
     assert.match(h.stdout, /provenance benchmark/);
-    const main = spawnSync(process.execPath, [cli, "help"], { env: env(), encoding: "utf8", timeout: 60000 });
+    const main = spawnSync(process.execPath, [cli, "help", "--all"], { env: env(), encoding: "utf8", timeout: 60000 });
     assert.match(main.stdout, /\n  bench /);
   });
 
@@ -767,7 +767,8 @@ describe("shipping and docs", () => {
   });
 
   test("the CHANGELOG has 1.6.0 and 1.5.0 entries", () => {
-    assert.match(read("CHANGELOG.md"), /^## \[1\.6\.0\]/m);
-    assert.match(read("CHANGELOG.md"), /^## \[1\.5\.0\]/m);
+    // Pre-rename entries are labelled "OneMemory x.y.z" so they cannot be mistaken for Monomem releases.
+    assert.match(read("CHANGELOG.md"), /^## \[OneMemory 1\.6\.0\]/m);
+    assert.match(read("CHANGELOG.md"), /^## \[OneMemory 1\.5\.0\]/m);
   });
 });

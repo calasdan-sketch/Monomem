@@ -1,5 +1,6 @@
 // 1.1.0-rc review fixes: one block per finding, each fails on the pre-fix code.
 
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, mock } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";

@@ -1,4 +1,5 @@
 // The project profile, "why was this shown?" tags with never-show, and the token / footprint meter.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
@@ -147,7 +148,7 @@ describe("token & footprint meter", () => {
     assert.equal(m.recent[0].session_id, "sess-1");
     assert.ok(m.db_bytes > 0);
     assert.deepEqual(Object.keys(m.recent[0]).sort(), ["injected_tokens", "injections", "llm_tokens", "namespace", "saved_tokens", "session_id", "updated_at"]);
-    assert.match(meterLine(m), /footprint: 1 session\(s\), ~\d+ tokens injected \(2 time\(s\)\)/);
+    assert.match(meterLine(m), /footprint: 1 session, 2 injections of ~\d+ tokens in total/);
     s.close();
   });
 

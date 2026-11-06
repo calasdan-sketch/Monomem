@@ -52,6 +52,28 @@ Monomem part. An entry setup did not add (one you wrote by hand) is listed, not 
 | `sync --git <repo>` | `<repo>/monomem/` or `<repo>/monomem-enc/`, and git commits in that repo |
 | `npm run runner` (a Monomem checkout only, not in the npm package) | `<checkout>/data/runner.lock`, `runner-seen.json` |
 
+## Network calls and AI cost
+
+**By default Monomem makes no outbound connection and no AI-model call.** It listens on `127.0.0.1` only
+(`MONOMEM_BIND` changes that). Every outbound call in the code is listed here, each off until you set it; the test
+`test/network-allowlist.test.ts` fails if a new one is added without updating this table.
+
+| Call | Off until | Goes to |
+|---|---|---|
+| Embeddings (`src/embeddings.ts`) | `MONOMEM_EMBEDDINGS=on` or `auto` | `MONOMEM_EMBED_URL` (default `localhost:11434`); a non-local host prints a warning once |
+| Session summary by a local model (`src/llm.ts`) | `MONOMEM_LLM_URL` and `MONOMEM_LLM_MODEL` | a loopback address only, unless `MONOMEM_LLM_ALLOW_REMOTE=1`; redirects refused |
+| Capture hook posting to a server (`src/hook.ts`) | `MONOMEM_HOOK_URL` and `MONOMEM_HOOK_TOKEN` | your own Monomem server |
+| Runner `--post` (`src/runner-sign.ts`) | `MONOMEM_URL` and `MONOMEM_TOKEN` | your own Monomem server |
+| Dashboard page (`src/dashboard.ts`) | opening the dashboard | the Monomem server that served the page |
+
+Not Monomem's own calls: `npx monomem` downloads the package from npm, and `sync --git` runs `git`, which pushes where your
+repository's remote points.
+
+**What memory costs your agent.** Monomem itself spends no model tokens, but what it returns lands in your agent's context.
+The SessionStart hook injects up to 1,500 tokens per session (`MONOMEM_RECALL_TOKENS`, of which the project profile is up to
+300, `MONOMEM_PROFILE_TOKENS`; `MONOMEM_PROFILE=off`). Search results are whatever the agent asks for (`limit`). The
+dashboard's **Meter** view shows the estimate (about 4 characters a token).
+
 ## Processes and loops
 
 Nothing runs unless you start it (`start`, `mcp`, `watch`, the runner) or an app runs a hook. The session-end hook may

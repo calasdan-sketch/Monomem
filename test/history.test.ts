@@ -1,4 +1,5 @@
 // Note history, restore, confidence, export/import and the schema v15 migration (1.6.0).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readdirSync } from "node:fs";
@@ -455,13 +456,13 @@ describe("schema v15 migration", () => {
         } finally {
           console.error = quiet;
         }
-        assert.equal(SCHEMA_VERSION, 16);
-        assert.equal(version(path), 16);
+        assert.equal(SCHEMA_VERSION, 18);
+        assert.equal(version(path), 18);
         assert.deepEqual(s.list({}).notes.map((n) => n.title).sort(), ["one", "two"]);
         assert.equal(s.list({}).notes.find((n) => n.title === "one")!.body, "first note");
         for (const c of ["confidence", "confidence_by", "superseded_by", "superseded_at", "superseded_by_writer"]) assert.ok(cols(path, "notes").includes(c), c);
         for (const t of ["note_history", "supersede_used", "supersede_log"]) assert.ok(cols(path, t).length > 0, t);
-        const bak = path + ".pre-v16-backup";
+        const bak = path + ".pre-v18-backup";
         assert.ok(existsSync(bak), "the pre-upgrade copy exists");
         assert.ok(Store.verifyBackupFile(bak).ok);
         assert.equal(version(bak), 14, "the copy is still at the old version, so an older release can open it");
@@ -484,7 +485,7 @@ describe("schema v15 migration", () => {
       console.error = () => undefined;
       try {
         new Store(path).close();
-        const bak = path + ".pre-v16-backup";
+        const bak = path + ".pre-v18-backup";
         const before = readdirSync(dir).sort();
         const s = new Store(path);
         const one = s.list({}).notes[0];
@@ -514,7 +515,7 @@ describe("schema v15 migration", () => {
         const s = new Store(path);
         assert.equal(s.list({}).notes.length, 2);
         s.close();
-        assert.equal(version(path), 16);
+        assert.equal(version(path), 18);
       } finally {
         console.error = quiet;
       }

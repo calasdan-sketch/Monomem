@@ -2,6 +2,7 @@
 // the SQL predicate for sets). This file fails when a new read route or a new raw store read appears
 // that nobody has classified, so a future route cannot quietly bypass the gate (the 1.4.0 review found
 // four such routes: tags-only update echo, task replay, the janitor and the vault export).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -45,6 +46,8 @@ const EXPECTED_SITES: Record<string, string[]> = {
     "local shell command (archive/restore): the operator owns the database file",
   ],
   "quality.ts": ["admin-only report"],
+  "conflicts.ts": ["admin-only report"],
+  "why.ts": ["local shell command (why): the operator owns the database file"],
   "consolidate.ts": [
     "admin consolidation by ids: mixed trusted/distrusted sources are refused below",
     "candidate scan is filtered with store.filterVisible before use",
@@ -66,8 +69,14 @@ const EXPECTED_SITES: Record<string, string[]> = {
     "import merge-base lookup: compares hashes, returns nothing to a caller",
   ],
   "extract.ts": ["the capture writer re-reads its own summary note"],
+  "facts.ts": ["local CLI, full trust like every command"],
+  "health.ts": ["operator CLI, counts redaction markers only; no note content is returned or printed"],
   "llm.ts": ["the capture writer re-reads its own summary note"],
   "progressive.ts": ["access probe: readVisible decides before anything is returned"],
+  "rollback.ts": [
+    "operator rollback (admin), confined to the caller's namespaces by rollbackCandidates",
+    "re-embed what the operator just restored; nothing is returned",
+  ],
   "tasks.ts": [
     "requireTaskRef: a distrusted task reads as absent",
     "cycle check walks parent ids only",
@@ -146,14 +155,15 @@ describe("B: one gate for reading a note", () => {
     if (/req\.method === "GET" && getId/.test(api)) routes.add("/tasks/:id");
     if (/req\.method === "GET" && SIGN_PAGES\[path\]/.test(api)) routes.add("(sign pages)");
     if (/req\.method === "GET" && sessMatch/.test(api)) routes.add("/sessions/:id");
-    const NOTE_ROUTES = ["/notes", "/notes/:id", "/search", "/stats", "/changes", "/tasks", "/tasks/:id", "/handoffs", "/catch-up", "/export", "/index", "/timeline", "/sessions", "/sessions/:id", "/files/timeline", "/quality"];
-    const NO_NOTE_CONTENT = ["/health", "/ready", "/", "/dashboard.js", "(sign pages)", "/runner/status", "/trust"];
+    const NOTE_ROUTES = ["/notes", "/notes/:id", "/search", "/stats", "/changes", "/tasks", "/tasks/:id", "/handoffs", "/catch-up", "/export", "/index", "/timeline", "/sessions", "/sessions/:id", "/files/timeline", "/quality", "/quarantine"];
+    // /access: the read access log holds writer labels and redacted query previews, never note text.
+    const NO_NOTE_CONTENT = ["/health", "/ready", "/", "/dashboard.js", "/favicon.ico", "(sign pages)", "/runner/status", "/trust", "/access"];
     assert.deepEqual([...routes].sort(), [...NOTE_ROUTES, ...NO_NOTE_CONTENT].sort(), "a GET route was added: add it to NOTE_ROUTES (and to the canary test below) or NO_NOTE_CONTENT");
 
     const mcp = read("mcp-server-core.ts");
     const tools = new Set<string>([...mcp.matchAll(/server\.registerTool\(\s*"([a-z_]+)"/g)].map((m) => m[1]));
-    const NOTE_TOOLS = ["state_read", "state_search", "state_relevant", "state_list", "memory_stats", "memory_consolidation_candidates", "memory_since", "task_get", "task_list", "catch_up", "memory_ack", "memory_history", "memory_index", "memory_timeline", "memory_get", "session_list"];
-    const OTHER_TOOLS = ["state_write", "state_delete", "memory_consolidate", "memory_rebuild_edges", "task_put", "task_claim", "task_approve", "session_handoff", "memory_quarantine", "runner_status", "trust_policy", "memory_supersede_preview", "memory_supersede_confirm", "memory_supersede_undo", "memory_restore_version", "memory_history_purge"];
+    const NOTE_TOOLS = ["state_read", "state_search", "state_relevant", "state_list", "memory_stats", "memory_receipt", "memory_why", "memory_consolidation_candidates", "memory_since", "task_get", "task_list", "catch_up", "memory_ack", "memory_history", "memory_index", "memory_timeline", "memory_get", "session_list"];
+    const OTHER_TOOLS = ["state_write", "state_delete", "memory_consolidate", "memory_rebuild_edges", "task_put", "task_claim", "task_approve", "session_handoff", "memory_quarantine", "runner_status", "trust_policy", "memory_supersede_preview", "memory_supersede_confirm", "memory_supersede_undo", "memory_restore_version", "memory_history_purge", "memory_rollback"];
     assert.deepEqual([...tools].sort(), [...NOTE_TOOLS, ...OTHER_TOOLS].sort(), "an MCP tool was added: classify it here (and canary-test it below if it returns note content)");
   });
 });
@@ -207,6 +217,7 @@ describe("B: the canary never reaches a non-admin reader through any classified 
         ["/sessions?namespace=work", 200, "sessions"],
         ["/files/timeline?path=src/x.ts", 200, "rows"],
         ["/quality", 403, ""], // admin only: it lists every writer's titles
+        ["/quarantine", 403, ""], // admin only: held writes carry their full text
       ];
       for (const [p, status, must] of routes) {
         const r = await fetch(base + p, { headers: { Authorization: `Bearer ${TOKEN}` } });

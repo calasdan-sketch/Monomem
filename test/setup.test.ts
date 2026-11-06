@@ -1,4 +1,5 @@
 // `monomem setup`: every test runs against a temporary HOME / APPDATA. No real configuration is ever read or written.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, lstatSync } from "node:fs";
@@ -281,7 +282,7 @@ describe("setup: making the change", () => {
     assert.equal(j.mcpServers.other.command, "npx");
     assert.equal(j.mcpServers.monomem.command, "/usr/local/bin/node");
     assert.equal(j.mcpServers.monomem.type, "stdio");
-    assert.deepEqual(j.mcpServers.monomem.env, { MONOMEM_DB_PATH: s.db });
+    assert.deepEqual(j.mcpServers.monomem.env, { MONOMEM_CLIENT: "claude-code", MONOMEM_DB_PATH: s.db });
     const b = listBackups(ccFile(s.home));
     assert.equal(b.length, 1);
     assert.equal(readFileSync(b[0], "utf8"), REAL_CLAUDE_JSON, "the backup is the original, byte for byte");
@@ -545,8 +546,8 @@ describe("setup: moving from claude-bridge", () => {
     const { oldDb } = legacyHome(s, {});
     const io = makeIO();
     await runSetup(s.e, io, opts({ dryRun: true }));
-    assert.match(io.all(), /schema v13; this version upgrades it to v16/);
-    assert.match(io.all(), /pre-v16-backup/);
+    assert.match(io.all(), /schema v13; this version upgrades it to v18/);
+    assert.match(io.all(), /pre-v18-backup/);
     assert.match(io.all(), /close Claude Code/i);
     assert.equal(Store.peekSchemaVersion(oldDb), 13, "a dry run did not upgrade it");
   });
@@ -698,7 +699,7 @@ describe("setup: Claude Code rewriting its file while we work", () => {
 describe("setup: wiring", () => {
   test("`monomem help` lists setup and the new import and sync forms", async () => {
     const { spawnSync } = await import("node:child_process");
-    const r = spawnSync(process.execPath, [CLI, "help"], { encoding: "utf8" });
+    const r = spawnSync(process.execPath, [CLI, "help", "--all"], { encoding: "utf8" });
     assert.match(r.stdout, /setup \[--dry-run\]/);
     assert.match(r.stdout, /import --claude/);
     assert.match(r.stdout, /sync --git/);

@@ -2,6 +2,7 @@
 // contention; edge scoring moved outside the write transaction; batched
 // access bumps) and BLOCKER 4 (authorization gate before access tracking)
 // plus S-LOW-2 (memory_consolidate uniform errors under ns resolution).
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

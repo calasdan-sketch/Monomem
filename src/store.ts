@@ -12,12 +12,12 @@
 // app-level "remember to reindex" step to forget.
 
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, statSync, statfsSync, readdirSync, renameSync, existsSync, copyFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, statSync, statfsSync, readdirSync, renameSync, linkSync, existsSync, copyFileSync, unlinkSync } from "node:fs";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { dirname, basename, join } from "node:path";
 import { checkSizes, audit } from "./security.js";
 import { chmodQuiet } from "./config.js";
-import { lintContent, lintPolicy, describeFindings, type LintFinding, type LintAction } from "./lint.js";
+import { lintContent, lintPolicy, describeFindings, type LintFinding, type LintAction, type LintCategory } from "./lint.js";
 // Reuses consolidate.ts's zero-dependency text similarity for the note
 // similarity graph. This is a module cycle (consolidate.ts imports Store
 // from here), but a safe one: both modules only touch the other's bindings
@@ -38,8 +38,9 @@ import {
 import { isStale, stalenessConfig, annotateStaleness } from "./staleness.js";
 // At-rest encryption for note bodies. No module cycle: crypto.ts imports
 // only node: builtins, never store.ts.
-import { encrypt, decryptIfEncrypted, loadKey, keyPath, noteAad, captureAad } from "./crypto.js";
+import { encrypt, decryptIfEncrypted, isEncrypted, loadKey, keyPath, noteAad, captureAad } from "./crypto.js";
 import { currentActor, currentWriter, cleanWriter } from "./actor.js";
+import { redact } from "./redact.js";
 import {
   ALL_NAMESPACES,
   MAX_DISTRUST_RULES,
@@ -54,6 +55,8 @@ import {
   makeWriterId,
   matchesDistrust,
   mergedToStorage,
+  nameIsSql,
+  stdioFamily,
   parseMerged,
   parseWriterRef,
   writerFilterSql,
@@ -237,6 +240,33 @@ export class QuarantinedError extends ValidationError {
   }
 }
 
+/** A write from a writer the flood guard paused (Store.floodGate). Cleared by an operator: `monomem resume <label>`. */
+export class WriterPausedError extends ValidationError {}
+
+/** Env knob: a non-negative number, or `dflt` when unset, empty or unusable. */
+function envCount(name: string, dflt: number): number {
+  const raw = process.env[name]?.trim();
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : dflt;
+}
+/** Days of read-access log kept (MONOMEM_ACCESS_LOG_DAYS, default 30; 0 = the log is off). */
+export const accessLogDays = (): number => envCount("MONOMEM_ACCESS_LOG_DAYS", 30);
+/** Writes one writer may make in a rolling hour before it is paused (MONOMEM_FLOOD_WRITES_PER_HOUR, default 500; 0 = off). */
+export const floodWritesPerHour = (): number => Math.floor(envCount("MONOMEM_FLOOD_WRITES_PER_HOUR", 500));
+/** Longest query preview kept in the access log. */
+export const ACCESS_PREVIEW_MAX = 120;
+const ACCESS_AAD = "access_log";
+
+export interface AccessLogEntry {
+  seq: number;
+  at: string;
+  writer: string;
+  tool: string;
+  namespaces: string;
+  query: string;
+  results: number;
+}
+
 /** How much of the write-time linter a write path runs. */
 export type LintMode =
   /** Default: secrets + injection, MONOMEM_LINT policy. */
@@ -269,7 +299,7 @@ function applyLintPolicy(findings: LintFinding[], opts: LintOpts): "quarantine" 
   const policy = lintPolicy();
   const mode = opts.lint ?? "full";
   const actionFor = (f: LintFinding): LintAction => {
-    const a = policy[f.category];
+    const a = policy[f.category as LintCategory];
     return mode === "trusted" && a === "quarantine" ? "block" : a;
   };
   const blocked = findings.filter((f) => actionFor(f) === "block");
@@ -298,6 +328,33 @@ function lintFor(
   if (mode === "none") return [];
   const all = lintContent(fields);
   return mode === "trusted" ? all.filter((f) => f.category === "secret") : all;
+}
+
+/** The quarantine reason of a write held only because its namespace is approve-first. */
+const APPROVAL_FINDING: LintFinding = { category: "approval", label: "namespace requires approval", field: "namespace" };
+
+/**
+ * Approve-first namespaces hold every write that is not the operator's. The operator is the local
+ * `monomem` CLI (writer marker `cli`, no token behind the call) plus the internal lint modes: "none"
+ * is an approved quarantine replay, "trusted" is consolidation re-writing stored notes. Everything
+ * else counts as an agent: MCP over stdio or HTTP, every REST call (an admin token included -- REST
+ * has no separate operator login), the server's own jobs, the runner, capture hooks, library callers.
+ */
+function isOperatorWrite(mode: LintMode): boolean {
+  return mode !== "full" || currentWriter() === "cli";
+}
+
+/**
+ * Archive, restore and supersede change what agents see but cannot wait in the quarantine queue (it
+ * holds content, not state changes). In an approve-first namespace they are therefore the operator's
+ * alone: an agent gets a clear refusal instead of a silent change the owner never approved.
+ */
+function refuseAgentInApproveFirst(store: { isApproveFirst(ns: string): boolean }, namespace: string, what: string): void {
+  if (currentWriter() !== "cli" && store.isApproveFirst(namespace)) {
+    throw new ValidationError(
+      `namespace "${namespace}" is approve-first: ${what} there is done by the operator (monomem CLI), not by an agent`
+    );
+  }
 }
 
 export interface NoteInput {
@@ -493,14 +550,19 @@ export interface QuarantineEntry {
   tags: string[] | null;
   source: string | null;
   reasons: LintFinding[];
+  /** Server-stamped writer of the held write ('' when unknown). */
+  written_by: string;
   created_at: string;
 }
 
 /** How long change-log rows (incl. deletes) are kept for the change feed. */
 export const CHANGE_LOG_RETENTION_DAYS = 90;
 
+/** FTS5 prefix index on 1-character prefixes (see Store.ensureFtsPrefixIndex). */
+const FTS_PREFIX_OPT = "prefix='1'";
+
 /** Current schema version (PRAGMA user_version). See Store.migrate. */
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 18;
 
 /**
  * Notes fetched per page by exportBatch(), which both streaming export
@@ -664,6 +726,12 @@ export interface NoteRecord {
   session_id?: string;
   /** v16: observation type (bugfix, feature, refactor, change, discovery, decision, security_alert, security_note). */
   obs_type?: string;
+  /**
+   * v18: present (true) only when the operator pinned the note. Agents can read it but not change, archive, replace, restore an
+   * older version of, or purge the history of it; only the local `monomem` CLI can (and only it or an admin REST call can unpin).
+   * Not the `pinned` tag (which only keeps captured rows from decay).
+   */
+  pinned?: true;
 }
 
 interface NoteRow {
@@ -698,6 +766,7 @@ interface NoteRow {
   kind?: string | null;
   session_id?: string | null;
   obs_type?: string | null;
+  pinned?: number | null;
 }
 
 export const DEFAULT_NAMESPACE = "default";
@@ -765,6 +834,7 @@ function annotateRetention(row: NoteRow, rec: NoteRecord): NoteRecord {
   if (row.expires_at) out.expires_at = row.expires_at;
   if (row.archived_at) out.archived_at = row.archived_at;
   if (row.body_enc) out.encrypted = true;
+  if (Number(row.pinned ?? 0) === 1) out.pinned = true;
   // v16: only captured rows carry these, so an ordinary note keeps its exact old shape.
   if (row.kind && row.kind !== "note") {
     out.kind = row.kind as NoteKind;
@@ -794,14 +864,18 @@ function parseTags(raw: string): string[] {
   return raw.split(",").map((t) => t.trim()).filter(Boolean); // legacy rows
 }
 
-/** Build an FTS5 MATCH expression: AND of prefix-matched, quote-escaped tokens. */
-function buildMatchQuery(q: string): string {
+/**
+ * Build an FTS5 MATCH expression of prefix-matched, quote-escaped tokens: AND by
+ * default, OR when `any` (bm25 then weighs each matched term by its rarity, so a
+ * note hitting the rare words outranks one hitting only common ones).
+ */
+function buildMatchQuery(q: string, any = false): string {
   const tokens = q
     .trim()
     .split(/\s+/)
     .filter((t) => /[\p{L}\p{N}]/u.test(t)) // keep only tokens with a letter/number
     .map((t) => `"${t.replace(/"/g, '""')}"*`);
-  return tokens.join(" AND "); // "" when nothing usable; caller returns []
+  return tokens.join(any ? " OR " : " AND "); // "" when nothing usable; caller returns []
 }
 
 /**
@@ -1381,6 +1455,7 @@ export class Store {
       this.installActorStamp();
       this.serverIdValue = this.storeId();
       this.upgradeV1Envelopes();
+      this.ensureFtsPrefixIndex();
       this.enableFtsSecureDelete();
     } catch (e) {
       // A constructor that throws never hands the caller a Store to close();
@@ -1446,6 +1521,7 @@ export class Store {
     }
     if (found >= SCHEMA_VERSION) {
       this.ensureV14Extras();
+      this.ensureArchiveLog();
       this.cleanStoredLabels();
       Store.sweepStalePartials(this.dbPath); // an unfinished upgrade copy (a killed process) does not sit there forever
       return;
@@ -1458,6 +1534,7 @@ export class Store {
         this.migrate(v);
         this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
         this.ensureV14Extras();
+        this.ensureArchiveLog();
         this.cleanStoredLabels();
       }
       this.db.exec("COMMIT");
@@ -1469,6 +1546,92 @@ export class Store {
       }
       throw e;
     }
+  }
+
+  /**
+   * Archive/restore history for time travel (`--as-of`). notes only keeps the CURRENT archived_at, so a note archived and
+   * restored looked live the whole time. A trigger records every archived_at flip (archive, expiry/decay sweep, supersede,
+   * restore, supersede-undo): ids and times only, no text; deleting a note drops its rows. Created by the v18 migration. It reaches
+   * back only to `archive_log_since` (_meta). Caller holds the write lock; errors propagate.
+   */
+  private createArchiveLog(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS archive_log (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id INTEGER NOT NULL,
+        at TEXT NOT NULL,
+        archived INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_archive_log_note ON archive_log(note_id);
+      CREATE TRIGGER IF NOT EXISTS notes_archive_log_au AFTER UPDATE OF archived_at ON notes
+      WHEN old.archived_at IS NOT new.archived_at
+      BEGIN
+        INSERT INTO archive_log (note_id, at, archived) VALUES (new.id, COALESCE(new.archived_at, ${SQL_NOW}), new.archived_at IS NOT NULL);
+      END;
+      CREATE TRIGGER IF NOT EXISTS notes_archive_log_ad AFTER DELETE ON notes
+      BEGIN
+        DELETE FROM archive_log WHERE note_id = old.id;
+      END;
+      INSERT OR IGNORE INTO _meta (key, value) VALUES ('archive_log_since', ${SQL_NOW});
+    `);
+  }
+
+  /**
+   * Only for a database an earlier build of this branch already marked v18 without archive_log (it was added after the v18 bump).
+   * Released upgrades get it from the migration. Reads first, writes only if missing. A read-only or busy file is skipped
+   * (no archive history until a writer opens it); any other error is logged, not hidden. ponytail: delete once no dev v18 file lacks it.
+   */
+  private ensureArchiveLog(): void {
+    try {
+      if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'notes_archive_log_ad'").get()) return;
+      this.createArchiveLog();
+    } catch (e) {
+      const err = e as { errcode?: number; message?: string };
+      const base = typeof err.errcode === "number" ? err.errcode & 0xff : -1;
+      // SQLITE_BUSY 5, SQLITE_LOCKED 6, SQLITE_READONLY 8
+      if (base === 5 || base === 6 || base === 8 || /readonly|read-only|locked|busy/i.test(err.message ?? "")) return;
+      console.error(`[monomem] could not create archive_log: ${err.message ?? String(e)}`);
+    }
+  }
+
+  /** When archive/restore recording began (ISO), or null when it never could (read-only file no writer has opened yet). */
+  archiveLogSince(): string | null {
+    try {
+      const r = this.db.prepare("SELECT value FROM _meta WHERE key = 'archive_log_since'").get() as { value: string } | undefined;
+      return r?.value ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Every recorded archive (true) / restore (false) event per note, oldest first. */
+  archiveEvents(): Map<number, Array<{ at: string; archived: boolean }>> {
+    const out = new Map<number, Array<{ at: string; archived: boolean }>>();
+    try {
+      for (const r of this.db.prepare("SELECT note_id, at, archived FROM archive_log ORDER BY seq").all() as Array<{ note_id: number; at: string; archived: number }>) {
+        const l = out.get(r.note_id) ?? [];
+        l.push({ at: r.at, archived: Number(r.archived) === 1 });
+        out.set(r.note_id, l);
+      }
+    } catch {
+      /* table absent */
+    }
+    return out;
+  }
+
+  /** supersede_log events per retired note (supersede = retired, undo = brought back), oldest first. */
+  supersedeEvents(): Map<number, Array<{ at: string; retired: boolean }>> {
+    const out = new Map<number, Array<{ at: string; retired: boolean }>>();
+    try {
+      for (const r of this.db.prepare("SELECT old_id, at, action FROM supersede_log ORDER BY seq").all() as Array<{ old_id: number; at: string; action: string }>) {
+        const l = out.get(r.old_id) ?? [];
+        l.push({ at: r.at, retired: r.action === "supersede" });
+        out.set(r.old_id, l);
+      }
+    } catch {
+      /* no supersede_log */
+    }
+    return out;
   }
 
   /**
@@ -1577,7 +1740,7 @@ export class Store {
 
   /**
    * Before the first upgrade of a non-empty file (any older version -> the current one), keep one
-   * copy of the pre-upgrade database next to it: `<db>.pre-v16-backup`. It is a
+   * copy of the pre-upgrade database next to it: `<db>.pre-v18-backup` (named after the schema it upgrades to). It is a
    * consistent snapshot (VACUUM INTO) still at the OLD schema version, so an
    * older monomem can open it (rollback = stop everything, put this file
    * back as the database, delete the -wal and -shm files beside it, install the older version). Never overwrites an
@@ -1698,7 +1861,20 @@ export class Store {
       let renamed = false;
       for (let i = 0; i < 3 && !renamed; i++) {
         try {
-          renameSync(part, dest);
+          // Claim `dest` atomically: a hard link fails with EEXIST when another process got there first (rename would
+          // silently replace its copy on POSIX, and both processes would announce the upgrade). Fall back to rename only
+          // where hard links are not supported.
+          try {
+            linkSync(part, dest);
+          } catch (le) {
+            const code = (le as NodeJS.ErrnoException).code;
+            if (code === "EEXIST") {
+              dropPartial(); // another process finished its copy first
+              return;
+            }
+            if (code !== "EPERM" && code !== "ENOTSUP" && code !== "EXDEV") throw le;
+            renameSync(part, dest);
+          }
           renamed = true;
         } catch (e) {
           if (i === 2) throw e;
@@ -1858,7 +2034,7 @@ export class Store {
         CREATE INDEX IF NOT EXISTS idx_notes_ns_created ON notes(namespace, created_at);
         CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
           title, body, tags,
-          content='notes', content_rowid='id'
+          content='notes', content_rowid='id', ${FTS_PREFIX_OPT}
         );
         CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
           INSERT INTO notes_fts(rowid, title, body, tags)
@@ -2305,6 +2481,52 @@ export class Store {
         );
       `);
     }
+    if (v < 17) {
+      // v17: who read what, and the flood guard's write counter.
+      //  - access_log: one row per memory read (when, writer identity, tool or route, namespaces, a short redacted query
+      //    preview, how many results). Never note text or titles. The preview is sealed when at-rest encryption is on.
+      //    Kept MONOMEM_ACCESS_LOG_DAYS (sweepExpired).
+      //  - write_rate: one row per counted create/update, per writer, for the rolling-hour flood check. Kept one hour.
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS access_log (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          at TEXT NOT NULL,
+          writer TEXT NOT NULL DEFAULT '',
+          tool TEXT NOT NULL,
+          namespaces TEXT NOT NULL DEFAULT '',
+          query TEXT NOT NULL DEFAULT '',
+          results INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_access_log_at ON access_log(at);
+        CREATE TABLE IF NOT EXISTS write_rate (
+          writer TEXT NOT NULL,
+          at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_write_rate ON write_rate(writer, at);
+      `);
+    }
+    if (v < 18) {
+      // v18: human-only notes and rollback by writer.
+      //  - notes.pinned: 1 = the operator pinned the note; only the local CLI may change it (see refuseAgentOnPinned). A column, not
+      //    a _meta list, so every read path shows it for free and an older build refuses this file (user_version) instead of
+      //    opening it and silently ignoring the pins.
+      //  - note_history_dropped: per note and per writer, when the versions that writer replaced were dropped from note_history
+      //    (pruned by the limits, or purged). No text. Lets a rollback say "cannot fully undo" instead of guessing.
+      this.addColumn("notes", "pinned", "INTEGER NOT NULL DEFAULT 0");
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS note_history_dropped (
+          note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+          saved_by TEXT NOT NULL,
+          first_at TEXT NOT NULL,
+          last_at TEXT NOT NULL,
+          count INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (note_id, saved_by)
+        );
+      `);
+      //  - archive_log (+ triggers): archive/restore history for --as-of. Part of v18, so the migration (one transaction, under the
+      //    write lock) creates it once and a failure aborts the upgrade instead of being swallowed.
+      this.createArchiveLog();
+    }
   }
 
   /** The delete log row also remembers the deleted note's writers (v14). Caller holds the write lock. */
@@ -2451,8 +2673,11 @@ export class Store {
       sessionId?: string;
       /** ... and its observation type. */
       obsType?: string;
+      /** importNotes: a restore is one operator action, not N agent writes; the flood guard does not count it. */
+      bulkImport?: boolean;
     } & LintOpts = {}
   ): NoteRecord {
+    if (!opts.bulkImport) this.floodGate(opts.lint ?? "full");
     if (!input.title || !input.title.trim()) {
       throw new ValidationError("title is required");
     }
@@ -2460,7 +2685,9 @@ export class Store {
     validateForgetAfter(input.forget_after);
     validateConfidence(input.confidence);
     const findings = lintFor(input, opts.lint ?? "full");
-    if (applyLintPolicy(findings, opts) === "quarantine") {
+    const linted = applyLintPolicy(findings, opts);
+    if (!isOperatorWrite(opts.lint ?? "full") && this.isApproveFirst(input.namespace?.trim() || DEFAULT_NAMESPACE)) findings.push(APPROVAL_FINDING);
+    if (linted === "quarantine" || findings.includes(APPROVAL_FINDING)) {
       const qid = this.quarantineWrite({
         op: "create",
         namespace: input.namespace?.trim() || DEFAULT_NAMESPACE,
@@ -2486,7 +2713,7 @@ export class Store {
     const namespace = input.namespace?.trim() || DEFAULT_NAMESPACE;
     const body = input.body ?? "";
     const tags = tagsToStorage(input.tags);
-    const source = (input.source ?? "").slice(0, 200);
+    const source = (input.source ?? "").replace(/[\u{E0000}-\u{E007F}]/gu, "").slice(0, 200);
     // Server-stamped, never from the request: who is writing right now.
     const writer = opts.writtenBy !== undefined ? cleanWriter(opts.writtenBy) : currentWriter();
     const claim = cleanWriter(opts.importedWrittenBy);
@@ -2582,7 +2809,7 @@ export class Store {
       throw e;
     }
     if (!nested) this.announceChange();
-    audit({ op: "create", id, namespace, bytes: body.length });
+    this.audit({ op: "create", id, namespace, bytes: body.length });
     return this.read(id)!;
   }
 
@@ -2634,6 +2861,42 @@ export class Store {
   }
 
   /**
+   * Live notes that carry any `fact:` tag (up to 500 per namespace), minus distrusted writers' and minus never-show notes (a note
+   * the user hid must not leak through a dispute line; `includeNeverShow` for the `facts` table). `namespace` undefined = every
+   * namespace. `writtenBy` / `notWrittenBy` are the session's own filters. A cheap lookup for session start and key-drift hints.
+   */
+  liveFactNotesIn(namespace: string | undefined, opts: { writtenBy?: string; notWrittenBy?: string; includeNeverShow?: boolean } = {}): NoteRecord[] {
+    const where = ["archived_at IS NULL", "superseded_at IS NULL", "tags LIKE '%\"fact:%'"];
+    const params: string[] = [];
+    if (namespace !== undefined) {
+      where.push("namespace = ?");
+      params.push(namespace);
+    }
+    if (!opts.includeNeverShow) where.push("tags NOT LIKE '%\"never-show\"%'");
+    for (const [v, mode] of [[opts.writtenBy, "is"], [opts.notWrittenBy, "not"]] as const) {
+      if (v === undefined) continue;
+      const f = writerFilterSql(NOTE_COLUMNS, v, mode, this.serverId());
+      where.push(f.sql);
+      params.push(...f.params);
+    }
+    const rows = this.db.prepare(`SELECT * FROM notes WHERE ${where.join(" AND ")} ORDER BY id DESC LIMIT ${namespace === undefined ? 5000 : 500}`).all(...params) as unknown as NoteRow[];
+    // newest kept when over the cap, handed back oldest first
+    return this.filterVisible(rows.reverse().map((r) => this.rec(r)));
+  }
+
+  /**
+   * Live notes of a namespace whose tags carry the fact `fact:<key>=...` (facts.ts), minus `exceptId`, minus never-show notes
+   * (as liveFactNotesIn does) and minus distrusted writers'. For the write-time conflict check; `key` must already be a valid fact key (a-z 0-9 _ . -).
+   */
+  liveFactNotes(namespace: string, key: string, exceptId: number): NoteRecord[] {
+    const pattern = `%"fact:${key.replace(/_/g, "\\_")}=%`;
+    const rows = this.db
+      .prepare("SELECT * FROM notes WHERE archived_at IS NULL AND superseded_at IS NULL AND namespace = ? AND id <> ? AND tags LIKE ? ESCAPE '\\' AND tags NOT LIKE '%\"never-show\"%'")
+      .all(namespace, exceptId, pattern) as unknown as NoteRow[];
+    return this.filterVisible(rows.map((r) => this.rec(r)));
+  }
+
+  /**
    * This note's similar neighbors with staleness fields attached (I-LOW-1).
    * The neighbor records are read untracked (internal reads never bump
    * access counters); only the staleness annotation is kept, so the payload
@@ -2651,6 +2914,9 @@ export class Store {
       };
     });
   }
+
+  /** Set once a skipped access-log row has been reported on stderr, so the warning is not repeated. */
+  private static accessSkipReported = false;
 
   /**
    * Run an access-tracking write best-effort (BLOCKER 3): with a zero busy
@@ -2853,9 +3119,10 @@ export class Store {
    * Returns "live" when a still-running disable owns an aside file (leave it).
    */
   private recoverStrandedKey(): "none" | "restored" | "live" {
-    if (!this.hasEncryptedRows()) return "none";
+    // Cheap check first: listing aside key files costs a directory read; hasEncryptedRows scans the notes table.
     const asides = this.asideKeys();
     if (asides.length === 0) return "none";
+    if (!this.hasEncryptedRows()) return "none";
     let live = false;
     for (const a of asides) {
       let alive = false;
@@ -3066,12 +3333,16 @@ export class Store {
       replaceTaint?: string[];
       /** internal: why the old text is kept in the note's history ("update" unless a version is being restored). */
       historyReason?: string;
+      /** internal: an operator rollback; not counted by the flood guard (a paused writer is still refused). */
+      noFloodCount?: boolean;
     } & LintOpts = {}
   ): NoteRecord | null {
+    this.floodGate(opts.lint ?? "full", opts.noFloodCount !== true);
     validateForgetAfter(patch.forget_after);
     validateConfidence(patch.confidence);
     const existing = this.read(id);
     if (!existing) return null;
+    this.refuseAgentOnPinned(id, "changing it");
     if (existing.superseded_by !== undefined) {
       throw new ValidationError(
         `note ${id} was replaced by note ${existing.superseded_by} and is only kept as a record, so it cannot be edited. ` +
@@ -3093,7 +3364,22 @@ export class Store {
     }
     if (patch.source !== undefined && patch.source !== existing.source) changed.source = patch.source;
     const findings = lintFor(changed, opts.lint ?? "full");
-    if (applyLintPolicy(findings, opts) === "quarantine") {
+    const linted = applyLintPolicy(findings, opts);
+    // Approve-first: an agent's content change (what the linter looks at) or a move, into or out of such a namespace, is held.
+    // Metadata-only patches (confidence, re-sent unchanged fields) are not. Setting forget_after is a delayed forget, and
+    // forgetting there is the operator's alone, so an agent is refused (0 = keep forever, harmless, stays allowed).
+    if (patch.forget_after !== undefined && patch.forget_after !== 0) {
+      refuseAgentInApproveFirst(this, existing.namespace, "setting a forget date on a note");
+    }
+    const movedTo = patch.namespace?.trim();
+    if (
+      !isOperatorWrite(opts.lint ?? "full") &&
+      (Object.keys(changed).length > 0 || (movedTo && movedTo !== existing.namespace)) &&
+      (this.isApproveFirst(existing.namespace) || (movedTo !== undefined && movedTo !== "" && this.isApproveFirst(movedTo)))
+    ) {
+      findings.push(APPROVAL_FINDING);
+    }
+    if (linted === "quarantine" || findings.includes(APPROVAL_FINDING)) {
       const nsTrimQ = patch.namespace?.trim();
       const qid = this.quarantineWrite({
         op: "update",
@@ -3118,7 +3404,7 @@ export class Store {
     const title = patch.title ?? existing.title;
     const body = patch.body ?? existing.body;
     const tags = patch.tags !== undefined ? tagsToStorage(patch.tags) : tagsToStorage(existing.tags);
-    const source = patch.source !== undefined ? patch.source.slice(0, 200) : existing.source;
+    const source = patch.source !== undefined ? patch.source.replace(/[\u{E0000}-\u{E007F}]/gu, "").slice(0, 200) : existing.source;
     const confidenceSet = patch.confidence !== undefined;
     const rev = existing.rev + 1;
     // written_by = who last changed the CONTENT (title or body), server-stamped.
@@ -3178,7 +3464,10 @@ export class Store {
     // The vector-invalidation runs in the same transaction so a note's text and
     // its (now dropped) stale embedding never diverge.
     const want = opts.ifRev ?? null;
-    this.db.exec("BEGIN IMMEDIATE");
+    // Inside a caller's transaction (a rollback restores many notes in one) a SAVEPOINT keeps this write all-or-nothing.
+    const nested = this.db.isTransaction;
+    const undo = (): void => this.db.exec(nested ? "ROLLBACK TO monomem_update; RELEASE monomem_update" : "ROLLBACK");
+    this.db.exec(nested ? "SAVEPOINT monomem_update" : "BEGIN IMMEDIATE");
     try {
       // Sealed under the write lock so the key state cannot change between
       // the check and the write (see writeKey), bound to this id+namespace.
@@ -3249,7 +3538,7 @@ export class Store {
 
       if (Number(res.changes) === 0) {
         // The row either vanished or its rev moved since we read it.
-        this.db.exec("ROLLBACK");
+        undo();
         const current = this.read(id);
         if (!current) return null; // deleted concurrently -> not found
         throw new StaleWriteError(
@@ -3276,23 +3565,28 @@ export class Store {
         id,
         this.planEdges(namespace, title, body, this.getEdgeThreshold(), new Set([id])).pairs
       );
-      this.db.exec("COMMIT");
+      this.db.exec(nested ? "RELEASE monomem_update" : "COMMIT");
     } catch (e) {
       this.edgeIndexes.clear(); // may hold rolled-back state; resync lazily
       try {
-        this.db.exec("ROLLBACK");
+        undo();
       } catch {
         /* already rolled back or no active transaction */
       }
       throw e;
     }
 
-    this.announceChange();
-    audit({ op: "update", id, namespace, bytes: body.length });
+    if (!nested) this.announceChange();
+    this.audit({ op: "update", id, namespace, bytes: body.length });
     return this.read(id);
   }
 
   delete(id: number): boolean {
+    // Same guards as archive(): a paused writer and an agent in an approve-first namespace cannot hard-delete either.
+    // Consolidation deletes through deleteIfRev and is not affected.
+    const ns = (this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined)?.namespace;
+    this.refusePaused();
+    if (ns !== undefined) refuseAgentInApproveFirst(this, ns, "deleting a note");
     const ok = this.deleteWhere(id, null);
     if (ok) this.reviveAfterReplacementDeleted(id);
     return ok;
@@ -3343,15 +3637,17 @@ export class Store {
     const res = this.db
       .prepare(
         `UPDATE notes SET archived_at = ?
-         WHERE expires_at IS NOT NULL AND expires_at <= ? AND archived_at IS NULL${nsSql}`
+         WHERE expires_at IS NOT NULL AND expires_at <= ? AND archived_at IS NULL AND pinned = 0${nsSql}`
       )
       .run(iso, iso, ...(namespaces ?? []));
     const n = Number(res.changes ?? 0);
     if (n > 0) {
       this.edgeIndexes.clear(); // archived notes leave the similarity index
       this.announceChange();
+      this.audit({ op: "sweep-expire", bytes: n }); // `bytes` holds the count, as in supersede
     }
     this.sweepCaptureEvents(now, namespaces);
+    if (!namespaces) this.sweepAccessLog(now); // retention is store-wide: only the unscoped (hourly) sweep runs it
     this.sweepDecay(now, namespaces);
     this.dropArchivedVectors();
     return n;
@@ -3400,7 +3696,7 @@ export class Store {
     }
     const nsSql = namespaces ? ` AND namespace IN (${namespaces.map(() => "?").join(",")})` : "";
     return {
-      sql: `archived_at IS NULL AND superseded_by IS NULL AND instr(tags, ?) = 0 AND (${kinds.join(" OR ")})${nsSql}`,
+      sql: `archived_at IS NULL AND superseded_by IS NULL AND pinned = 0 AND instr(tags, ?) = 0 AND (${kinds.join(" OR ")})${nsSql}`,
       params: [JSON.stringify(PINNED_TAG), ...params, ...(namespaces ?? [])],
     };
   }
@@ -3445,6 +3741,7 @@ export class Store {
     if (done > 0) {
       this.edgeIndexes.clear();
       this.announceChange();
+      this.audit({ op: "sweep-decay", bytes: done });
     }
     return done;
   }
@@ -3566,8 +3863,8 @@ export class Store {
    */
   private pruneHistory(noteId: number, lim = historyLimits()): void {
     const rows = this.db
-      .prepare("SELECT hid, version, written_by, claimed_writer, bytes FROM note_history WHERE note_id = ? ORDER BY version ASC")
-      .all(noteId) as Array<{ hid: number; version: number; written_by: string; claimed_writer: string; bytes: number }>;
+      .prepare("SELECT hid, version, written_by, claimed_writer, bytes, saved_at, saved_by FROM note_history WHERE note_id = ? ORDER BY version ASC")
+      .all(noteId) as Array<{ hid: number; version: number; written_by: string; claimed_writer: string; bytes: number; saved_at: string; saved_by: string }>;
     const del = this.db.prepare("DELETE FROM note_history WHERE hid = ?");
     const who = (r: { written_by: string; claimed_writer: string }): string => r.written_by || `claim:${r.claimed_writer}`;
     let total = rows.reduce((n, r) => n + r.bytes, 0);
@@ -3584,6 +3881,7 @@ export class Store {
       }
       if (victim < 0) victim = 1;
       del.run(rows[victim].hid);
+      this.recordDropped(noteId, rows[victim].saved_by, rows[victim].saved_at);
       total -= rows[victim].bytes;
       rows.splice(victim, 1);
     }
@@ -3632,12 +3930,36 @@ export class Store {
     return r ? this.historyRowToEntry(r) : null;
   }
 
+  /** v18: remember that a version `savedBy` replaced at `savedAt` is no longer kept (no text). Caller holds the write lock. */
+  private recordDropped(noteId: number, savedBy: string, savedAt: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO note_history_dropped (note_id, saved_by, first_at, last_at, count) VALUES (?, ?, ?, ?, 1)
+         ON CONFLICT(note_id, saved_by) DO UPDATE SET first_at = MIN(first_at, excluded.first_at), last_at = MAX(last_at, excluded.last_at), count = count + 1`
+      )
+      .run(noteId, savedBy, savedAt, savedAt);
+  }
+
+  /** v18: per writer, the time span of this note's versions that were dropped from the history (pruned or purged). */
+  historyDropped(noteId: number): Array<{ saved_by: string; first_at: string; last_at: string; count: number }> {
+    return this.db.prepare("SELECT saved_by, first_at, last_at, count FROM note_history_dropped WHERE note_id = ?").all(noteId) as unknown as Array<{
+      saved_by: string;
+      first_at: string;
+      last_at: string;
+      count: number;
+    }>;
+  }
+
   /** Forget every kept version of a note (the note itself is untouched). Returns how many were removed. */
   purgeHistory(noteId: number): number {
+    this.refuseAgentOnPinned(noteId, "forgetting its history");
     this.db.exec("PRAGMA secure_delete = ON");
-    const res = this.db.prepare("DELETE FROM note_history WHERE note_id = ?").run(noteId);
-    const n = Number(res.changes ?? 0);
-    if (n > 0) audit({ op: "history-purge", id: noteId, bytes: n });
+    const n = this.transaction(() => {
+      const gone = this.db.prepare("SELECT saved_at, saved_by FROM note_history WHERE note_id = ?").all(noteId) as Array<{ saved_at: string; saved_by: string }>;
+      for (const g of gone) this.recordDropped(noteId, g.saved_by, g.saved_at);
+      return Number(this.db.prepare("DELETE FROM note_history WHERE note_id = ?").run(noteId).changes ?? 0);
+    });
+    if (n > 0) this.audit({ op: "history-purge", id: noteId, bytes: n });
     return n;
   }
 
@@ -3646,7 +3968,7 @@ export class Store {
    * the history like any other edit, and the restoring writer becomes the note's writer. Names the entry's writers as touching
    * the text, so restoring something a distrusted writer wrote does not launder it.
    */
-  restoreVersion(noteId: number, version: number, opts: { ifRev?: number; writtenBy?: string } = {}): NoteRecord | null {
+  restoreVersion(noteId: number, version: number, opts: { ifRev?: number; writtenBy?: string; reason?: string; noFloodCount?: boolean } = {}): NoteRecord | null {
     const entry = this.historyVersion(noteId, version);
     if (!entry) throw new ValidationError(`note ${noteId} has no saved version ${version}`);
     const touched = [entry.written_by, entry.claimed_writer ?? ""].filter((x) => x);
@@ -3657,7 +3979,7 @@ export class Store {
     return this.update(
       noteId,
       { title: entry.title, body: entry.body },
-      { ...(opts.ifRev !== undefined ? { ifRev: opts.ifRev } : {}), ...(opts.writtenBy !== undefined ? { writtenBy: opts.writtenBy } : {}), ...provenance, historyReason: "restore" }
+      { ...(opts.ifRev !== undefined ? { ifRev: opts.ifRev } : {}), ...(opts.writtenBy !== undefined ? { writtenBy: opts.writtenBy } : {}), ...provenance, historyReason: opts.reason ?? "restore", ...(opts.noFloodCount ? { noFloodCount: true } : {}) }
     );
   }
 
@@ -3693,7 +4015,7 @@ export class Store {
       const when = isoOrNull(h.saved_at) ?? now;
       const conf = typeof h.confidence === "number" && h.confidence >= 0 && h.confidence <= 1 ? h.confidence : null;
       const bytes = Buffer.byteLength(h.title) + Buffer.byteLength(h.body);
-      const res = ins.run(noteId, version, h.title, tagsToStorage(tagsArr), typeof h.source === "string" ? h.source.slice(0, 200) : "", claimed, conf, when, savedBy, bytes);
+      const res = ins.run(noteId, version, h.title, tagsToStorage(tagsArr), typeof h.source === "string" ? h.source.replace(/[\u{E0000}-\u{E007F}]/gu, "").slice(0, 200) : "", claimed, conf, when, savedBy, bytes);
       if (Number(res.changes) === 0) continue;
       const hid = Number(res.lastInsertRowid);
       const sealed = this.sealBody(h.body, historyAad(hid));
@@ -3772,9 +4094,9 @@ export class Store {
     this.db.exec(nested ? "SAVEPOINT monomem_supersede" : "BEGIN IMMEDIATE");
     try {
       // Single use: a nonce that was already spent makes the whole call fail. Spent nonces are kept past their expiry.
-      this.db.prepare("DELETE FROM supersede_used WHERE expires_ms < ?").run(Date.now() - 86_400_000);
-      const spent = this.db.prepare("INSERT OR IGNORE INTO supersede_used (nonce, used_at, expires_ms) VALUES (?, ?, ?)").run(input.nonce, now, input.expiresMs);
-      if (Number(spent.changes) === 0) throw new ValidationError("this confirmation was already used; start again with a new preview");
+      this.spendNonce(input.nonce, input.expiresMs);
+      const nsRow = this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(input.newId) as { namespace: string } | undefined;
+      if (nsRow) refuseAgentInApproveFirst(this, nsRow.namespace, "replacing notes");
       const target = this.db.prepare("SELECT id, namespace, rev, archived_at, superseded_by FROM notes WHERE id = ?").get(input.newId) as
         | { id: number; namespace: string; rev: number; archived_at: string | null; superseded_by: number | null }
         | undefined;
@@ -3787,6 +4109,7 @@ export class Store {
       const log = this.db.prepare("INSERT INTO supersede_log (at, actor, action, namespace, old_id, new_id, flags) VALUES (?, ?, 'supersede', ?, ?, ?, ?)");
       input.oldIds.forEach((oid, i) => {
         if (oid === input.newId) throw new ValidationError("a note cannot replace itself");
+        this.refuseAgentOnPinned(oid, "replacing it");
         const res = upd.run(now, input.newId, now, input.actor, oid, input.oldRevs[i], target.namespace);
         if (Number(res.changes) === 0) {
           throw new StaleWriteError(`note ${oid} changed (or was retired, moved or removed) after the preview; nothing was changed`);
@@ -3807,12 +4130,15 @@ export class Store {
     }
     this.edgeIndexes.clear();
     if (!nested) this.announceChange();
-    audit({ op: "supersede", id: input.newId, namespace: "", bytes: input.oldIds.length });
+    this.audit({ op: "supersede", id: input.newId, namespace: "", bytes: input.oldIds.length });
     return { retired: input.oldIds };
   }
 
   /** Bring a retired note back (the replacement is NOT touched). Safe: it only restores, and it is logged. */
   supersedeUndo(id: number, actor: string): NoteRecord | null {
+    this.refuseAgentOnPinned(id, "bringing it back");
+    const nsRow = this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined;
+    if (nsRow) refuseAgentInApproveFirst(this, nsRow.namespace, "bringing back a replaced note");
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -3840,7 +4166,7 @@ export class Store {
     }
     this.edgeIndexes.clear();
     this.announceChange();
-    audit({ op: "supersede-undo", id, namespace: "", bytes: 0 });
+    this.audit({ op: "supersede-undo", id, namespace: "", bytes: 0 });
     return this.read(id);
   }
 
@@ -3857,6 +4183,26 @@ export class Store {
   neighbourIds(id: number): Set<number> {
     const rows = this.db.prepare("SELECT neighbor_id FROM note_edges WHERE note_id = ?").all(id) as Array<{ neighbor_id: number }>;
     return new Set(rows.map((r) => r.neighbor_id));
+  }
+
+  /**
+   * For captured rows (observations, summaries) among `ids`: the live rows written just before and just after each one in
+   * the same capture session (by created_at, then id). Ordinary notes have no session and are left out.
+   */
+  sessionNeighbours(ids: number[]): Map<number, number[]> {
+    const out = new Map<number, number[]>();
+    if (ids.length === 0) return out;
+    const rows = this.db
+      .prepare(
+        `WITH s AS (SELECT DISTINCT session_id FROM notes WHERE id IN (SELECT value FROM json_each(?)) AND session_id != ''),
+              o AS (SELECT id, LAG(id) OVER w AS prev, LEAD(id) OVER w AS next FROM notes
+                    WHERE session_id IN (SELECT session_id FROM s) AND archived_at IS NULL
+                    WINDOW w AS (PARTITION BY session_id ORDER BY created_at, id))
+         SELECT id, prev, next FROM o WHERE id IN (SELECT value FROM json_each(?))`
+      )
+      .all(JSON.stringify(ids), JSON.stringify(ids)) as Array<{ id: number; prev: number | null; next: number | null }>;
+    for (const r of rows) out.set(r.id, [r.prev, r.next].filter((x): x is number => x !== null));
+    return out;
   }
 
   /** How many other notes are close neighbours of this one in the similarity graph (a rough "what points at it"). */
@@ -3885,6 +4231,10 @@ export class Store {
 
   /** Soft-archive one note (retention action from an API/client). */
   archive(id: number): NoteRecord | null {
+    const ns = (this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined)?.namespace;
+    this.refusePaused();
+    if (ns !== undefined) refuseAgentInApproveFirst(this, ns, "forgetting a note");
+    this.refuseAgentOnPinned(id, "forgetting it");
     const iso = new Date().toISOString();
     this.db
       .prepare("UPDATE notes SET archived_at = ? WHERE id = ? AND archived_at IS NULL")
@@ -3894,6 +4244,7 @@ export class Store {
     this.db.prepare("DELETE FROM note_vectors WHERE note_id = ?").run(id);
     this.edgeIndexes.clear();
     this.announceChange();
+    this.audit({ op: "archive", id, namespace: ns });
     return this.read(id);
   }
 
@@ -3903,6 +4254,10 @@ export class Store {
    * pass `forget_after` (days) to give it a fresh deadline instead.
    */
   restore(id: number, opts: { forget_after?: number } = {}): NoteRecord | null {
+    const restoreNs = (this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined)?.namespace;
+    this.refusePaused();
+    if (restoreNs !== undefined) refuseAgentInApproveFirst(this, restoreNs, "restoring a note");
+    this.refuseAgentOnPinned(id, "restoring it");
     validateForgetAfter(opts.forget_after);
     const cur = this.db.prepare("SELECT superseded_by FROM notes WHERE id = ?").get(id) as { superseded_by: number | null } | undefined;
     if (cur && cur.superseded_by !== null) {
@@ -3918,6 +4273,7 @@ export class Store {
       .run(opts.forget_after === undefined ? null : retentionDeadline(opts.forget_after), new Date().toISOString(), id);
     this.edgeIndexes.clear(); // restored note rejoins the similarity index lazily
     this.announceChange();
+    this.audit({ op: "restore", id, namespace: restoreNs });
     return this.read(id);
   }
 
@@ -3971,6 +4327,7 @@ export class Store {
       this.sealQuarantine(key);
       this.sealHistory(key);
       this.sealCaptureEvents(key);
+      this.sealAccessLog(key, true);
       this.db.exec("COMMIT");
     } catch (e) {
       try {
@@ -4019,14 +4376,39 @@ export class Store {
   }
 
   /**
-   * Remove leftover plaintext after `encrypt enable`: the FTS index still
-   * holds the old body words in its segments (an external-content 'delete'
-   * only writes tombstones), and freed pages / the WAL hold old row images.
-   * Rebuilds the FTS index from the (now body-less) rows, truncates the WAL
-   * and, unless the database is large, VACUUMs. Best effort: a busy
-   * database skips a step instead of failing the enable. Returns whether the
-   * file was vacuumed.
+   * Add FTS5's 1-character prefix index to a search index made without it (older databases). A query word like "i" is
+   * matched as a prefix ("i"*), which without this index merges the posting list of every word starting with that letter;
+   * measured on LongMemEval-S it halves the all-words search step for about 8 % more index size. Older builds read and
+   * write the rebuilt index unchanged, so the schema version stays. One-time; a read-only or busy store skips it.
    */
+  private ensureFtsPrefixIndex(): void {
+    const hasPrefix = (): boolean => {
+      const row = this.db.prepare("SELECT sql FROM sqlite_master WHERE name = 'notes_fts'").get() as { sql: string } | undefined;
+      return !row || /prefix\s*=/i.test(row.sql);
+    };
+    if (hasPrefix()) return;
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      try {
+        if (!hasPrefix()) {
+          this.db.exec(`DROP TABLE notes_fts;
+            CREATE VIRTUAL TABLE notes_fts USING fts5(title, body, tags, content='notes', content_rowid='id', ${FTS_PREFIX_OPT});
+            INSERT INTO notes_fts(notes_fts) VALUES('rebuild');`);
+        }
+        this.db.exec("COMMIT");
+      } catch (e) {
+        this.db.exec("ROLLBACK");
+        throw e;
+      }
+    } catch (e) {
+      // Read-only or busy is expected (search still works without the prefix index until a writer opens the file);
+      // anything else (disk full, corruption) must be visible.
+      const msg = (e as Error).message ?? String(e);
+      if (!/readonly|read-only|busy|locked/i.test(msg)) process.stderr.write(`[monomem] could not add the search prefix index: ${msg}
+`);
+    }
+  }
+
   /**
    * An external-content FTS5 'delete' only writes a tombstone, so a deleted note's words stay in
    * the index segments (lower-cased) until a merge. FTS5 'secure-delete' removes them at delete
@@ -4043,6 +4425,15 @@ export class Store {
     }
   }
 
+  /**
+   * Remove leftover plaintext after `encrypt enable`: the FTS index still
+   * holds the old body words in its segments (an external-content 'delete'
+   * only writes tombstones), and freed pages / the WAL hold old row images.
+   * Rebuilds the FTS index from the (now body-less) rows, truncates the WAL
+   * and, unless the database is large, VACUUMs. Best effort: a busy
+   * database skips a step instead of failing the enable. Returns whether the
+   * file was vacuumed.
+   */
   scrubPlaintext(opts: { maxVacuumBytes?: number } = {}): { vacuumed: boolean } {
     const limit = opts.maxVacuumBytes ?? 512 * 1024 * 1024;
     this.db.exec("PRAGMA secure_delete = ON");
@@ -4102,6 +4493,7 @@ export class Store {
       this.unsealQuarantine(key);
       this.unsealHistory(key);
       this.unsealCaptureEvents(key);
+      this.sealAccessLog(key, false);
       hooks.beforeCommit?.();
       this.db.exec("COMMIT");
     } catch (e) {
@@ -4129,6 +4521,7 @@ export class Store {
       .prepare("SELECT namespace FROM notes WHERE id = ?")
       .get(id) as { namespace: string } | undefined;
     if (!row) return false;
+    this.refuseAgentOnPinned(id, "deleting it");
     const result = this.db
       .prepare("DELETE FROM notes WHERE id = ? AND (? IS NULL OR rev = ?)")
       .run(id, rev, rev);
@@ -4136,7 +4529,7 @@ export class Store {
     if (ok) {
       this.noteWritten(row.namespace, id, null);
       if (!this.db.isTransaction) this.announceChange();
-      audit({ op: "delete", id });
+      this.audit({ op: "delete", id });
     }
     return ok;
   }
@@ -4349,11 +4742,11 @@ export class Store {
    */
   searchRanked(
     query: string,
-    opts: { namespace?: string; limit?: number } & RangeOpts = {}
+    opts: { namespace?: string; limit?: number; anyTerm?: boolean } & RangeOpts = {}
   ): RankedHit[] {
     if (!query || !query.trim()) return [];
     const limit = clampInt(opts.limit, 20, 1, 200);
-    const matchQuery = buildMatchQuery(query);
+    const matchQuery = buildMatchQuery(query, opts.anyTerm);
     if (!matchQuery) return []; // query was all punctuation/stopwords
     const range = this.rangeFor(opts, opts.namespace ? [opts.namespace] : undefined);
 
@@ -4619,6 +5012,7 @@ export class Store {
                     ? { attestedWriter: carried.writer, attestedBy: carried.by, mergedFromWriters: carried.merged }
                     : { mergedFromWriters: this.claimedTaint(note) }),
                   skipEdges: true,
+                  bulkImport: true,
                   updatedAt: note.updated_at,
                   startRev: note.rev,
                   // Retention state survives a backup/restore: an archived
@@ -5838,15 +6232,17 @@ export class Store {
       const r = parseWriterRef(opts.writtenBy);
       if (r.serverId && r.serverId !== localId.toLowerCase()) wbSql += " AND 0";
       else {
-        wbSql += " AND written_by = ?";
-        wbParams.push(r.label);
+        const w = nameIsSql("written_by", r.label, stdioFamily(r.label));
+        wbSql += ` AND ${w.sql}`;
+        wbParams.push(...w.params);
       }
     }
     if (opts.notWrittenBy !== undefined) {
       const r = parseWriterRef(opts.notWrittenBy);
       if (r.label && (!r.serverId || r.serverId === localId.toLowerCase())) {
-        wbSql += " AND written_by <> ?";
-        wbParams.push(r.label);
+        const w = nameIsSql("written_by", r.label, stdioFamily(r.label));
+        wbSql += ` AND NOT ${w.sql}`;
+        wbParams.push(...w.params);
       }
     }
     const exSql = c.x ? " AND (CASE WHEN actor <> '' THEN actor ELSE source END) <> ?" : "";
@@ -6081,7 +6477,7 @@ export class Store {
       .prepare("INSERT INTO trust_log (at, actor, action, namespace, subject) VALUES (?, ?, ?, ?, ?)")
       .run(new Date().toISOString(), actor, action, namespace, subject);
     this.pruneTrustLog(namespace);
-    audit({ op: `trust.${action}`, namespace, label: actor, kind: "trust", detail: subject.slice(0, 200) });
+    this.audit({ op: `trust.${action}`, namespace, label: actor, kind: "trust", detail: subject.slice(0, 200) });
   }
 
   /**
@@ -6602,6 +6998,295 @@ export class Store {
       .run(key, value);
   }
 
+  // --- Read access log (v17) -------------------------------------------------
+  // Operator-only: the CLI (`monomem access`) and the admin REST route read it; no MCP tool does.
+
+  /**
+   * Record one memory read: the server-stamped writer identity (currentWriter: a token label, or stdio / cli / server /
+   * capture ...), the tool or route, the namespaces, a preview of the query (redacted, one line, at most
+   * ACCESS_PREVIEW_MAX characters; sealed when at-rest encryption is on) and the result count. Never note text or titles.
+   * Given the response `payload` instead of `results`, the count is the number of items with a numeric `id` in it (notes,
+   * index rows, changes...) and their `namespace`s join the list. Like audit(), a failure here never breaks the read.
+   */
+  logAccess(e: { tool: string; namespaces?: Iterable<string>; query?: unknown; results?: number; payload?: unknown }): void {
+    try {
+      if (accessLogDays() === 0) return;
+      const namespaces = new Set(e.namespaces ?? []);
+      let results = e.results ?? 0;
+      const seen = new Set<unknown>();
+      const walk = (v: unknown, depth: number): void => {
+        if (!v || typeof v !== "object" || depth > 6 || seen.has(v)) return;
+        seen.add(v);
+        if (Array.isArray(v)) return v.forEach((x) => walk(x, depth + 1));
+        const o = v as Record<string, unknown>;
+        if (typeof o.id === "number") {
+          results++;
+          if (typeof o.namespace === "string") namespaces.add(o.namespace);
+          return;
+        }
+        for (const x of Object.values(o)) walk(x, depth + 1);
+      };
+      walk(e.payload, 0);
+      const q = typeof e.query === "string" ? e.query : e.query === undefined || e.query === null ? "" : JSON.stringify(e.query);
+      // Redact before cutting, so a secret is never half-kept; the 2000-character cap only bounds the redaction work.
+      const preview = redact(q.slice(0, 2000)).text.replace(/\s+/g, " ").trim().slice(0, ACCESS_PREVIEW_MAX);
+      const key = preview ? this.writeKey() : null;
+      // Best-effort, like the access counters: a read must never wait behind another process's write lock for this row
+      // (it used to, for up to the full busy timeout). A row skipped under contention is reported once per process.
+      let wrote = false;
+      this.bestEffortWrite(() => {
+        this.db
+          .prepare("INSERT INTO access_log (at, writer, tool, namespaces, query, results) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(
+            new Date().toISOString(),
+            currentWriter(),
+            e.tool.slice(0, 100),
+            [...namespaces].filter(Boolean).sort().join(",").slice(0, 500),
+            key ? encrypt(preview, key, ACCESS_AAD) : preview,
+            Math.max(0, Math.floor(results) || 0)
+          );
+        wrote = true;
+      });
+      if (!wrote && !Store.accessSkipReported) {
+        Store.accessSkipReported = true;
+        console.error("[monomem] read access log: a row was skipped because the database was busy (reads are never made to wait for it)");
+      }
+    } catch {
+      // The access log must never break a read.
+    }
+  }
+
+  /** The access log, newest first. `since` is an ISO time; `writer` an exact identity. */
+  accessLog(opts: { since?: string; writer?: string; limit?: number } = {}): AccessLogEntry[] {
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+    if (opts.since) {
+      where.push("at >= ?");
+      params.push(opts.since);
+    }
+    if (opts.writer !== undefined) {
+      where.push("writer = ?");
+      params.push(cleanWriter(opts.writer));
+    }
+    const limit = Math.max(1, Math.min(10_000, Math.floor(opts.limit ?? 100) || 100));
+    const rows = this.db
+      .prepare(`SELECT seq, at, writer, tool, namespaces, query, results FROM access_log${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY seq DESC LIMIT ?`)
+      .all(...params, limit) as unknown as AccessLogEntry[];
+    return rows.map((r) => {
+      let query: string;
+      try {
+        query = decryptIfEncrypted(r.query, this.readKey(), ACCESS_AAD);
+      } catch {
+        query = "[sealed: key unavailable]";
+      }
+      return { ...r, seq: Number(r.seq), results: Number(r.results), query };
+    });
+  }
+
+  /** Drop access-log rows past MONOMEM_ACCESS_LOG_DAYS (all of them when it is 0) and flood counts older than an hour. */
+  private sweepAccessLog(now: number): void {
+    const days = accessLogDays();
+    this.db.prepare("DELETE FROM access_log WHERE at < ?").run(days === 0 ? "9999" : new Date(now - days * 86_400_000).toISOString());
+    this.db.prepare("DELETE FROM write_rate WHERE at < ?").run(new Date(now - 3_600_000).toISOString());
+  }
+
+  /** Seal (on) or unseal (off) the stored query previews (caller holds the write lock; `encrypt enable` / `disable`). */
+  private sealAccessLog(key: Buffer, on: boolean): void {
+    const rows = this.db.prepare("SELECT seq, query FROM access_log WHERE query <> ''").all() as Array<{ seq: number; query: string }>;
+    const upd = this.db.prepare("UPDATE access_log SET query = ? WHERE seq = ?");
+    for (const r of rows) {
+      if (isEncrypted(r.query) === on) continue;
+      upd.run(on ? encrypt(r.query, key, ACCESS_AAD) : decryptIfEncrypted(r.query, key, ACCESS_AAD), r.seq);
+    }
+  }
+
+  // --- Flood guard (v17) -----------------------------------------------------
+  // The paused set is a JSON list in _meta (like approve_first), so a restart does not clear it.
+
+  /** Writer identities the flood guard paused (sorted). */
+  pausedWriters(): string[] {
+    try {
+      const v = JSON.parse(this.getMeta("flood_paused") ?? "[]") as unknown;
+      return Array.isArray(v) ? v.filter((n): n is string => typeof n === "string").sort() : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Lift a pause and clear that writer's count. Returns false when the writer was not paused. */
+  resumeWriter(label: string): boolean {
+    const w = cleanWriter(label);
+    if (!w) throw new ValidationError("writer label is required");
+    const all = this.pausedWriters();
+    if (!all.includes(w)) return false;
+    this.setMeta("flood_paused", JSON.stringify(all.filter((x) => x !== w)));
+    // A fresh hour: otherwise its very next write would trip the guard again on the old count.
+    this.db.prepare("DELETE FROM write_rate WHERE writer = ?").run(w);
+    this.audit({ op: "flood-resume", label: w });
+    return true;
+  }
+
+  /** The identity the flood guard counts, or null for writes it leaves alone: see floodGate. */
+  private floodSubject(mode: LintMode): string | null {
+    const w = currentWriter();
+    return isOperatorWrite(mode) || w === "" || w === "server" ? null : w;
+  }
+
+  /** archive / restore: refused for a paused writer (they are not counted). */
+  private refusePaused(): void {
+    const w = this.floodSubject("full");
+    if (w !== null && this.pausedWriters().includes(w)) throw this.pausedError(w);
+  }
+
+  private pausedError(w: string): WriterPausedError {
+    return new WriterPausedError(
+      `writer "${w}" is paused by the flood guard (more than ${floodWritesPerHour()} writes in an hour). ` +
+        `Its writes are refused until an operator runs: monomem resume ${w}`
+    );
+  }
+
+  /**
+   * Flood guard, run first by create() and update(). Every call that gets past it counts, whether it is then stored,
+   * held for review, or refused by validation: a runaway loop sending bad writes is still a flood. Once a writer has
+   * floodWritesPerHour() counted writes in the last hour, its next write pauses it and is refused, as is every later one
+   * (and its archive / restore) until `monomem resume`. Not counted or paused: the local CLI, quarantine approvals and
+   * consolidation (isOperatorWrite), the server's own jobs (`server`), callers with no writer identity (library use),
+   * and importNotes (a restore).
+   */
+  private floodGate(mode: LintMode, count = true): void {
+    const w = this.floodSubject(mode);
+    if (w === null) return;
+    if (this.pausedWriters().includes(w)) throw this.pausedError(w);
+    const limit = floodWritesPerHour();
+    if (limit === 0 || !count) return;
+    const now = Date.now();
+    // ponytail: count-then-insert is not atomic across processes; concurrent writers can overshoot by a few.
+    const n = Number(
+      (this.db.prepare("SELECT COUNT(*) AS n FROM write_rate WHERE writer = ? AND at >= ?").get(w, new Date(now - 3_600_000).toISOString()) as { n: number }).n
+    );
+    if (n >= limit) {
+      // One statement, no transaction: a write can run inside a caller's transaction (which this throw rolls back, pause
+      // included; the count stays, so the next write pauses it again).
+      this.setMeta("flood_paused", JSON.stringify([...new Set([...this.pausedWriters(), w])].sort()));
+      this.audit({ op: "flood-pause", label: w, detail: `${n} writes in the last hour (limit ${limit})` });
+      console.error(`[monomem] flood guard: paused writer "${w}" after ${n} writes in an hour. Resume with: monomem resume ${w}`);
+      throw this.pausedError(w);
+    }
+    this.db.prepare("INSERT INTO write_rate (writer, at) VALUES (?, ?)").run(w, new Date(now).toISOString());
+  }
+
+  /** Audit line, except from an in-memory store with no MONOMEM_AUDIT_LOG: that must never touch the owner's real log. */
+  private audit(entry: Parameters<typeof audit>[0]): void {
+    if (this.dbPath === ":memory:" && !process.env.MONOMEM_AUDIT_LOG) return;
+    audit(entry);
+  }
+
+  // --- Approve-first namespaces ---------------------------------------------
+  // A JSON list in _meta (no schema change). Operator-only: the CLI and the admin REST endpoint set it, no MCP tool does.
+
+  /** Namespaces whose agent writes wait in the quarantine queue for an operator (sorted). */
+  approveFirstNamespaces(): string[] {
+    try {
+      const v = JSON.parse(this.getMeta("approve_first") ?? "[]") as unknown;
+      return Array.isArray(v) ? v.filter((n): n is string => typeof n === "string").sort() : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** True when approve-first is on for every namespace, including ones created later. */
+  approveFirstAll(): boolean {
+    return this.getMeta("approve_first_all") === "1";
+  }
+
+  isApproveFirst(namespace: string): boolean {
+    return this.approveFirstAll() || this.approveFirstNamespaces().includes(namespace);
+  }
+
+  /** Turn approve-first on or off for every namespace at once. Operator-only, like the per-namespace switch. */
+  setApproveFirstAll(on: boolean): void {
+    this.setMeta("approve_first_all", on ? "1" : "0");
+    this.audit({ op: on ? "approve-first-all-on" : "approve-first-all-off" });
+  }
+
+  /** Turn approve-first on or off for a namespace. Writes already held stay in the queue either way. */
+  setApproveFirst(namespace: string, on: boolean): void {
+    const ns = typeof namespace === "string" ? namespace.trim() : "";
+    if (!ns) throw new ValidationError("namespace is required");
+    this.transaction(() => {
+      const rest = this.approveFirstNamespaces().filter((n) => n !== ns);
+      this.setMeta("approve_first", JSON.stringify(on ? [...rest, ns].sort() : rest));
+    });
+    this.audit({ op: on ? "approve-first-on" : "approve-first-off", namespace: ns });
+  }
+
+  // --- Pinned notes (v18) ----------------------------------------------------
+  // Operator-only, like approve-first: the CLI and the admin REST endpoint pin and unpin, no MCP tool does.
+
+  /**
+   * One guard in every Store write path that changes or retires a note (update and so restoreVersion, archive, restore, delete,
+   * supersedeCommit, supersedeUndo, purgeHistory): on a pinned note only the operator (the local `monomem` CLI, writer `cli`) gets
+   * through. Everything else counts as an agent, exactly as for approve-first: MCP over stdio or HTTP, every REST call (an admin
+   * token included), the server's own jobs, library callers. Reading is not affected.
+   */
+  refuseAgentOnPinned(id: number, what: string): void {
+    if (currentWriter() === "cli") return;
+    const r = this.db.prepare("SELECT pinned FROM notes WHERE id = ?").get(id) as { pinned: number } | undefined;
+    if (r && Number(r.pinned) === 1) {
+      throw new ValidationError(`note ${id} is pinned by the operator: ${what} is done by the operator (monomem CLI), not by an agent. It can still be read.`);
+    }
+  }
+
+  /** Pin or unpin a note. False when there is no such note. Not a content change: rev, written_by and the change feed are untouched. */
+  setPinned(id: number, on: boolean, namespaces?: string[]): boolean {
+    if (namespaces && namespaces.length === 0) return false;
+    const where = namespaces ? ` AND namespace IN (${namespaces.map(() => "?").join(",")})` : "";
+    const res = this.db.prepare(`UPDATE notes SET pinned = ? WHERE id = ?${where}`).run(on ? 1 : 0, id, ...(namespaces ?? []));
+    const ok = Number(res.changes) > 0;
+    if (ok) this.audit({ op: on ? "pin" : "unpin", id });
+    return ok;
+  }
+
+  /** Pinned notes (id, namespace, title), oldest first; `namespaces` limits it to those. */
+  pinnedNotes(namespaces?: string[]): Array<{ id: number; namespace: string; title: string }> {
+    if (namespaces && namespaces.length === 0) return [];
+    const where = namespaces ? ` AND namespace IN (${namespaces.map(() => "?").join(",")})` : "";
+    return this.db.prepare(`SELECT id, namespace, title FROM notes WHERE pinned = 1${where} ORDER BY id`).all(...(namespaces ?? [])) as unknown as Array<{
+      id: number;
+      namespace: string;
+      title: string;
+    }>;
+  }
+
+  // --- Rollback by writer (v18) ------------------------------------------------
+
+  /**
+   * Ids of notes `writer` may have touched since `sinceIso` (rollback.ts decides what to do with each): created by it then,
+   * last written by it then, or with a kept or dropped history version it replaced then. `family`: "stdio" also means stdio:<app>.
+   */
+  rollbackCandidates(writer: string, family: boolean, sinceIso: string, namespaces?: string[]): number[] {
+    if (namespaces && namespaces.length === 0) return [];
+    const m = (col: string) => nameIsSql(col, writer, family);
+    const [c, w, h, d] = [m("created_by"), m("written_by"), m("h.saved_by"), m("d.saved_by")];
+    const nsSql = namespaces ? ` AND namespace IN (${namespaces.map(() => "?").join(",")})` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT id FROM notes WHERE ((${c.sql} AND created_at >= ?) OR (${w.sql} AND updated_at >= ?)
+           OR id IN (SELECT h.note_id FROM note_history h WHERE ${h.sql} AND h.saved_at >= ?)
+           OR id IN (SELECT d.note_id FROM note_history_dropped d WHERE ${d.sql} AND d.last_at >= ?))${nsSql}
+         ORDER BY id`
+      )
+      .all(...c.params, sinceIso, ...w.params, sinceIso, ...h.params, sinceIso, ...d.params, sinceIso, ...(namespaces ?? [])) as Array<{ id: number }>;
+    return rows.map((r) => Number(r.id));
+  }
+
+  /** Mark a confirmation code's nonce used (the supersede_used table); throws when it already was. Caller holds the write lock. */
+  spendNonce(nonce: string, expiresMs: number): void {
+    this.db.prepare("DELETE FROM supersede_used WHERE expires_ms < ?").run(Date.now() - 86_400_000);
+    const spent = this.db.prepare("INSERT OR IGNORE INTO supersede_used (nonce, used_at, expires_ms) VALUES (?, ?, ?)").run(nonce, new Date().toISOString(), expiresMs);
+    if (Number(spent.changes) === 0) throw new ValidationError("this confirmation was already used; start again with a new preview");
+  }
+
   // --- Quarantine (v7) -----------------------------------------------------
 
   /** Hold a linter-flagged write for admin review; returns its quarantine id. */
@@ -6646,7 +7331,7 @@ export class Store {
           sealCol("title", q.title ?? null),
           sealCol("body", q.body ?? null),
           sealCol("tags", q.tags === undefined ? null : JSON.stringify(q.tags)),
-          q.source ?? null,
+          q.source === undefined ? null : q.source.replace(/[\u{E0000}-\u{E007F}]/gu, ""),
           isoOrNull(q.createdAt),
           JSON.stringify(q.findings),
           new Date().toISOString(),
@@ -6667,7 +7352,7 @@ export class Store {
       throw e;
     }
     // Audit records the decision, never the content.
-    audit({ op: "quarantine", id, namespace: q.namespace, bytes: (q.body ?? "").length });
+    this.audit({ op: "quarantine", id, namespace: q.namespace, bytes: (q.body ?? "").length });
     return id;
   }
 
@@ -6694,6 +7379,7 @@ export class Store {
       body: (row.body as string | null) ?? null,
       tags: row.tags === null ? null : parseTags(String(row.tags)),
       source: (row.source as string | null) ?? null,
+      written_by: typeof row.written_by === "string" ? row.written_by : "",
       reasons,
       created_at: String(row.created_at),
     };
@@ -6785,7 +7471,7 @@ export class Store {
       drop.run(id);
       note = updated;
     }
-    audit({ op: "quarantine-approve", id, namespace: q.namespace });
+    this.audit({ op: "quarantine-approve", id, namespace: q.namespace });
     return note;
   }
 
@@ -6794,7 +7480,7 @@ export class Store {
     const q = this.getQuarantine(id);
     if (!q) return false;
     this.db.prepare("DELETE FROM quarantine WHERE id = ?").run(id);
-    audit({ op: "quarantine-reject", id, namespace: q.namespace });
+    this.audit({ op: "quarantine-reject", id, namespace: q.namespace });
     return true;
   }
 

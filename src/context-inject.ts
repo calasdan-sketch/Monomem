@@ -18,10 +18,11 @@ import { execFile } from "node:child_process";
 import type { Store, NoteRecord } from "./store.js";
 import { NOTE_KINDS } from "./store.js";
 import { extractKeywords } from "./keywords.js";
-import { rrfScores, rankHits } from "./search-service.js";
+import { rrfScores, rankHits, anyKeywordHits } from "./search-service.js";
 import { buildSummary } from "./recall.js";
 import { TASK_TAG, HANDOFF_TAG, listTasks } from "./tasks.js";
 import { NEVER_SHOW_TAG, isModelWritten } from "./reserved-tags.js";
+import { disputedLines } from "./facts.js";
 import { enabledToolNames } from "./mcp-server-core.js";
 
 /**
@@ -37,6 +38,9 @@ function openToolName(): string {
   return on === null || on.has("memory_get") ? "memory_get" : "state_read";
 }
 import { meterAdd } from "./meter.js";
+import { receiptAdd } from "./receipts.js";
+import { currentWriter } from "./actor.js";
+import { nameIs, stdioFamily } from "./trust.js";
 
 export const DEFAULT_RECALL_TOKENS = 1500;
 export const DEFAULT_PROFILE_TOKENS = 300;
@@ -192,13 +196,15 @@ export async function rankContext(
     [words(signals.branch ?? ""), ...(signals.diffFiles ?? []).map(words), ...recentFiles.map(words), latestSummary ? latestSummary.title : ""].join(" ")
   );
   const pool = new Map<number, NoteRecord>((opts.includeDistrusted ? store.markDistrusted(recent.notes) : recent.notes).map((n) => [n.id, n]));
-  const bm25: number[][] = [];
-  for (const kw of keywords) {
-    const hits = store.searchRanked(kw, { namespace: ns, limit: 30, kinds: NOTE_KINDS, ...wf }).filter((h) => !skip(h.note));
-    for (const h of hits) mark(h.note.id, "kw");
-    for (const h of hits) if (!pool.has(h.note.id)) pool.set(h.note.id, opts.includeDistrusted ? store.markDistrusted([h.note])[0] : h.note);
-    bm25.push(hits.map((h) => h.note.id));
+  // One any-keyword search (bm25 x keyword coverage, as runSearch): a rare word outweighs a common one.
+  const hits = keywords.length
+    ? anyKeywordHits(store, keywords, 50, { namespace: ns, kinds: NOTE_KINDS, ...wf }).filter((h) => !skip(h.note))
+    : [];
+  for (const h of hits) {
+    mark(h.note.id, "kw");
+    if (!pool.has(h.note.id)) pool.set(h.note.id, opts.includeDistrusted ? store.markDistrusted([h.note])[0] : h.note);
   }
+  const bm25 = hits.map((h) => h.note.id);
   const overlap: number[] = [];
   const diff = (signals.diffFiles ?? []).slice(0, 50);
   if (diff.length) {
@@ -209,8 +215,8 @@ export async function rankContext(
       if (!pool.has(r.note_id)) {
         const n = store.readVisible(r.note_id, { includeDistrusted: opts.includeDistrusted === true }); // gate-ok: namespace, archive and writer filters are re-applied just below
         if (!n || n.archived_at || (ns !== undefined && n.namespace !== ns) || skip(n)) continue;
-        if (opts.writtenBy && n.written_by !== opts.writtenBy) continue;
-        if (opts.notWrittenBy && n.written_by === opts.notWrittenBy) continue;
+        if (opts.writtenBy && !nameIs(n.written_by, opts.writtenBy, stdioFamily(opts.writtenBy))) continue;
+        if (opts.notWrittenBy && nameIs(n.written_by, opts.notWrittenBy, stdioFamily(opts.notWrittenBy))) continue;
         pool.set(n.id, n);
       }
       overlap.push(r.note_id);
@@ -219,7 +225,7 @@ export async function rankContext(
   }
   const byRecency = [...pool.values()].sort((a, b) => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : b.id - a.id)).map((n) => n.id);
   for (const id of byRecency.slice(0, 10)) mark(id, "recent");
-  const fused = rrfScores([...bm25, overlap, byRecency]);
+  const fused = rrfScores([bm25, overlap, byRecency]);
   const ranked = rankHits(store, [...fused.entries()].map(([id, score]) => ({ note: pool.get(id)!, score })));
   return { ranked, total: store.list({ ...base, limit: 1 }).total, latestSummary, why };
 }
@@ -236,6 +242,17 @@ export async function injectContext(store: Store, opts: InjectOptions = {}): Pro
   if (profile) {
     parts.push(profile);
     used += profile.length;
+  }
+  // Fact-tier disputes (this namespace, or all when none is configured): 0 tokens when none, at most 2 short lines otherwise. Never lets the hook fail.
+  // No configured namespace = a default install: every namespace is readable, so every one is checked. The session's own writer filters apply.
+  try {
+    const disputed = disputedLines(store, { namespace: opts.namespace, writtenBy: opts.writtenBy, notWrittenBy: opts.notWrittenBy });
+    if (disputed) {
+      parts.push(disputed);
+      used += disputed.length;
+    }
+  } catch {
+    /* a lookup problem must not cost the session its memory */
   }
   const now = Date.now();
   const tagOf = (n: NoteRecord): string => whyTag(n, why.get(n.id), now);
@@ -284,13 +301,23 @@ export async function injectContext(store: Store, opts: InjectOptions = {}): Pro
   const body = parts.join("\n\n");
   const fullChars = shown.reduce((a, n) => a + n.title.length + n.body.length, 0) + captured;
   const ids = shown.slice(0, 20).map((n) => n.id);
+  const shownTok = Math.ceil(body.length / CHARS_PER_TOKEN);
+  const rawTok = Math.ceil(fullChars / CHARS_PER_TOKEN);
+  // Estimates, ~4 characters a token. The block adds headers and index lines, so it can be longer than the notes it summarises: say that plainly.
+  const open = `Open any with ${openToolName()} ids=[${ids.join(",")}]`;
+  const lead = `Showing ${shown.length} of ${Math.max(total, shown.length)} memories in ~${shownTok} tokens (estimate)`;
   const footer =
-    `Showing ${shown.length} of ${Math.max(total, shown.length)} memories (~${Math.ceil(body.length / CHARS_PER_TOKEN)} tokens) standing in for ` +
-    `~${Math.ceil(fullChars / CHARS_PER_TOKEN)} tokens of captured work. Open any with ${openToolName()} ids=[${ids.join(",")}]`;
+    shownTok <= rawTok
+      ? `${lead}, condensed from ~${rawTok} tokens of notes and captured events. ${open}`
+      : `${lead}. The notes themselves are only ~${rawTok} tokens; the rest is headers and index lines. ${open}`;
   const out = `${body}\n\n${footer}`;
+  // Read access log: the recall hook handed these to the agent (no query: it ranks by recency and git signals).
+  store.logAccess({ tool: "hook:recall", namespaces: ns !== undefined ? [ns] : [], results: shown.length });
   if (opts.sessionId) {
     const injected = Math.ceil(out.length / CHARS_PER_TOKEN);
     meterAdd(store, opts.sessionId, ns ?? "", { injected, saved: Math.max(0, Math.ceil(fullChars / CHARS_PER_TOKEN) - injected) });
+    // Receipt: ids, why-tags, rank and size only (receipts.ts); titles and text stay in the store.
+    receiptAdd(store, { sessionId: opts.sessionId, namespace: ns ?? "", client: currentWriter(), shown: shown.map((n) => ({ id: n.id, why: tagOf(n), tokens: tokensOf(n) })) });
   }
   return out;
 }

@@ -1,4 +1,5 @@
 // v16 captured rows survive export -> import and vault sync: kind, session_id, obs_type, their files and their session.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readdirSync, readFileSync } from "node:fs";

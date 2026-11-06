@@ -1,5 +1,6 @@
 // `monomem uninstall`: --dry-run changes nothing; a full uninstall leaves every config byte-identical to before setup
 // (a file setup created is deleted); --purge deletes the data folder only after the final backup worked. Temp HOME only.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";

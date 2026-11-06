@@ -11,6 +11,7 @@
 // degrades retrieval fails CI instead of shipping. Access boost is disabled
 // for the same determinism reason -- the eval measures native retrieval
 // quality, not the rich-get-richer feedback loop.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";

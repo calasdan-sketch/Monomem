@@ -1,6 +1,7 @@
 // "Who wrote this?" (1.3.3): server-stamped written_by / created_by on notes.
 // The client-asserted `source` stays an advisory claim; written_by comes from
 // the authenticated connection and can never be set from a request body.
+import "./setup-env.js"; // throwaway MONOMEM_HOME before src loads, so a file run alone never touches the real data folder
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
@@ -692,7 +693,7 @@ describe("upgrade safety", () => {
     try {
       const path = makeV12(dir);
       new Store(path).close();
-      const bak = path + ".pre-v16-backup";
+      const bak = path + ".pre-v18-backup";
       assert.ok(existsSync(bak), "backup exists");
       assert.equal(Store.peekSchemaVersion(bak), 12);
       assert.equal(Store.peekSchemaVersion(path), SCHEMA_VERSION);
@@ -726,7 +727,7 @@ describe("upgrade safety", () => {
     try {
       const p = join(dir, "fresh.db");
       new Store(p).close();
-      assert.ok(!existsSync(p + ".pre-v16-backup"));
+      assert.ok(!existsSync(p + ".pre-v18-backup"));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
