@@ -305,15 +305,36 @@ the same store.
 
 ## How it compares
 
-Other good projects solve overlapping problems, and we have not verified a
-feature-by-feature comparison against their current releases, so we do not
-publish one. Read their own docs and pick on your needs:
+Only numbers each project publishes itself, with links; read their docs too. **Retrieval recall** (does the right
+conversation come back, no model involved) and **end-to-end QA accuracy** (a model answers, another model grades)
+are different metrics and are never mixed below.
 
-- [mcp-memory-service](https://github.com/doobidoo/mcp-memory-service),
-  [Basic Memory](https://github.com/basicmachines-co/basic-memory),
-  [OpenMemory (mem0)](https://docs.mem0.ai/openmemory) and the
-  [official MCP memory server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory)
-  are all worth a look.
+**Retrieval recall, no LLM** (the same kind of number `monomem bench` reports):
+
+| | LongMemEval-S R@5 | LoCoMo-10 R@5 | Search used | Source |
+|---|---|---|---|---|
+| **Monomem 1.2.0** | **97.4** session (470 q) | 89.3 session, **59.0** turn (1,982 q) | keyword BM25, no embeddings | [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo), rerun with `monomem bench` |
+| mcp-memory-service 10.34 | 86.0 session, 80.4 turn | 49.7 (granularity not stated) | all-MiniLM-L6-v2 embeddings | [their BENCHMARKS.md](https://github.com/doobidoo/mcp-memory-service/blob/main/docs/BENCHMARKS.md) |
+| MemPalace | 96.6 raw semantic (500 q); 98.4 hybrid, tuned on 50 and scored on 450 | 60.3 session R@10 raw | embeddings (ChromaDB) | [their README](https://github.com/MemPalace/mempalace) |
+
+Question sets differ slightly (Monomem leaves out LongMemEval's 30 abstention questions, which have no gold session),
+so read these as close, not exact. Monomem's 1.2.0 ranking was tuned on these same two datasets with no held-out
+split ([how](./docs/BENCHMARK.md#results-2026-11-06-monomem-120)).
+
+**End-to-end QA accuracy** is what Mem0 ([LongMemEval 94.4, LoCoMo 92.5](https://github.com/mem0ai/memory-benchmarks)),
+Zep ([DMR 94.8](https://huggingface.co/papers/2501.13956)) and Supermemory publish. Monomem does not call a model, so it
+has no such number; it hands the agent the retrieved notes and the agent's own model answers.
+
+**Other things you can check:**
+
+| | Monomem | [claude-mem](https://github.com/thedotmack/claude-mem) | [mcp-memory-service](https://github.com/doobidoo/mcp-memory-service) | [official MCP memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) |
+|---|---|---|---|---|
+| Runtime | Node 22.16+, 2 direct deps, no native modules | Node 20+, plus Bun and uv (installed for you) and Chroma | Python, ONNX embeddings | Node, a JSON file |
+| Model calls to capture or summarize | none (optional local model, off by default) | yes, it compresses captured activity with a model ([users report the cost](https://github.com/thedotmack/claude-mem/issues/3848)) | optional local LLM for quality scoring | none |
+| Token cost of a lookup, measured | yes: top-5 index rows 165-184 tokens vs 4,100-16,400 for the full notes ([table](./docs/BENCHMARK.md#results-2026-11-06-monomem-120)) | "~10x savings" claimed, not measured | not published | not published |
+| Web dashboard | yes (sessions, quality, meter) | yes (viewer) | yes | no |
+
+Checked against each project's README on 2026-11-06; tell us if one is out of date and we will fix it.
 
 What Monomem itself provides (all of it checkable in this repo): MIT
 license, Node 22.16+ with 2 direct runtime dependencies, one SQLite file,
@@ -427,16 +448,19 @@ It has five suites, as plain JSON scenario files you can extend in [`bench/scena
 | E  Memory poisoning | 16 | injected or malicious memories never reach an agent as trusted content: prompt-injection (plain, forged tags, zero-width-obfuscated, a booking-policy override) is quarantined; a reworded override that passes the gate leaves all four booking answers once its writer is distrusted; a distrusted/low-trust writer cannot outrank or silently overwrite a trusted fact; secrets are redacted (capture) or blocked (write); a forged writer/namespace is stamped with the real one; an unsigned import cannot pose as verified; a captured web fetch is not trusted memory; SessionStart injection carries the untrusted-data banner and leaves distrusted notes out; mass near-duplicate flooding cannot bury the answer | `poison-reach-count` (must be 0) |
 
 **Retrieval quality.** `monomem bench --longmemeval` and `--locomo` score retrieval on the public datasets, with no model
-and no judge (does the right conversation come back?). On one Windows PC, 2026-10-31:
+and no judge (does the right conversation come back?). Monomem 1.2.0, keyword search (the default, no embeddings), 2026-11-06:
 
-| Dataset | Search | Recall@5 | Recall@10 | Search time (p50) |
-|---|---|---|---|---|
-| LongMemEval-S, 470 questions | keyword (default) | 95.1 % | 97.2 % | 2.7 ms |
-| LongMemEval-S, 470 questions | hybrid (local embeddings) | 96.8 % | 98.5 % | 21 ms |
-| LoCoMo-10, 1,982 questions, by session | keyword (default) | 89.1 % | 95.0 % | 1.3 ms |
+| Dataset | Search | Recall@5 | Recall@10 | Search time (p50) | Top 5 as index rows |
+|---|---|---|---|---|---|
+| LongMemEval-S, 470 questions, by session | keyword (default) | 97.4 % | 98.7 % | 3.0 ms | 180 tokens |
+| LoCoMo-10, 1,982 questions, by session | keyword (default) | 89.3 % | 95.2 % | 1.3 ms | 165 tokens |
+| LoCoMo-10, 1,982 questions, by turn | keyword (default) | 59.0 % | 66.5 % | 1.8 ms | 168 tokens |
 
-These are retrieval numbers, not the end-to-end QA accuracy memory vendors usually publish, so they are not comparable with
-those. Every number, the per-type breakdown, where hybrid is worse, and the caveats: [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo).
+1.1.1 scored 95.1 / 89.3 / 45.2 on the same three runs. "Top 5 as index rows" is what an agent pays (about 4
+characters a token) to see the five best matches as `memory_index` rows before fetching one in full; the five full
+notes cost 16,350 / 4,133 / 203 tokens. These are retrieval numbers, not the end-to-end QA accuracy memory vendors
+usually publish, so they are not comparable with those. Every number, the per-type breakdown, the older hybrid run,
+how the ranking was chosen and the caveats: [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo).
 
 **What it does not measure.** The provenance suites above are not a retrieval-quality or semantic-search benchmark (keyword search, made-up unique words, no
 embeddings). It does not measure speed, scale or concurrency, and "0 leaks" means none of *these* probes leaked; it is a regression gate,

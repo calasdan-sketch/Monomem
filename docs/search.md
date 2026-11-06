@@ -21,6 +21,21 @@ both with Reciprocal Rank Fusion). If the endpoint is unavailable, search and
 writes silently fall back to keyword — an optional embedder can never fail a
 write or a query.
 
+## How keyword search ranks
+
+`state_search` (and `GET /search`, `memory_index`) first looks for notes containing
+**every** word of the query. If that leaves room under the limit and the query has
+two or more keywords, it adds notes matching **some** of them, ranked by BM25
+(rarer words count more), always below the full matches. So a short exact query
+behaves as it always did, and a whole question ("what port is my staging server
+on?") still finds the note.
+
+Each query word is a prefix match (`deploy` also finds `deployment`). Since 1.2.0 a
+plain English word of 5+ letters also loses a common suffix first
+(`recommendations` searches as `recommend*`, `deployed` as `deploy*`). Words with
+digits, punctuation, `#tags`, short words and non-ASCII words are searched as
+typed. Scores on LongMemEval-S and LoCoMo: [BENCHMARK.md](./BENCHMARK.md#retrieval-longmemeval-s-and-locomo).
+
 ## Time-aware search
 
 `state_search` takes an optional `when` parameter (and `GET /search` takes
@@ -55,8 +70,9 @@ Day boundaries are computed in your timezone: set `MONOMEM_TIMEZONE`
 Don't know the exact wording? `state_relevant` takes a natural conversational
 message, extracts keywords from it (lowercase, stop-words removed, hashtags
 like `#status` kept as-is), and returns notes matching **any** of them —
-a deliberately permissive OR search, unlike `state_search`'s AND conjunction.
-Results rank by most keyword hits first, then newest. The extracted keywords
+a deliberately permissive OR search. Results are ranked by one BM25 query
+over those keywords (since 1.2.0), so a note matching more of the rarer
+keywords ranks higher than a passing mention of a common one. The extracted keywords
 are returned alongside the results so you can see what was searched.
 
 ```

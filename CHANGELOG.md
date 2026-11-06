@@ -4,6 +4,61 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - Unreleased
+
+Better search, measured. A whole question now finds the right memory more often, and the benchmark shows what a
+lookup costs in tokens. Nothing to migrate: the database and its index are unchanged.
+
+### Changed
+
+- **The "some of the words" step of `state_search` is one BM25 query.** When no note holds every word of a query,
+  Monomem adds notes holding some of them. It used to search each keyword separately and merge the lists (RRF);
+  now it asks SQLite once, with the keywords joined by OR, so a note matching more of the rarer words ranks higher.
+  Full matches still always rank first. `GET /search` is the same.
+- **`state_relevant` / `POST /relevant` rank the same way:** one BM25 query instead of up to 20, then the usual
+  staleness and access adjustments.
+- **Query words lose a common English suffix.** A plain word of 5+ letters is searched without `-s`, `-es`, `-ed`,
+  `-ing`, `-er(s)`, `-ly`, `-ment(s)`, `-ation(s)`, `-ies`, `-ied` when 4+ letters remain (`recommendations` searches
+  as `recommend*`). Words ending in `ss`, short words, words with digits or punctuation, `#tags` and non-ASCII words
+  are searched as typed. Only the query changes, never the index.
+- **`memory_index` finds rows for a whole question.** It needed every word before; it now uses the same two steps
+  as `state_search`, so "what port is my staging server on?" returns the staging note's row.
+
+Retrieval recall, keyword search, same machine and data (1.1.1 to 1.2.0):
+
+| Run | R@5 | R@10 |
+|---|---|---|
+| LongMemEval-S, session, `state_search` | 95.1 to **97.4** | 97.4 to 98.7 |
+| LongMemEval-S, session, `state_relevant` | 95.3 to **97.7** | 97.7 to 98.9 |
+| LoCoMo-10, session, `state_search` | 89.3 to 89.3 | 94.9 to 95.2 |
+| LoCoMo-10, turn, `state_search` | 45.2 to **59.0** | 51.7 to 66.5 |
+
+The ranking was chosen by measuring on these same datasets (no held-out split); see
+[docs/BENCHMARK.md](./docs/BENCHMARK.md#results-2026-11-06-monomem-120). Some results will be ordered differently
+from 1.1.1, which is the point; if a search you rely on got worse, please open an issue with the query.
+
+### Benchmark
+
+- **`monomem bench --longmemeval / --locomo` reports token cost:** what handing an agent the top 5 costs, as five
+  full notes and as five `memory_index` rows (`tokens` in `--json`). On LongMemEval-S sessions: 16,350 vs 180
+  tokens (p50).
+- The provenance benchmark is unchanged: 125 of 125 pass, `poison-reach-count` 0 over 34 probes, `leakage-count` 0
+  over 51 probes.
+
+### Docs
+
+- README: a comparison table that only uses numbers each project publishes, with links, and keeps retrieval recall
+  apart from end-to-end QA accuracy. [docs/search.md](./docs/search.md) explains how keyword search ranks.
+
+### Known limits
+
+- **On a store where every note shares the same words, a long question is slower:** 470 ms instead of 176 ms at
+  50,000 notes (the OR query scores every note in one pass). On a store with a normal spread of words it is about
+  the same as before (105 vs 121 ms).
+- **Suffix trimming is English-only and simple**, not a full stemmer: `running` searches as `runn*` and does not
+  find `run`.
+- The hybrid (embeddings) numbers were not rerun for 1.2.0; no embedding server was available.
+
 ## [1.1.1] - 2026-11-03
 
 ### Security

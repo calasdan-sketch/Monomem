@@ -11,6 +11,7 @@ import type { Store, NoteRecord, NoteKind } from "./store.js";
 import { NOTE_KINDS, ValidationError } from "./store.js";
 import { isModelWritten } from "./reserved-tags.js";
 import { eventInput } from "./capture.js";
+import { keywordWithFallback } from "./search-service.js";
 
 export interface ReadScope {
   /** Readable namespaces; undefined = every namespace (no namespace resolution). */
@@ -91,7 +92,8 @@ function find(store: Store, scope: ReadScope, q: IndexQuery & { order?: "created
   if (q.query && q.query.trim()) {
     const spaces = scope.namespaces ?? [undefined];
     notes = spaces
-      .flatMap((ns) => store.searchRanked(q.query!, { ...f, namespace: ns, limit }))
+      // All terms first, then any-keyword bm25 (the same as state_search), so a whole question finds rows too.
+      .flatMap((ns) => keywordWithFallback(store, q.query!, limit, { ...f, namespace: ns }))
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
       .map((h) => h.note);

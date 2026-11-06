@@ -661,12 +661,11 @@ export interface RelevantOpts {
  * threshold than runSearch/store.search's AND conjunction -- with up to 20
  * keywords, an AND would return almost nothing for a rambling message.
  *
- * Ranking merges the per-keyword FTS5 bm25 rankings with Reciprocal Rank
- * Fusion, multiplied by the keyword-branch count: a note matching several
- * distinct keywords still outranks a single-keyword hit, but within the
- * same count the bm25 relevance wins -- a central-topic hit outranks a
- * passing mention instead of every branch counting the same and ties
- * breaking by recency.
+ * Ranking is one FTS5 bm25 query over the keywords joined with OR (1.2.0;
+ * before, per-keyword rankings fused with RRF): bm25 sums each matched
+ * keyword's IDF-weighted score, so a note matching several distinctive
+ * keywords outranks a passing mention of one, and a rare keyword counts for
+ * more than a common one.
  *
  * The merged hits run through the same finalize pipeline as runSearch
  * (access boost, staleness penalty, truncation, access bump), so the
@@ -686,32 +685,17 @@ async function runRelevantSearchInner(
   // clampInt *default* for non-numeric input, not a floor) so the merge has
   // a real candidate pool before the final limit cut.
   const perKeyword = clampInt(Math.ceil(limit * 2), 50, 1, 200);
-  const byId = new Map<number, NoteRecord>();
-  const counts = new Map<number, number>();
-  const lists: number[][] = [];
-  for (const kw of keywords) {
-    // searchRanked (not search): keep each hit's FTS5 bm25 score for the
-    // merge below instead of discarding it.
-    const ranked = store.searchRanked(kw, {
-      namespace: opts.namespace,
-      limit: perKeyword,
-      ...(opts.writtenBy !== undefined ? { writtenBy: opts.writtenBy } : {}),
-      ...(opts.notWrittenBy !== undefined ? { notWrittenBy: opts.notWrittenBy } : {}),
-      ...(opts.includeDistrusted ? { includeDistrusted: true } : {}),
-    });
-    const ids: number[] = [];
-    for (const h of ranked) {
-      ids.push(h.note.id);
-      if (!byId.has(h.note.id)) byId.set(h.note.id, h.note);
-      counts.set(h.note.id, (counts.get(h.note.id) ?? 0) + 1);
-    }
-    lists.push(ids);
-  }
-  const fused = rrfScores(lists);
-  const hits = [...fused.entries()].map(([id, rrf]) => ({
-    note: byId.get(id)!,
-    score: rrf * (counts.get(id) ?? 1),
-  }));
+  // One FTS5 query: the keywords joined with OR, ranked by bm25 (IDF-weighted, so a note matching more of the
+  // rarer keywords ranks higher). Replaced per-keyword queries fused by RRF in 1.2.0: one query instead of up to 20,
+  // and better recall on LongMemEval-S and LoCoMo (docs/BENCHMARK.md).
+  const hits = store.searchRanked(keywords.join(" "), {
+    namespace: opts.namespace,
+    limit: perKeyword,
+    any: true,
+    ...(opts.writtenBy !== undefined ? { writtenBy: opts.writtenBy } : {}),
+    ...(opts.notWrittenBy !== undefined ? { notWrittenBy: opts.notWrittenBy } : {}),
+    ...(opts.includeDistrusted ? { includeDistrusted: true } : {}),
+  });
   return {
     keywords,
     results: finalizeResults(store, hits, limit, stalenessConfig()),
@@ -723,9 +707,12 @@ async function runRelevantSearchInner(
  * ("what did I decide about the deploy region?") rarely matches anything:
  * LongMemEval-S session recall@5 was 11.9% that way vs 95.3% matching any
  * keyword. When the all-terms search leaves room under `limit` and the query
- * has two or more keywords, top it up with any-keyword hits, fused like
- * state_relevant. All-terms hits keep their own scores and always rank first;
- * fallback hits score below the weakest of them.
+ * has two or more keywords, top it up with any-keyword hits: ONE FTS5 query
+ * over the keywords joined with OR, ranked by bm25, so a note that matches
+ * more of the rarer words ranks higher. (Before 1.2.0 each keyword was a
+ * separate query fused by RRF; the single bm25 query is faster and found the
+ * right session more often: docs/BENCHMARK.md.) All-terms hits keep their own
+ * scores and always rank first; fallback hits score below the weakest of them.
  */
 export function keywordWithFallback(
   store: Store,
@@ -733,33 +720,21 @@ export function keywordWithFallback(
   limit: number,
   opts: Parameters<Store["searchRanked"]>[1]
 ): Array<{ note: NoteRecord; score: number }> {
-  const strict = store.searchRanked(query, { ...opts, limit });
+  const strict = store.searchRanked(query, { ...opts, limit, any: false });
   const keywords = extractKeywords(query);
   if (strict.length >= limit || keywords.length < 2) return strict;
   const seen = new Set(strict.map((h) => h.note.id));
-  const byId = new Map<number, NoteRecord>();
-  const counts = new Map<number, number>();
-  const lists: number[][] = [];
-  for (const kw of keywords) {
-    const ids: number[] = [];
-    for (const h of store.searchRanked(kw, { ...opts, limit })) {
-      if (seen.has(h.note.id)) continue;
-      ids.push(h.note.id);
-      byId.set(h.note.id, h.note);
-      counts.set(h.note.id, (counts.get(h.note.id) ?? 0) + 1);
-    }
-    lists.push(ids);
-  }
-  // RRF scores are on another scale than bm25: map them under half the
-  // weakest all-terms score so finalize's small boosts cannot lift a partial
-  // match above a full one.
-  const floor = strict.length ? Math.min(...strict.map((h) => h.score)) : 1;
-  const loose = [...rrfScores(lists).entries()]
-    .map(([id, rrf]) => ({ note: byId.get(id)!, score: rrf * (counts.get(id) ?? 1) }))
-    .sort((a, b) => b.score - a.score)
+  // Ask for enough that the all-terms hits (which also match OR) still leave `limit - strict.length` new ones.
+  const loose = store
+    .searchRanked(keywords.join(" "), { ...opts, limit: clampInt(limit + strict.length, limit, 1, 200), any: true })
+    .filter((h) => !seen.has(h.note.id))
     .slice(0, limit - strict.length);
-  const top = loose.length ? loose[0].score : 1;
-  return [...strict, ...loose.map((h) => ({ note: h.note, score: (floor * 0.5 * h.score) / top }))];
+  if (!loose.length) return strict;
+  // bm25 scores of an OR query are on another scale than the all-terms ones: map them under half the weakest
+  // all-terms score so finalize's small boosts cannot lift a partial match above a full one.
+  const floor = strict.length ? Math.min(...strict.map((h) => h.score)) : 1;
+  const top = loose[0].score > 0 ? loose[0].score : 1;
+  return [...strict, ...loose.map((h) => ({ note: h.note, score: (floor * 0.5 * Math.max(h.score, 0)) / top }))];
 }
 
 // The public entry points. A caller that opted in with includeDistrusted gets

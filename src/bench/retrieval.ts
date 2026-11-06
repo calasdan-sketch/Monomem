@@ -12,6 +12,7 @@ import { Store } from "../store.js";
 import { LIMITS } from "../security.js";
 import { embed, embeddingsEnabled } from "../embeddings.js";
 import { maybeEmbed, runRelevantSearch, runSearch } from "../search-service.js";
+import { toRows } from "../progressive.js";
 import { aggregate, dedupe, percentile, scoreQuestion, type MetricRow, type QuestionScore } from "./retrieval-metrics.js";
 
 const SOURCES = {
@@ -161,6 +162,16 @@ interface ModeResult {
   latencyMs: { p50: number; p95: number };
 }
 
+/**
+ * What handing an agent the top 5 results costs, in estimated tokens (about 4 characters a token, the same estimate
+ * as the meter), per question: the five full notes (title + body, what state_search returns), or the five compact
+ * memory_index rows (id, type, title, date, files) the agent reads before fetching only what it needs.
+ */
+export interface TokenCost {
+  full5: { p50: number; p95: number; mean: number };
+  index5: { p50: number; p95: number; mean: number };
+}
+
 export interface RetrievalReport {
   dataset: string;
   granularity: Granularity;
@@ -170,6 +181,8 @@ export interface RetrievalReport {
   truncatedBodies: number;
   indexMs: { total: number; p50PerHaystack: number };
   keyword: ModeResult;
+  /** Tokens to hand over the keyword search's top 5 (full notes vs index rows). */
+  tokens: TokenCost;
   relevant: ModeResult;
   hybrid: ModeResult | { skipped: string };
   node: string;
@@ -205,6 +218,8 @@ export async function runRetrieval(o: RetrievalOptions): Promise<RetrievalReport
   const kwLat: number[] = [];
   const hyLat: number[] = [];
   const indexTimes: number[] = [];
+  const full5: number[] = [];
+  const index5: number[] = [];
   let notes = 0;
   let truncated = 0;
   let nq = 0;
@@ -235,6 +250,9 @@ export async function runRetrieval(o: RetrievalOptions): Promise<RetrievalReport
         const hits = await runSearch(store, q.query, { mode: "keyword", limit: TOP });
         kwLat.push(performance.now() - t);
         kw.push({ type: q.type, score: scoreQuestion(units(hits.map((n) => n.id)), q.gold) });
+        const top5 = hits.slice(0, 5);
+        full5.push(top5.reduce((a, n) => a + estTokens(n.title.length + n.body.length), 0));
+        index5.push(estTokens(JSON.stringify(toRows(store, top5)).length));
         t = performance.now();
         const relHits = (await runRelevantSearch(store, q.query, { limit: TOP })).results;
         relLat.push(performance.now() - t);
@@ -262,12 +280,22 @@ export async function runRetrieval(o: RetrievalOptions): Promise<RetrievalReport
     truncatedBodies: truncated,
     indexMs: { total: indexTimes.reduce((a, b) => a + b, 0), p50PerHaystack: percentile(indexTimes, 50) },
     keyword: { metrics: aggregate(kw), latencyMs: lat(kwLat) },
+    tokens: { full5: dist(full5), index5: dist(index5) },
     relevant: { metrics: aggregate(rel), latencyMs: lat(relLat) },
     hybrid: useHybrid ? { metrics: aggregate(hy), latencyMs: lat(hyLat) } : { skipped: hybridSkip || "not requested (--mode hybrid)" },
     node: process.version,
     date: new Date().toISOString(),
   };
 }
+
+/** Estimated tokens for `chars` characters (about 4 a token, as the meter estimates). */
+const estTokens = (chars: number): number => (chars > 0 ? Math.ceil(chars / 4) : 0);
+
+const dist = (xs: number[]): { p50: number; p95: number; mean: number } => ({
+  p50: percentile(xs, 50),
+  p95: percentile(xs, 95),
+  mean: xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0,
+});
 
 const pct = (x: number): string => (x * 100).toFixed(1).padStart(6);
 
@@ -286,8 +314,13 @@ export function renderRetrieval(r: RetrievalReport): string {
       lines.push(`${k.padEnd(28)}${String(x.n).padStart(5)} ${pct(x.r5)} ${pct(x.r10)}  ${pct(x.rAll10)}  ${pct(x.ndcg10)} ${pct(x.mrr)}`);
     }
   };
-  table("keyword (runSearch mode=keyword / state_search: BM25, all-terms first, any-keyword fallback)", r.keyword);
-  table("relevant (runRelevantSearch / state_relevant: stop-words dropped, any keyword matches, RRF)", r.relevant);
+  table("keyword (runSearch mode=keyword / state_search: BM25, all-terms first, then any-keyword BM25)", r.keyword);
+  const t = r.tokens;
+  lines.push(
+    `tokens to hand over the top 5 (about 4 chars a token): full notes p50 ${t.full5.p50}, p95 ${t.full5.p95}; ` +
+      `memory_index rows p50 ${t.index5.p50}, p95 ${t.index5.p95}`
+  );
+  table("relevant (runRelevantSearch / state_relevant: stop-words dropped, any keyword matches, one BM25 query)", r.relevant);
   if ("skipped" in r.hybrid) lines.push("", `hybrid: skipped, ${r.hybrid.skipped}`);
   else table("hybrid (runSearch mode=hybrid, BM25 + embeddings RRF)", r.hybrid);
   return lines.join("\n");

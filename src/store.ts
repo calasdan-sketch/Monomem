@@ -795,13 +795,42 @@ function parseTags(raw: string): string[] {
 }
 
 /** Build an FTS5 MATCH expression: AND of prefix-matched, quote-escaped tokens. */
-function buildMatchQuery(q: string): string {
+function buildMatchQuery(q: string, any = false): string {
   const tokens = q
     .trim()
     .split(/\s+/)
     .filter((t) => /[\p{L}\p{N}]/u.test(t)) // keep only tokens with a letter/number
-    .map((t) => `"${t.replace(/"/g, '""')}"*`);
-  return tokens.join(" AND "); // "" when nothing usable; caller returns []
+    .map((t) => `"${queryStem(t).replace(/"/g, '""')}"*`);
+  // AND: every term must match. OR (`any`): FTS5 ranks the union by bm25, so a
+  // note matching more of the (IDF-weighted) terms ranks higher.
+  return tokens.join(any ? " OR " : " AND "); // "" when nothing usable; caller returns []
+}
+
+/**
+ * Suffixes trimmed from a query word before it becomes an FTS5 prefix term,
+ * longest first. Only the QUERY is trimmed (the index is unchanged, no
+ * migration): "recommendations" searches as `recommend*`, which also matches
+ * "recommend", "recommended" and "recommending". Measured on LongMemEval-S and
+ * LoCoMo (docs/BENCHMARK.md), not a full Porter stemmer.
+ */
+const QUERY_SUFFIXES = ["ations", "ation", "ments", "ment", "ings", "ing", "ies", "ied", "ers", "er", "ed", "es", "ly", "s"] as const;
+
+/**
+ * A plain ASCII word of 5+ letters loses its first matching suffix from
+ * QUERY_SUFFIXES when at least 4 letters remain; "ss" endings ("class",
+ * "process") keep their s. Anything else (digits, punctuation, #tags, other
+ * scripts, short words) is returned unchanged, so identifiers and tags still
+ * match exactly as typed.
+ */
+export function queryStem(t: string): string {
+  if (t.length < 5 || t.length > 64 || !/^[A-Za-z]+$/.test(t)) return t;
+  const w = t.toLowerCase();
+  for (const suf of QUERY_SUFFIXES) {
+    if (!w.endsWith(suf) || w.length - suf.length < 4) continue;
+    if ((suf === "s" || suf === "es") && w.endsWith("ss")) return w;
+    return w.slice(0, w.length - suf.length);
+  }
+  return w;
 }
 
 /**
@@ -4349,11 +4378,11 @@ export class Store {
    */
   searchRanked(
     query: string,
-    opts: { namespace?: string; limit?: number } & RangeOpts = {}
+    opts: { namespace?: string; limit?: number; /** Match ANY term (bm25-ranked union) instead of every term. */ any?: boolean } & RangeOpts = {}
   ): RankedHit[] {
     if (!query || !query.trim()) return [];
     const limit = clampInt(opts.limit, 20, 1, 200);
-    const matchQuery = buildMatchQuery(query);
+    const matchQuery = buildMatchQuery(query, opts.any === true);
     if (!matchQuery) return []; // query was all punctuation/stopwords
     const range = this.rangeFor(opts, opts.namespace ? [opts.namespace] : undefined);
 
