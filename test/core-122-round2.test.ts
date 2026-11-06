@@ -117,7 +117,9 @@ describe("3: REST/MCP validation", () => {
     const server = createApiServer(store, [{ token: TOK, scope: "admin", label: "r" }]);
     await new Promise<void>((r) => server.listen(0, r));
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const h = { Authorization: `Bearer ${TOK}`, "Content-Type": "application/json" };
+    // No keep-alive and every body read: an unread response on a reused socket is what makes Node 22.16 throw in its HTTP
+    // parser after the test ends.
+    const h = { Authorization: `Bearer ${TOK}`, "Content-Type": "application/json", Connection: "close" };
     try {
       const ok = await fetch(`${base}/notes`, { method: "POST", headers: h, body: JSON.stringify({ title: "t", forget_after: "5" }) });
       assert.equal(ok.status, 201);
@@ -126,16 +128,20 @@ describe("3: REST/MCP validation", () => {
       assert.ok(store.read(note.id)!.expires_at, "numeric string became a TTL");
       const put = await fetch(`${base}/notes/${note.id}`, { method: "PUT", headers: h, body: JSON.stringify({ forget_after: "0" }) });
       assert.equal(put.status, 200);
+      await put.text();
       assert.equal(store.read(note.id)!.expires_at, undefined, "forget_after \"0\" clears the TTL");
       for (const bad of ["abc", "-1", "", "1e999"]) {
         const r = await fetch(`${base}/notes`, { method: "POST", headers: h, body: JSON.stringify({ title: "t", forget_after: bad }) });
         assert.equal(r.status, 400, `forget_after ${JSON.stringify(bad)}`);
+        await r.text();
       }
       const rel2 = await fetch(`${base}/relevant`, { method: "POST", headers: h, body: JSON.stringify({ message: "hello", limit: "x" }) });
       assert.equal(rel2.status, 400);
+      await rel2.text();
       store.archive(note.id);
       const rb = await fetch(`${base}/notes/${note.id}/restore`, { method: "POST", headers: h, body: JSON.stringify({ forget_after: "-5" }) });
       assert.equal(rb.status, 400);
+      await rb.text();
     } finally {
       server.closeAllConnections(); // do not leave a keep-alive socket mid-response: Node 22.16 can throw inside its HTTP parser after the test ends
       await new Promise<void>((r) => server.close(() => r()));
