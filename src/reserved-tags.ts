@@ -25,6 +25,7 @@
 // `obs.` (obs.type:, obs.concept:). Only extract.ts writes them, so a note
 // cannot pass itself off as captured work.
 import { ValidationError } from "./store.js";
+import { flaggedFactValue } from "./facts.js";
 
 export const RESERVED_TAG_PREFIX = "task.";
 /** v16: the capture writer's tag prefix (obs.type:, obs.concept:). */
@@ -54,6 +55,12 @@ export function assertPlainWriteTags(next: readonly string[] | undefined, existi
   // A `fact:` tag is one line of printable text: a raw newline or control character in one is an injection vector (facts.ts checks the `facts` path).
   const badFact = next.find((t) => t.trimStart().startsWith("fact:") && /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t) && !(existing ?? []).includes(t));
   if (badFact !== undefined) throw new ValidationError("a fact: tag must be one line of plain text (no line break or control character); pass facts through the `facts` field");
+  // The same instruction check the `facts` field applies: a raw fact: tag must not be a way around it.
+  const flagged = next.find((t) => {
+    const m = /^fact:[^=]+=(.*)$/s.exec(t.trim());
+    return m && !(existing ?? []).includes(t) && flaggedFactValue(m[1]);
+  });
+  if (flagged !== undefined) throw new ValidationError("this fact value reads like an instruction (an approval claim, a chained or urgent command); it was not stored");
   const want = reservedSet(next);
   const have = reservedSet(existing);
   if (want.size === have.size && [...want].every((t) => have.has(t))) return;

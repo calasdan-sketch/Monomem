@@ -57,7 +57,7 @@ describe("write-time conflicts", () => {
     assert.ok(s.read(second.id));
     const c = writeConflicts(s, second);
     assert.equal(c.length, 1);
-    assert.match(c[0], new RegExp(`^conflicts with #${first} by alice: deploy_target fly\\.io \\(theirs\\) vs Render \\(yours\\)`));
+    assert.match(c[0], new RegExp(`^conflicts with #${first} by alice: deploy_target 'fly\\.io' \\(theirs\\) vs 'Render' \\(yours\\)`));
     s.close();
   });
   test("not reported: same writer, same value in other case, other namespace, other key, archived, distrusted writer", () => {
@@ -534,7 +534,7 @@ describe("adoption wording, key drift, session start", () => {
     const n = s.create({ title: "b", body: "x", tags: withFacts(undefined, { deploy_target: "render" }) }, { writtenBy: "bob" });
     const c = writeConflicts(s, n);
     assert.equal(c.length, 1);
-    assert.match(c[0], new RegExp(`^conflicts with #${a} by alice: hosting fly\\.io \\(theirs\\) vs deploy_target render \\(yours\\), the same setting under another key`));
+    assert.match(c[0], new RegExp(`^conflicts with #${a} by alice: hosting 'fly\\.io' \\(theirs\\) vs deploy_target 'render' \\(yours\\), the same setting under another key`));
     const same = s.create({ title: "c", body: "x", tags: withFacts(undefined, { deploy_target: "Fly.io" }) }, { writtenBy: "carol" });
     assert.deepEqual(writeConflicts(s, same).filter((x) => x.includes("hosting")), []);
     s.close();

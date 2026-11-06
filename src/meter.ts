@@ -36,8 +36,11 @@ export interface MeterStats {
 /** Add to one session's counters (fail-silent). */
 export function meterAdd(store: Store, sessionId: string, namespace: string, add: { injected?: number; saved?: number; llm?: number }): void {
   if (!sessionId) return;
+  const db = store.captureDb();
+  // Session start must never wait behind another process's write lock for a meter row: fail fast, say so, keep going.
+  const prev = Number((db.prepare("PRAGMA busy_timeout").get() as Record<string, unknown> | undefined)?.timeout ?? 0);
   try {
-    const db = store.captureDb();
+    db.exec("PRAGMA busy_timeout = 0;");
     db.exec(SCHEMA);
     const inj = add.injected !== undefined ? 1 : 0;
     db.prepare(
@@ -47,6 +50,12 @@ export function meterAdd(store: Store, sessionId: string, namespace: string, add
     ).run(sessionId, namespace, inj, Math.max(0, Math.round(add.injected ?? 0)), Math.max(0, Math.round(add.saved ?? 0)), Math.max(0, Math.round(add.llm ?? 0)), new Date().toISOString());
   } catch (e) {
     process.stderr.write(`monomem: meter not updated (${(e as Error).message})\n`);
+  } finally {
+    try {
+      db.exec(`PRAGMA busy_timeout = ${prev};`);
+    } catch {
+      /* the connection is gone; nothing to restore */
+    }
   }
 }
 

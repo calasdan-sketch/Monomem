@@ -141,7 +141,7 @@ export function writeConflicts(store: Store, note: NoteRecord): string[] {
         const theirs = noteFacts(o.tags).find(([k]) => k === theirKey)?.[1];
         if (theirs === undefined || writerOf(o) === writerOf(note) || normFact(theirs) === normFact(value)) continue;
         const same = theirKey === key;
-        out.push(`conflicts with #${o.id} by ${printable(o.written_by, 60)}: ${theirKey} ${printable(theirs, MAX_FACT_VALUE)} (theirs) vs ${same ? "" : key + " "}${printable(value, MAX_FACT_VALUE)} (yours)${same ? "" : ", the same setting under another key"}. Both are kept; ask the user which is right.`);
+        out.push(`conflicts with #${o.id} by ${printable(o.written_by, 60)}: ${theirKey} ${quote(theirs, MAX_FACT_VALUE)} (theirs) vs ${same ? "" : key + " "}${quote(value, MAX_FACT_VALUE)} (yours)${same ? "" : ", the same setting under another key"}. Both are kept; ask the user which is right.`);
         if (out.length >= MAX_REPORTED) return out;
       }
     }

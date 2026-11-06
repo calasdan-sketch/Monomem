@@ -2902,6 +2902,9 @@ export class Store {
     });
   }
 
+  /** Set once a skipped access-log row has been reported on stderr, so the warning is not repeated. */
+  private static accessSkipReported = false;
+
   /**
    * Run an access-tracking write best-effort (BLOCKER 3): with a zero busy
    * timeout so lock contention fails fast instead of stalling the caller
@@ -2910,8 +2913,6 @@ export class Store {
    * stalled read is not. Never call this inside a write transaction: it is
    * only for fire-and-forget autocommit counter bumps.
    */
-  private static accessSkipReported = false;
-
   private bestEffortWrite(fn: () => void): void {
     try {
       this.db.exec("PRAGMA busy_timeout = 0;");

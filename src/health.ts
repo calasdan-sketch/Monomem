@@ -115,7 +115,7 @@ export async function securityFindings(dataDir: string, bindHost: string): Promi
     });
   }
   if (acceptLegacyHeartbeats()) {
-    out.push({ id: "runner-legacy", label: "legacy runner heartbeats", status: "warn", short: "MONOMEM_RUNNER_ACCEPT_LEGACY accepts runner heartbeats with no writer marker", detail: "MONOMEM_RUNNER_ACCEPT_LEGACY lets a runner heartbeat with no server-stamped writer count as alive, so any writer that can post a note can fake a healthy runner. Upgrade the runner (1.3.4 or later) and remove it." });
+    out.push({ id: "runner-legacy", label: "legacy runner heartbeats", status: "warn", short: "MONOMEM_RUNNER_ACCEPT_LEGACY accepts runner heartbeats with no writer marker", detail: "MONOMEM_RUNNER_ACCEPT_LEGACY lets a runner heartbeat with no server-stamped writer count as alive, so any writer that can post a note can fake a healthy runner. Upgrade the runner (OneMemory 1.3.4 or later) and remove it." });
   }
   if (lintPolicyUnrecognised()) {
     out.push({ id: "lint-typo", label: "MONOMEM_LINT not understood", status: "warn", short: `MONOMEM_LINT="${printable(process.env.MONOMEM_LINT ?? "", 40)}" is not recognised, using the default for it (secrets=${p.secret}, injection=${p.injection})`, detail: `MONOMEM_LINT="${printable(process.env.MONOMEM_LINT ?? "", 80)}" is not recognised (or only partly), so the safe default applies to the parts that were not understood. Check the spelling: values are block, quarantine, warn, or secrets=/injection=/entropy=/pii=/directive= each set to one of those.${lintDidYouMean(process.env.MONOMEM_LINT ?? "")}` });
