@@ -4473,19 +4473,44 @@ export class Store {
    * structure, the full-text index against the notes it indexes, and similarity links that point at a note that is gone.
    * Read-only; each answer is "ok" or what is wrong.
    */
-  deepCheck(): { integrity: string; fullText: string; orphanLinks: number; notes: number } {
-    const rows = this.db.prepare("PRAGMA integrity_check(10)").all() as Array<{ integrity_check: string }>;
-    const integrity = rows.map((r) => r.integrity_check).join("; ") || "ok";
+  deepCheck(): { integrity: string; fullText: string; orphanLinks: number; notes: number; skipped: boolean } {
+    // The search-index check takes a write lock, so a live writer can hold it. Wait only briefly, then say "skipped",
+    // never "damaged": a busy server is not a broken file.
+    const busy = (e: unknown): boolean => {
+      const err = e as { errcode?: number; message?: string };
+      return (typeof err.errcode === "number" && (err.errcode & 0xff) >= 5 && (err.errcode & 0xff) <= 6) || /locked|busy/i.test(err.message ?? "");
+    };
+    let skipped = false;
+    let integrity = "ok";
+    try {
+      const rows = this.db.prepare("PRAGMA integrity_check(10)").all() as Array<{ integrity_check: string }>;
+      integrity = rows.map((r) => r.integrity_check).join("; ") || "ok";
+    } catch (e) {
+      if (busy(e)) {
+        integrity = "skipped";
+        skipped = true;
+      } else integrity = (e as Error).message || "unreadable";
+    }
     let fullText = "ok";
+    this.db.exec("PRAGMA busy_timeout = 250;");
     try {
       this.db.exec("INSERT INTO notes_fts(notes_fts, rank) VALUES('integrity-check', 1)");
     } catch (e) {
-      fullText = (e as Error).message || "inconsistent";
+      if (busy(e)) {
+        fullText = "skipped";
+        skipped = true;
+      } else fullText = (e as Error).message || "inconsistent";
+    } finally {
+      try {
+        this.db.exec(`PRAGMA busy_timeout = ${Store.BUSY_TIMEOUT_MS};`);
+      } catch {
+        /* closing */
+      }
     }
     const orphanLinks = Number(
       (this.db.prepare("SELECT COUNT(*) AS c FROM note_edges WHERE note_id NOT IN (SELECT id FROM notes) OR neighbor_id NOT IN (SELECT id FROM notes)").get() as { c: number }).c
     );
-    return { integrity, fullText, orphanLinks, notes: this.countAll() };
+    return { integrity, fullText, orphanLinks, notes: this.countAll(), skipped };
   }
 
   /** An upper bound on the number of notes (the highest id): O(1), for deciding how much work an optional step may do. */

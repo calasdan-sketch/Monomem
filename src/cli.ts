@@ -275,12 +275,14 @@ async function doctor(): Promise<void> {
     ok(`database OK at ${DB_PATH} (${r.total} notes)`);
     ok(footprint);
     if (deepRes) {
-      if (deepRes.integrity === "ok") ok("deep check: the file's structure is sound");
+      if (deepRes.integrity === "skipped") ok("deep check: file structure check skipped, the server is busy; run it again in a moment");
+      else if (deepRes.integrity === "ok") ok("deep check: the file's structure is sound");
       else {
         dbProblem = true;
         warn(`deep check: the file is damaged (${deepRes.integrity}). Copy what is readable into a new database:  monomem recover`);
       }
-      if (deepRes.fullText === "ok") ok("deep check: the search index matches the notes");
+      if (deepRes.fullText === "skipped") ok("deep check: search index check skipped, the server is busy; run it again in a moment");
+      else if (deepRes.fullText === "ok") ok("deep check: the search index matches the notes");
       else warn(`deep check: the search index does not match the notes (${deepRes.fullText}). A clean copy rebuilds it:  monomem recover`);
       if (deepRes.orphanLinks === 0) ok("deep check: every similar-note link points at a note");
       else warn(`deep check: ${deepRes.orphanLinks} similar-note link(s) point at a missing note. Fix:  monomem rebuild-edges`);
@@ -1146,14 +1148,23 @@ async function recoverCmd(): Promise<void> {
     if (flags.json) {
       console.log(JSON.stringify(r));
     } else {
-      console.log(`Recovered ${r.notesRecovered} note(s)${r.highestId ? ` of about ${r.highestId}` : ""} from ${from}`);
-      if (r.idsUnreadable) console.log(`  ${r.idsUnreadable} id(s) could not be read (some may have been deleted before the damage).`);
-      if (r.historyRecovered) console.log(`  ${r.historyRecovered} earlier version(s) kept.`);
-      if (r.encryptedRows) console.log(`  ${r.encryptedRows} note(s) are encrypted: they open only with the original .key file.`);
-      for (const n of r.notes) console.log(`  note: ${n}`);
-      console.log(`New database: ${out}`);
-      console.log("  The damaged file was not changed. To switch: stop monomem, move the damaged state.db aside, rename the new file to state.db,");
-      console.log("  then run  monomem rebuild-edges  (similar-note links are not copied) and  monomem doctor.");
+      if (r.notesRecovered === 0) {
+        console.log(`Recovered 0 notes from ${from}. Nothing readable was found, so no new file was kept.`);
+        for (const n of r.notes) console.log(`  note: ${n}`);
+        console.log("  The damaged file was not changed. If you have a backup made with  monomem backup, restore from that.");
+      } else {
+        const of = r.estimatedTotal !== null ? ` of about ${r.estimatedTotal}${r.estimateFrom === "page-count" ? " (estimated from the share of the file present)" : ""}` : "";
+        console.log(`Recovered ${r.notesRecovered} note(s)${of} from ${from}`);
+        if (!r.totalKnown) console.log("  Total unknown: the file's own count could not be read, so notes may be missing and how many is not known.");
+        if (r.idsUnreadable) console.log(`  ${r.idsUnreadable} id(s) could not be read (some may have been deleted before the damage).`);
+        if (r.historyRecovered) console.log(`  ${r.historyRecovered} earlier version(s) kept.`);
+        if (r.encryptedRows) console.log(`  ${r.encryptedRows} note(s) are encrypted: they open only with the original .key file.`);
+        for (const n of r.notes) console.log(`  note: ${n}`);
+        console.log(`New database: ${out}`);
+        console.log("  The damaged file was not changed (a private copy was read; nothing was created beside it).");
+        console.log("  To switch: stop monomem, move the damaged state.db (and any state.db-wal / state.db-shm) aside, rename the new file to state.db,");
+        console.log("  then run  monomem rebuild-edges  (similar-note links are not copied) and  monomem doctor.");
+      }
     }
     if (r.notesRecovered === 0) process.exitCode = 2;
   } catch (e) {

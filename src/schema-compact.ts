@@ -22,6 +22,30 @@ export const COMPACT_TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = {
   memory_supersede_confirm:
     "STEP 2: replaces the previewed notes using that preview's one-time `token`, only after the person said yes. If you previewed a new note, resend the same new_* fields. Nothing is deleted; memory_supersede_undo restores. RED FLAG needs an admin and acknowledge_risk:true.",
   memory_supersede_undo: "Bring a replaced note back exactly as it was. Only restores, so no code is needed; it is recorded.",
+  // Destructive and admin tools keep their safety text (a cut-off first sentence dropped "requires admin" and "deletes").
+  memory_consolidation_candidates:
+    "Find near-duplicate notes (same namespace only; never cross-namespace). Read-only but requires the admin scope: the scan is O(n^2) CPU, runs one at a time under a time budget; narrow it with `namespace` on large stores.",
+  memory_consolidate:
+    "Merge 2+ duplicate notes into one (longest title wins, bodies deduplicated, tags unioned). Deletes the source notes unless keep_sources is true, so it requires the admin scope (same policy as state_delete). Pass dry_run:true to preview without writing.",
+  memory_rebuild_edges:
+    "Recalculate the whole similarity graph (admin). O(n^2): run as maintenance after bulk imports or threshold changes, not interactively. Above the note-count limit it refuses unless confirm:true; tell the user the pair count first.",
+  state_write:
+    "Create a note, or update one if `id` is given; returns the note. `source` and `confidence` are your own claims, advisory only: the server stamps the real writer as `written_by`.",
+  memory_since:
+    'Change feed: notes created, updated or deleted since a time, oldest first, titles only. `since` is an ISO time, a duration ("24h"), or "last" (since this `consumer` last read to the end; first use 24h). Page with `cursor`. ack_mode:"manual" moves the marker only when you send back the ack_token.',
+};
+
+/** Parameter texts that differ by tool (the same name means different things), keyed `tool.param`. */
+export const COMPACT_TOOL_PARAM_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  "state_write.source": "Your CLAIM of who wrote this (a label). Advisory only: anyone can claim anything; the server stamps the real writer as `written_by`.",
+  "state_write.confidence": "Optional CLAIM, 0 to 1, of how sure you are. Advisory only: never used for ranking or trust. null on update removes it.",
+  "memory_consolidate.keep_sources": "Keep the source notes after merging (default false: they are DELETED).",
+  "memory_consolidate.dry_run": "Preview the merge without writing anything (default false).",
+  "memory_rebuild_edges.confirm": "Required above the note-count limit: re-call with confirm:true after telling the user how many pairs will be scored.",
+  "memory_since.ack_mode":
+    'auto (default): the "last" marker advances when the final page is served. manual: it does not; send the final page\'s `ack_token` back (here or in memory_ack) to move it. Use manual if your client can die before it has handled the changes.',
+  "memory_since.exclude_self": "Hide changes written by the token whose label equals your `consumer` label (needs a separate token label per device).",
+  "memory_since.ack_token": "Token from an earlier ack_mode:manual page: moves the marker before reading.",
 };
 
 /** Parameters whose full text is a safety instruction: keep a short hand-written version, never a cut-off one. */
@@ -66,17 +90,18 @@ function compactSchema(node: unknown, key?: string): unknown {
 }
 
 /** Shorten the `description` of every property in an input schema (top level and nested objects/arrays). */
-function shortenProps(schema: unknown, name?: string): unknown {
-  if (Array.isArray(schema)) return schema.map((x) => shortenProps(x));
+function shortenProps(schema: unknown, name?: string, tool?: string): unknown {
+  if (Array.isArray(schema)) return schema.map((x) => shortenProps(x, undefined, tool));
   if (!schema || typeof schema !== "object") return schema;
   const o = { ...(schema as Record<string, unknown>) };
   if (typeof o.description === "string") {
-    o.description = name && COMPACT_PARAM_DESCRIPTIONS[name] ? COMPACT_PARAM_DESCRIPTIONS[name] : firstSentence(o.description, PARAM_MAX);
+    const own = name && tool ? COMPACT_TOOL_PARAM_DESCRIPTIONS[`${tool}.${name}`] : undefined;
+    o.description = own ?? (name && COMPACT_PARAM_DESCRIPTIONS[name] ? COMPACT_PARAM_DESCRIPTIONS[name] : firstSentence(o.description, PARAM_MAX));
   }
-  for (const k of ["items", "anyOf", "oneOf", "allOf"]) if (k in o) o[k] = shortenProps(o[k]);
+  for (const k of ["items", "anyOf", "oneOf", "allOf"]) if (k in o) o[k] = shortenProps(o[k], undefined, tool);
   if (o.properties && typeof o.properties === "object") {
     const props: Record<string, unknown> = {};
-    for (const [pn, pv] of Object.entries(o.properties as Record<string, unknown>)) props[pn] = shortenProps(pv, pn);
+    for (const [pn, pv] of Object.entries(o.properties as Record<string, unknown>)) props[pn] = shortenProps(pv, pn, tool);
     o.properties = props;
   }
   return o;
@@ -94,7 +119,7 @@ export function compactTool<T extends WireTool>(t: T): T {
   delete out.execution;
   const full = typeof t.description === "string" ? t.description : "";
   if (full) out.description = COMPACT_TOOL_DESCRIPTIONS[t.name] ?? firstSentence(full, TOOL_MAX);
-  if (t.inputSchema) out.inputSchema = shortenProps(compactSchema(t.inputSchema));
+  if (t.inputSchema) out.inputSchema = shortenProps(compactSchema(t.inputSchema), undefined, t.name);
   return out as T;
 }
 

@@ -494,7 +494,7 @@ query repair narrows its vocabulary scans above 2,000 notes ([search.md](./searc
 
 With at-rest encryption the bodies are not in the full-text index ([encryption-retention.md](./encryption-retention.md)), so the large-store link search finds its candidates by title and tags only (it still scores them on the full text); this was not measured.
 
-Limits: one synthetic distribution, one machine, one run each (no repeats, so no confidence interval); search times are for queries that mostly
+Limits: one synthetic distribution, one machine, one run each (single runs: no repeats, so no confidence interval); search times are for queries that mostly
 need the "some of the words" step. Recall at this size was not measured (no gold labels), only speed. Two things still scale with the store: `recall` (three
 tag lookups of about 75 ms each at 100,000 notes) and `monomem quality` (17 s). Competing tools were not run at this size; their scale behaviour is unverified.
 
@@ -506,7 +506,7 @@ monomem bench --passages --sweep [--budget 500] [--json]      # needs the cached
 
 1.3.0 chose its passage settings on all 470 questions and reported them on the same 470. This splits the questions in two by a fixed hash of
 the question id (228 dev, 242 test), searches the settings on **dev only** (a coordinate search over eight settings, two passes, maximising evidence
-coverage at 500 tokens), and then scores the 1.3.0 settings and the dev-tuned ones on **test**, which no choice ever saw. The interval is a bootstrap over test questions (1,000 resamples).
+coverage at 500 tokens), and then scores the 1.3.0 settings and the dev-tuned ones on **test**, which no choice ever saw. The interval is a bootstrap over test questions (1,000 resamples). Two caveats: the search started from the 1.3.0 settings, which had been chosen on all 470 questions, so a little of the test half leaked into the starting point; and the four budget rows are four separate intervals with no multiple-comparison adjustment (only the 500-token row was tuned for).
 
 | Evidence handed over (test half, 242 questions) | 1.3.0 settings | dev-tuned (1.4.0 defaults) | difference, 95 % interval |
 |---|---|---|---|
@@ -533,11 +533,11 @@ After a **new** note is saved, the result names up to three existing notes of th
 | corrected copy (every number changed), 36 | 97.2 % |
 | the 36 distinct notes themselves (a false alarm is a hint naming any earlier note) | 0 % |
 
-The threshold sweep is flat from 0.3 to 0.7 on this set; 0.4 was chosen because short restatements score lower (a seven-word note against a copy that changes one word and a number scored 0.43, since the words two notes do not share weigh more in a small store). **Upper bound, not a forecast:** rule-made copies share most of their words; a real rewording by another model shares fewer, and distinct notes on one topic share more than these 36 do.
+The 0.4 threshold and the 0 % false-alarm figure come from the same 36-note set, so both are optimistic (an upper bound). The threshold sweep is flat from 0.3 to 0.7 on this set; 0.4 was chosen because short restatements score lower (a seven-word note against a copy that changes one word and a number scored 0.43, since the words two notes do not share weigh more in a small store). **Upper bound, not a forecast:** rule-made copies share most of their words; a real rewording by another model shares fewer, and distinct notes on one topic share more than these 36 do.
 
 ### Recovering a damaged file (1.4.0)
 
-`monomem recover [--from damaged.db] [--out new.db]` copies the notes it can still read into a new database; the damaged file is opened read-only. On a 4,000-note file:
+`monomem recover [--from damaged.db] [--out new.db]` copies the notes it can still read into a new database. It reads a private copy of the damaged file (and its `-wal` file when one is beside it), so nothing is created beside or changed in the original; this needs temporary disk space equal to the file. The output file is removed again if nothing could be recovered or the run fails. It reports the original total when it can read it (the highest note id, else the id counter, else an estimate from the pages present in a truncated file) and otherwise says "total unknown, notes may be missing". On a 4,000-note file:
 
 | Damage | Notes recovered |
 |---|---|
@@ -546,9 +546,9 @@ The threshold sweep is flat from 0.3 to 0.7 on this set; 0.4 was chosen because 
 | 8 KB zeroed in the middle | 3,987 (99.7 %) |
 | first 16 bytes overwritten | 4,000 (100 %) |
 
-What survives is what is on intact pages, so the share depends on where the damage is (a 600-note file in `npm test` returned 31 % after a 50 % cut). Similar-note links, the change feed and trust settings are not copied
+What survives is what is on intact pages, so the recovered share depends on where the damage is (49 % to 100 % across these four cases, nothing more general) (a 600-note file in `npm test` returned 31 % after a 50 % cut). Similar-note links, the change feed and trust settings are not copied
 (`rebuild-edges` makes the links again). Encrypted bodies are copied as they are and open only with the original `.key`. `monomem doctor --deep` finds the damage first.
-Not tested: damage inside the write-ahead log of a file that was open at the time.
+Not tested: damage inside the write-ahead log of a file that was open at the time. `doctor --deep` skips its search-index check, and says so, when a running server holds the write lock; it never calls a busy file damaged.
 
 ### Tool schema size
 

@@ -187,7 +187,7 @@ test("Store.deepCheck: ok on a healthy store, and it notices a similarity link t
   const a = s.create({ title: "Staging database port", body: "Postgres listens on 5432 behind pgbouncer" });
   const b = s.create({ title: "Staging Postgres port", body: "Postgres listens on 5433 behind pgbouncer" });
   const ok = s.deepCheck();
-  assert.deepEqual({ ...ok }, { integrity: "ok", fullText: "ok", orphanLinks: 0, notes: 2 });
+  assert.deepEqual({ ...ok }, { integrity: "ok", fullText: "ok", orphanLinks: 0, notes: 2, skipped: false });
   s.captureDb().exec("PRAGMA foreign_keys = OFF");
   s.captureDb().prepare("INSERT INTO note_edges (note_id, neighbor_id, score) VALUES (?, ?, 0.9)").run(a.id, 9999);
   assert.equal(s.deepCheck().orphanLinks, 1);

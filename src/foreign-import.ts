@@ -215,7 +215,9 @@ export function readMcpMemory(path: string): Item[] {
     const body = [e.obs.length ? e.obs.map((o) => `- ${o}`).join("\n") : "", e.rel.length ? `Relations:\n${e.rel.map((r) => `- ${r}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
     if (!body) continue;
     items.push({
-      id: `e${h(name)}`,
+      // Entity name plus its observation set: an entity that gained observations since the last import is added again
+      // (the earlier note stays as it was), while an unchanged one keeps its id and is skipped, not duplicated.
+      id: `e${h(name + "\u0000" + [...e.obs, ...e.rel].sort().join("\u0001"))}`,
       group: e.type || "entity",
       title: name.slice(0, 200),
       body,

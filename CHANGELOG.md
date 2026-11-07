@@ -15,16 +15,16 @@ Nothing to migrate. The first open of an existing store builds one index (about 
 
 - **`monomem bench --scale [--notes N]`**: write latency with similar-note links, keyword search latency, three commands in a new process, disk and
   memory on a synthetic store (default 20,000 notes), plus how closely the large-store link search agrees with the exhaustive one. 100,000 notes:
-  write p50 16.4 ms (p95 41.6), search p50 2.5 ms, first `remember` 0.22 s, `recall` 0.82 s. See [docs/BENCHMARK.md](./docs/BENCHMARK.md#scale-140).
+  write p50 16.4 ms (p95 41.6), search p50 2.5 ms, first `remember` 0.22 s, `recall` 0.82 s (single runs, one machine). See [docs/BENCHMARK.md](./docs/BENCHMARK.md#scale-140).
 - **Repeat-write hint.** Saving a NEW note now also returns `similar` (up to three live notes of the same namespace scoring 0.4 or higher; id, title, score)
   and `similar_hint`, in `state_write`, `POST /notes` and `monomem remember`. Nothing is blocked. On rule-made copies of 36 notes it names the original for
-  100 % (partial copy) and 97.2 % (every number changed), with 0 false alarms on the 36 distinct notes; real rewordings are harder (upper bound).
+  100 % (partial copy) and 97.2 % (every number changed), with 0 false alarms on the 36 distinct notes. The 0.4 threshold was chosen on the same 36-note set, so these figures are an upper bound; real rewordings are harder.
   `MONOMEM_OVERLAP_HINT=off` disables it. Adds nothing to the tool schema.
-- **`monomem recover [--from damaged.db] [--out new.db]`** copies every readable note (and its earlier versions) into a new database; the damaged file is opened read-only
-  and never changed, and the output is never an existing file. A 4,000-note file cut at 50 %: 49.1 % of notes back; at 90 %: 90.5 %; 8 KB zeroed: 99.7 %; first 16 bytes overwritten: 100 %. Any command that fails on a damaged file now says to run it.
-- **`monomem doctor --deep`**: the file's structure (`integrity_check`), the search index against the notes, and similar-note links that point at a missing note.
+- **`monomem recover [--from damaged.db] [--out new.db]`** copies every readable note (and its earlier versions) into a new database; a private copy of the damaged file (and its `-wal`, when present) is read, so the original is never changed and nothing is created beside it;
+  the output is never an existing file, is removed if nothing was recovered, and a possible loss is never hidden (the original total is estimated or reported as unknown). A 4,000-note file cut at 50 %: 49.1 % of notes back; at 90 %: 90.5 %; 8 KB zeroed: 99.7 %; first 16 bytes overwritten: 100 %. Any command that fails on a damaged file now says to run it.
+- **`monomem doctor --deep`**: the file's structure (`integrity_check`), the search index against the notes, and similar-note links that point at a missing note. When a running server holds the write lock the index check is reported as skipped, not damaged.
 - **`monomem bench --passages --sweep`**: the held-out check of the passage settings (see Changed).
-- **`monomem import --from mcp-memory --path memory.json`**: brings in the official MCP memory server's knowledge graph (one note per entity: observations, then relations).
+- **`monomem import --from mcp-memory --path memory.json`**: brings in the official MCP memory server's knowledge graph (one note per entity: observations, then relations). Run again later, an entity that gained observations is added as a new note and unchanged ones are skipped.
 - The injection linter decodes character references and escapes before scanning (`&#105;gnore ...`, `\u0069gnore ...`), found by the red team. Base64 and URL-encoding remain unread.
 
 ### Changed
@@ -37,8 +37,8 @@ Nothing to migrate. The first open of an existing store builds one index (about 
   (`list` takes `withTotal: false`). `recall` at 100,000 notes: 1.6 s to 0.7 to 0.8 s.
 - **Query repair narrows above 2,000 notes** (`MONOMEM_REPAIR_FULL_MAX_NOTES`): a typo must keep its first two letters, the `connection reset` to `ECONNRESET` scan is skipped, CJK words get 4 scans instead of 12.
   A missed search at 100,000 notes: 350 ms to about 2 ms. Search results on small stores, and LongMemEval-S R@5 (97.7) and LoCoMo turn R@5 (59.2), are unchanged.
-- **Passage defaults re-tuned on held-out data**: `rankPrior` 0.25 to 0.5, `k1` 1.2 to 1.6, `roleBoost` 0 to 0.6, `window` 0 to 400. Tuned on the dev half (228 questions) of LongMemEval-S and judged on the untouched test half
-  (242): evidence at 500 tokens 80.2 % to 85.5 % (bootstrap 95 % interval for the gain +2.5 to +8.3 points); +10.4, +7.0 and +4.9 at 250, 1,000 and 2,000 tokens. On the dev half the same search gained 8.8, so 1.3.0's
+- **Passage defaults re-tuned on held-out data**: `rankPrior` 0.25 to 0.5, `k1` 1.2 to 1.6, `roleBoost` 0 to 0.6, `window` 0 to 400. Tuned on the dev half (228 questions) of LongMemEval-S (the search started from the 1.3.0 settings, which were chosen on all 470 questions, so a little leakage remains) and judged on the test half
+  (242): evidence at 500 tokens 80.2 % to 85.5 % (bootstrap 95 % interval for the gain +2.5 to +8.3 points; the intervals at the four budgets are each unadjusted for looking at four); +10.4, +7.0 and +4.9 at 250, 1,000 and 2,000 tokens. On the dev half the same search gained 8.8, so 1.3.0's
   "tuned on the same data" figures were optimistic by that measure. On the coding-agent set, the 150-token budget lost one query of 34 (91.2 % to 88.2 %); 300 and 600 are unchanged.
 - The CLI explains a damaged database ("... run `monomem recover`") instead of printing only SQLite's message.
 

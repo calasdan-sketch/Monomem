@@ -350,7 +350,7 @@ LongMemEval-S and LoCoMo recall within 0.1 (R@5 97.7 off and on; LoCoMo turn 59.
 estimated tokens for the two new parameters.
 
 **What 1.4.0 adds, measured here** (`monomem bench --scale`, `--passages --sweep`, `--recall`; [details and limits](./docs/BENCHMARK.md#scale-140)). All Monomem rows below are
-this repository's own runs on one machine; **no other tool was run at this size, so their rows are unverified, not zero.**
+this repository's own runs on one machine, and the scale numbers are single runs (no repeats); **no other tool was run at this size, so their rows are unverified, not zero.**
 
 | | 1.3.0 | 1.4.0 |
 |---|---|---|
@@ -359,9 +359,9 @@ this repository's own runs on one machine; **no other tool was run at this size,
 | Write with similar-note links, 20,000 notes: p50, slowest single write, peak memory | 17.8 ms, 1,257 ms, 407 MB | 12.7 ms, not recorded (p95 26.1 ms), 262 MB |
 | Write at 100,000 notes, p50 / p95 | not run (grew linearly with size) | 16.4 / 41.6 ms |
 | A search that finds nothing, 100,000 notes | 350 ms (query repair) | about 2 ms |
-| Passage evidence at 500 tokens, held-out half of LongMemEval-S | 80.2 % | 85.5 % (+5.3, 95 % interval +2.5 to +8.3) |
-| Names the earlier note when a new note restates it (rule-made copies, 36 notes) | no | 100 % partial copies, 97.2 % corrected copies, 0 % false alarms |
-| A truncated or header-damaged database | "database disk image is malformed" | `monomem recover`: 49 % to 100 % of notes back, by damage type |
+| Passage evidence at 500 tokens, held-out half of LongMemEval-S (search started from the 1.3.0 settings, which were chosen on all 470 questions: mild leakage) | 80.2 % | 85.5 % (+5.3, 95 % interval +2.5 to +8.3) |
+| Names the earlier note when a new note restates it (rule-made copies, 36 notes) | no | 100 % partial copies, 97.2 % corrected copies, 0 % false alarms (the 0.4 threshold and the 0 % come from the same 36 notes, so treat them as an upper bound) |
+| A truncated or header-damaged database | "database disk image is malformed" | `monomem recover`: 49 % to 100 % of notes back in our four tests; the share depends on where the damage is, and the command says when the original total is unknown |
 
 The price of the large-store link search: above 2,000 notes in a namespace it finds 91.9 % of the links the exhaustive scan finds (98.7 % of each note's best three);
 query repair narrows (a typo must keep its first two letters) above 2,000 notes. Both are settings, documented in [configuration.md](./docs/configuration.md). Scale numbers other tools publish, if any, are not compared here: we have not run them.
