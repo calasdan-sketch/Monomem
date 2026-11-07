@@ -92,3 +92,31 @@ test("huge tokens and floods of words stay fast and never throw", async () => {
   }
   assert.ok(performance.now() - t < 5000, "repair must not make a hostile query slow");
 });
+
+test("200 distinct CJK words on a few-thousand-note store stay cheap, and passages reuse the search's plan", async () => {
+  const { rememberedTerms } = await import("../src/repair.js");
+  const store = new Store(":memory:");
+  store.transaction(() => {
+    for (let i = 0; i < 3000; i++) store.create({ title: `n${i}`, body: `备份记录${i}号 数据库迁移${i}次 東京区域${i}` }, { skipEdges: true, lint: "none" });
+  });
+  const words = Array.from({ length: 200 }, (_, i) => `词${String.fromCodePoint(0x4e00 + i * 7)}${String.fromCodePoint(0x4e01 + i * 11)}`);
+  await runSearch(store, "warm", { mode: "keyword", limit: 5 });
+  const base = performance.now();
+  await runSearch(store, "zzzz yyyy", { mode: "keyword", limit: 5 });
+  const baseMs = performance.now() - base;
+  const t = performance.now();
+  await runSearch(store, words.join(" "), { mode: "keyword", limit: 5 });
+  const ms = performance.now() - t;
+  assert.ok(ms - baseMs < 100, `repair added ${(ms - baseMs).toFixed(0)} ms`);
+  // The plan is remembered by the search; nothing plans again.
+  await runSearch(store, "postgress", { mode: "keyword", limit: 5 });
+  assert.deepEqual(rememberedTerms(store, ["postgress"]), []);
+  assert.deepEqual(rememberedTerms(store, ["something", "else"]), []);
+});
+
+test("the search remembers the spellings it repaired for the passage step", async () => {
+  const { rememberedTerms } = await import("../src/repair.js");
+  const { store } = seeded();
+  await runSearch(store, "postgress", { mode: "keyword", limit: 5 });
+  assert.ok(rememberedTerms(store, extractKeywords("postgress")).includes("postgres"));
+});

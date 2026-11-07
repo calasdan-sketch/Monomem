@@ -11,8 +11,11 @@
 // interlinear annotation, and the Unicode tag / variation-selector blocks that can smuggle invisible text.
 // Built from code point ranges (no raw invisible characters in this source file).
 const RANGES: Array<[number, number]> = [
-  [0x00, 0x08], [0x0b, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x61c, 0x61c], [0x180e, 0x180e], [0x200b, 0x200f],
+  [0x00, 0x08], [0x0b, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x61c, 0x61c], [0x200b, 0x200f],
   [0x2028, 0x202e], [0x2060, 0x206f], [0xfeff, 0xfeff], [0xfff9, 0xfffb], [0xe0000, 0xe007f], [0xe0100, 0xe01ef],
+  // invisible fillers and format characters that render as nothing
+  [0x34f, 0x34f], [0x115f, 0x1160], [0x17b4, 0x17b5], [0x180b, 0x180f], [0x2800, 0x2800], [0x3164, 0x3164], [0xfe00, 0xfe0f],
+  [0xffa0, 0xffa0], [0xfffc, 0xfffc], [0x1d173, 0x1d17a],
 ];
 const cls = (n: number): string => (n <= 0xffff ? "\\u" + n.toString(16).padStart(4, "0") : "\\u{" + n.toString(16) + "}");
 const UNSAFE = new RegExp("[" + RANGES.map(([a, b]) => (a === b ? cls(a) : cls(a) + "-" + cls(b))).join("") + "]", "gu");
@@ -37,6 +40,8 @@ export function safeText(s: string): string {
     .replace(/\r\n/g, "\n")
     .replace(UNSAFE, (c, off: number, whole: string) => {
       const cp = c.codePointAt(0)!;
+      // One emoji-presentation selector right after an emoji keeps the emoji an emoji.
+      if ((cp === 0xfe0f || cp === 0xfe0e) && /\p{Extended_Pictographic}|[0-9#*]/u.test(lastCp(whole, off))) return c;
       if ((cp === 0x200c || cp === 0x200d) && LETTERISH.test(lastCp(whole, off)) && LETTERISH.test(firstCp(whole, off + 1))) return c;
       if (cp <= 0xffff) return hex4(cp);
       const v = cp - 0x10000;
@@ -64,4 +69,12 @@ export function installTerminalGuard(): void {
   const write = process.stdout.write.bind(process.stdout) as (chunk: unknown, ...rest: unknown[]) => boolean;
   process.stdout.write = ((chunk: unknown, ...rest: unknown[]): boolean =>
     write(typeof chunk === "string" ? safeText(chunk) : chunk, ...rest)) as typeof process.stdout.write;
+  // stderr too. Progress lines our own code writes start with one carriage return ("\rRebuilding edges: ..."); that
+  // one leading return is kept, everything after it is escaped.
+  const ewrite = process.stderr.write.bind(process.stderr) as (chunk: unknown, ...rest: unknown[]) => boolean;
+  process.stderr.write = ((chunk: unknown, ...rest: unknown[]): boolean => {
+    if (typeof chunk !== "string") return ewrite(chunk, ...rest);
+    const lead = chunk.startsWith("\r") && !chunk.startsWith("\r\n") ? "\r" : "";
+    return ewrite(lead + safeText(chunk.slice(lead.length)), ...rest);
+  }) as typeof process.stderr.write;
 }

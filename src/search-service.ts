@@ -13,7 +13,7 @@ import { Store, NoteRecord, clampInt, queryStem } from "./store.js";
 import { embed, embeddingsEnabled, embeddingsConfig, noteEmbeddingText } from "./embeddings.js";
 import { filterByTimeRange } from "./time-parse.js";
 import { extractKeywords } from "./keywords.js";
-import { planRepair, looseExpression, repairEnabled, type RepairPlan } from "./repair.js";
+import { planRepair, looseExpression, repairEnabled, rememberPlan, type RepairPlan } from "./repair.js";
 export { repairEnabled };
 import {
   stalenessConfig,
@@ -753,7 +753,8 @@ export function keywordWithFallbackAcross(
   // repaired hits are merged into the all-terms list, never substituted for it. Off with MONOMEM_REPAIR=off.
   let plan: RepairPlan | null = null;
   if (strict.length < limit && keywords.length > 0 && repairEnabled()) {
-    plan = planRepair(store, keywords, { abbreviations: strict.length === 0 });
+    plan = planRepair(store, keywords, { abbreviations: true });
+    rememberPlan(store, keywords, plan);
     if (plan?.strictExpr) {
       const seenStrict = new Set(strict.map((h) => h.note.id));
       const fixed = over(query, false, limit, plan.strictExpr).filter((h) => !seenStrict.has(h.note.id));

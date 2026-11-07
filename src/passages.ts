@@ -8,7 +8,7 @@
 
 import { extractKeywords } from "./keywords.js";
 import { queryStem, type Store } from "./store.js";
-import { planRepair, repairEnabled } from "./repair.js";
+import { rememberedTerms, repairEnabled } from "./repair.js";
 
 export interface Passage {
   /** Character offset of the passage in the note body. */
@@ -76,7 +76,7 @@ export function splitPassages(body: string): Passage[] {
   if (turnStarts.length >= 2) {
     for (const t of turnStarts) if (t > 0) bounds.push(t);
   } else {
-    for (const m of text.matchAll(/\n[ \t]*\n+/g)) bounds.push((m.index ?? 0) + m[0].length);
+    for (const m of text.matchAll(/\r?\n[ \t]*\r?\n(?:[ \t]*\r?\n)*/g)) bounds.push((m.index ?? 0) + m[0].length);
   }
   bounds.push(text.length);
   const raw: Passage[] = [];
@@ -292,7 +292,7 @@ export function shapeWithPassages<T extends { id: number; title: string; body?: 
   maxTokens?: number
 ): { results: Array<ReturnType<typeof withPassages<T>>>; passage_tokens: number; max_tokens: number } {
   const budget = Math.min(Math.max(Math.floor(maxTokens ?? DEFAULT_PASSAGE_TOKENS), 20), MAX_PASSAGE_TOKENS);
-  const extraTerms = repairEnabled() ? (planRepair(store, extractKeywords(query), { abbreviations: true })?.terms ?? []) : [];
+  const extraTerms = repairEnabled() ? rememberedTerms(store, extractKeywords(query)) : [];
   const sel = selectPassages(
     results.map((n) => ({ id: n.id, title: n.title, body: n.body ?? "" })),
     query,

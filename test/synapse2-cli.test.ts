@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { safeText, hasUnsafe } from "../src/term-safe.js";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.js");
@@ -97,6 +97,45 @@ test("terminal control characters in a note never reach the terminal", () => {
     for (const args of [["search", "spoof"], ["search", "spoof", "--passages"], ["search", "spoof", "--json"], ["relevant", "spoof prompt"]]) {
       const r = run(home, args);
       assert.ok(!hasUnsafe(r.out) && !r.out.includes(esc), `${args.join(" ")}: ${JSON.stringify(r.out)}`);
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("safeText escapes invisible fillers, keeps an emoji selector after an emoji", () => {
+  const c = (n: number): string => String.fromCodePoint(n);
+  for (const n of [0x34f, 0x115f, 0x1160, 0x3164, 0xffa0, 0xfe01, 0x2800, 0x17b4, 0xfffc, 0x180b, 0x1d173]) {
+    const out = safeText(`a${c(n)}b`);
+    assert.ok(out.includes("\\u"), `U+${n.toString(16)} not escaped`);
+    assert.ok(!hasUnsafe(out));
+  }
+  assert.equal(safeText(`❤${c(0xfe0f)}`), `❤${c(0xfe0f)}`);
+  assert.ok(safeText(`x${c(0xfe0f)}`).includes("\\ufe0f"));
+});
+
+test("stderr is guarded too, but a leading progress carriage return is kept", () => {
+  const mod = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "term-safe.js")).href;
+  const code = `const m = await import(${JSON.stringify(mod)}); m.installTerminalGuard();
+    process.stderr.write("\\rprogress " + String.fromCodePoint(0x202e) + " x\\u001b[2J");`;
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
+  assert.equal(r.stderr, "\rprogress \\u202e x\\u001b[2J");
+});
+
+test("search shows the untrusted notice and the DISTRUSTED marker on plain, --passages and --json output", () => {
+  const home = mkdtempSync(join(tmpdir(), "monomem-cli-"));
+  try {
+    assert.equal(run(home, ["remember", "hostile advice about zebras and their stripes"]).code, 0);
+    assert.equal(run(home, ["trust", "distrust", "cli", "--namespace", "*"]).code, 0);
+    for (const args of [["search", "zebras", "--include-distrusted"], ["search", "zebras", "--include-distrusted", "--passages"]]) {
+      const r = run(home, args);
+      assert.match(r.out, /untrusted/i, args.join(" "));
+      assert.match(r.out, /DISTRUSTED WRITER/, args.join(" "));
+    }
+    for (const extra of [[], ["--passages"]]) {
+      const j = JSON.parse(run(home, ["search", "zebras", "--include-distrusted", "--json", ...extra]).out);
+      assert.match(j.notice, /untrusted/i);
+      assert.equal(j.results[0].distrusted, true);
     }
   } finally {
     rmSync(home, { recursive: true, force: true });

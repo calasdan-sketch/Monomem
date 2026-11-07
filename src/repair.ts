@@ -37,6 +37,8 @@ const MAX_CJK_TERMS = 40;
 const MAX_CJK_GRAMS = 16;
 const MAX_JOIN_PAIRS = 8;
 const MAX_REPAIR_WORD = 40;
+/** Vocabulary scans for CJK words, in total for one query. */
+const MAX_CJK_SCANS = 12;
 
 /** Optimal-string-alignment distance (insert, delete, substitute, adjacent swap), giving up above `max`. */
 export function editDistance(a: string, b: string, max: number): number {
@@ -82,10 +84,12 @@ interface Unit {
   words?: string[];
 }
 
-function cjkUnit(store: Store, kw: string, notes: string[]): Unit {
+function cjkUnit(store: Store, kw: string, notes: string[], budget: { scans: number }): Unit {
   const own = quotePrefix(kw);
   const terms = new Map<string, number>();
   const take = (gram: string, cap: number): void => {
+    if (budget.scans <= 0) return; // each scan walks the whole vocabulary: bounded per query, not per word
+    budget.scans--;
     for (const t of store.vocabTerms({ like: `%${likeEscape(gram)}%`, limit: cap })) {
       if (terms.size >= MAX_CJK_TERMS) return;
       terms.set(t.term, t.doc);
@@ -175,9 +179,10 @@ export const MAX_REPAIR_QUERY_WORDS = 4;
 
 function planRepairInner(store: Store, keywords: string[], o: { abbreviations?: boolean }): RepairPlan | null {
   const short = keywords.length <= MAX_REPAIR_QUERY_WORDS;
+  const cjkBudget = { scans: MAX_CJK_SCANS };
   const notes: string[] = [];
   const units: Unit[] = keywords.map((kw) =>
-    hasCjk(kw) ? cjkUnit(store, kw, notes) : short ? wordUnit(store, kw, notes) : { expr: quotePrefix(kw), repaired: false, kw, alts: [] }
+    hasCjk(kw) ? cjkUnit(store, kw, notes, cjkBudget) : short ? wordUnit(store, kw, notes) : { expr: quotePrefix(kw), repaired: false, kw, alts: [] }
   );
 
   // Adjacent words that an indexed term spells together: "rate limit" -> ratelimit* (note says "rateLimiter"),
@@ -231,4 +236,16 @@ export function looseExpression(keywords: string[], plan: RepairPlan | null): st
   const base = buildMatchQuery(keywords.join(" "), true);
   if (!plan || !plan.looseExtra.length) return base;
   return [base, ...plan.looseExtra].filter(Boolean).join(" OR ");
+}
+
+// The plan a search made is remembered (per store, last query only) so passage selection can reuse its spellings
+// instead of planning again. No entry means the search needed no repair.
+const lastPlans = new WeakMap<Store, { key: string; terms: string[] }>();
+export function rememberPlan(store: Store, keywords: string[], plan: RepairPlan | null): void {
+  lastPlans.set(store, { key: keywords.join(" "), terms: plan?.terms ?? [] });
+}
+/** The repaired spellings the last search for `keywords` used, or [] (never plans anew). */
+export function rememberedTerms(store: Store, keywords: string[]): string[] {
+  const e = lastPlans.get(store);
+  return e && e.key === keywords.join(" ") ? e.terms : [];
 }

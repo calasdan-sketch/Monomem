@@ -139,3 +139,11 @@ test("GET /search?passages=1 shapes results and rejects a bad max_tokens", async
   await new Promise<void>((r) => server.close(() => r()));
   store.close();
 });
+
+test("CRLF bodies split into paragraphs and turns like LF ones", () => {
+  const doc = "First paragraph with enough words to stand alone as a passage.\r\n\r\nSecond paragraph, also long enough to be its own passage here.";
+  assert.equal(splitPassages(doc).length, 2);
+  const chat = "user: my dog is called Biscuit and he is four\r\nassistant: Nice name, how long have you had him?\r\nuser: since he was a puppy";
+  assert.equal(splitPassages(chat).length, 3);
+  for (const p of splitPassages(doc)) assert.equal(doc.slice(p.start, p.end), p.text);
+});

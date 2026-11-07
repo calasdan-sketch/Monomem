@@ -264,7 +264,7 @@ rerun; its 2026-10-31 numbers below used the older keyword ranking inside the fu
 | LongMemEval-S, session | relevant (`state_relevant`) | **97.7** (was 95.3) | 98.7 (97.7) | 92.3 (88.5) | 90.8 (86.7) | 91.5 (87.4) | 1.3 ms |
 | LongMemEval-S, turn (231,606 notes) | keyword | 96.8 | 98.1 | 91.1 | 90.7 | 91.8 | 2.8 ms |
 | LongMemEval-S, turn | relevant | **97.0** (was 95.3 on 2026-10-31) | 98.3 (97.7) | 91.3 (87.9) | 90.9 (87.5) | 92.0 (88.6) | 1.6 ms |
-| LoCoMo-10, session (1,982 q) | keyword | 89.4 (was 89.3) | 95.3 (94.9) | 87.9 (86.4) | 78.6 (77.3) | 76.3 (75.1) | 1.4 ms |
+| LoCoMo-10, session (1,982 q) | keyword | 89.4 (was 89.3; 1.3.0: 89.5 repair off, 89.6 on) | 95.3 (94.9) | 87.9 (86.4) | 78.6 (77.3) | 76.3 (75.1) | 1.4 ms |
 | LoCoMo-10, session | relevant | 89.5 (was 89.3) | 95.4 (94.9) | 87.8 (86.6) | 78.4 (77.3) | 76.0 (74.9) | 0.9 ms |
 | LoCoMo-10, turn (dialog id) | keyword | **59.2** (was 45.2) | 66.5 (51.7) | 57.2 (45.5) | 47.3 (37.9) | 45.4 (37.1) | 1.8 ms |
 | LoCoMo-10, turn (dialog id) | relevant | **59.4** (was 46.5) | 66.8 (52.8) | 57.4 (46.3) | 47.4 (38.9) | 45.5 (38.0) | 1.7 ms |
@@ -381,11 +381,11 @@ nDCG@10 87.5, MRR 88.6, search p50 1.7 ms.
 
 ## Coding-agent recall and passages (1.3.0)
 
-Two committed, offline, no-model benchmarks for the question "what does it cost, in tokens, to hand an agent the evidence?"
+Two committed, no-model benchmarks (`bench:recall` is fully offline; `bench:passages` needs the cached ~277 MB LongMemEval download that `monomem bench --longmemeval` fetches) for the question "what does it cost, in tokens, to hand an agent the evidence?"
 Anyone can re-run them:
 
 ```
-npm run bench:recall          # monomem bench --recall     (no download, about 1 second)
+npm run bench:recall          # monomem bench --recall     (fully offline, about 1 second)
 npm run bench:passages        # monomem bench --passages   (LongMemEval-S, cached by `monomem bench --longmemeval`)
 ```
 
@@ -439,8 +439,8 @@ The top 5 contain a session with an evidence turn for 97.0 % of questions.
 | passages, budget 1,000 | 84.7 % | 75.8 % | 986 / 999 |
 | passages, budget 2,000 | 88.7 % | 80.5 % | 1,982 / 1,998 |
 
-Reading it plainly: at 2,000 tokens (8 times fewer than the whole notes) the agent is handed an evidence turn for 88.7 % of
-questions instead of 97.0 %, and at 500 tokens (32 times fewer) for 80.9 %. Passages are a trade, not a free win: the
+Reading it plainly: at 2,000 tokens (about 8 times fewer than the whole notes) the agent is handed an evidence turn for 88.7 % of
+questions instead of 97.0 %, and at 500 tokens (about 33 times fewer) for 80.9 %. Passages are a trade, not a free win: the
 passage ranker is plain BM25 over turns and loses to reading the whole session when the evidence turn shares few words with
 the question (the same weakness that holds LoCoMo turn recall to 59 %). The budget, passage size (900 characters),
 BM25 length normalisation (b = 1), and the per-note and neighbour rules were tuned on this same dataset, no held-out split.

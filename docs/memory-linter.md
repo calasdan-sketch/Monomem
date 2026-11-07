@@ -65,6 +65,10 @@ Since 1.3.0 the instruction-override rules also see:
 - **Spaced-out text** ("i g n o r e  a l l  p r e v i o u s ...", "I.g.n.o.r.e") and **leetspeak** ("1gn0r3 4ll pr3v10us
   1nstruct10ns"): scanned again after the letters are joined or the digits and symbols are read as letters.
 
+Fetch-and-run lines are flagged only when the same line also addresses the agent ("before answering", "silently", "immediately", "without asking"); a bare `curl ... | sh` install line is not. Override paraphrases are skipped when the instructions are somewhere else ("... in the old README"), and a phrase inside quotation marks is not scanned in other languages (so an i18n test string passes, and so does an attack wrapped in quotes).
+
+**Known bypasses** (not caught; some deliberately, to avoid flagging honest notes): "ignore the instructions above" and other word orders; verbs such as "set aside" or "pay no mind to"; HTML entities and other encodings of the text; base64 or other encoded instructions; a fetch saved to a file and run in a second step (`curl -o x; sh x`); `exec(urlopen(...))` and other interpreters; `tee` or process-substitution variants of pipe-to-shell; an instruction split across fields; any language or paraphrase not listed.
+
 `test/lint-multilingual.test.ts` lists 25 attacks that must be flagged and 15 look-alikes that must not. **Neither list is a
 guarantee.** Anyone who knows the rules can write a paraphrase that passes, in any language; and a pattern list will flag
 some honest notes (those are held for review, never lost, under the default policy). Rely on the read-side untrusted-data

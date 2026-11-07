@@ -326,7 +326,7 @@ are different metrics and are never mixed below.
 
 | | LongMemEval-S R@5 | LoCoMo-10 R@5 | Search used | Source |
 |---|---|---|---|---|
-| **Monomem 1.3.0** | **97.7** session (470 q) | 89.6 session, **59.2** turn (1,982 q) | keyword BM25, no embeddings | [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo), rerun with `monomem bench` |
+| **Monomem 1.3.0** | **97.7** session (470 q) | 89.6 session (89.5 with repair off), **59.2** turn (1,982 q) | keyword BM25, no embeddings | [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo), rerun with `monomem bench` |
 | mcp-memory-service 10.34 | 86.0 session, 80.4 turn | 49.7 (granularity not stated) | all-MiniLM-L6-v2 embeddings | [their BENCHMARKS.md](https://github.com/doobidoo/mcp-memory-service/blob/main/docs/BENCHMARKS.md) |
 | MemPalace | 96.6 raw semantic (500 q); 98.4 hybrid, tuned on 50 and scored on 450 | 60.3 session R@10 raw | embeddings (ChromaDB) | [their README](https://github.com/MemPalace/mempalace) |
 
@@ -334,7 +334,7 @@ Question sets differ slightly (Monomem leaves out LongMemEval's 30 abstention qu
 so read these as close, not exact. Monomem's ranking (1.2.0; 1.3.0 leaves these numbers unchanged) was tuned on these same two datasets with no held-out
 split ([how](./docs/BENCHMARK.md#results-2026-11-06-monomem-120)).
 
-**What 1.3.0 adds, measured here** (committed benchmarks, re-run with `npm run bench:recall` and `npm run bench:passages`;
+**What 1.3.0 adds, measured here** (committed benchmarks, re-run with `npm run bench:recall` (offline) and `npm run bench:passages` (needs the cached ~277 MB LongMemEval download);
 [details and caveats](./docs/BENCHMARK.md#coding-agent-recall-and-passages-130)):
 
 | | Whole notes (1.2.0 behaviour) | Passages (1.3.0, `passages: true`) |
@@ -344,9 +344,9 @@ split ([how](./docs/BENCHMARK.md#results-2026-11-06-monomem-120)).
 | Coding-agent set (34 synthetic queries): evidence present | 94.1 % at 343 tokens (mean) | 94.1 % at 185 tokens (mean, budget 300) |
 | Coding-agent set: note found in top 5, repair off / on | 82.4 % / 94.1 % (typos, split words, `ECONNRESET`, CJK) | |
 
-Passages are a trade, not a free win: on long conversations they hand over 8 to 32 times fewer tokens and miss evidence the
+Passages are a trade, not a free win: on long conversations they hand over about 8 to 33 times fewer tokens and miss evidence the
 whole note would have contained. The coding-agent set is synthetic and written by this project. Query repair leaves
-LongMemEval-S and LoCoMo recall unchanged (R@5 97.7 and 59.2 to 59.3 with it off or on). The default tool schema grew from about 4,709 to 4,829
+LongMemEval-S and LoCoMo recall within 0.1 (R@5 97.7 off and on; LoCoMo turn 59.3 off, 59.2 on). The default tool schema grew from about 4,709 to 4,829
 estimated tokens for the two new parameters.
 
 **End-to-end QA accuracy** is what Mem0 ([LongMemEval 94.4, LoCoMo 92.5](https://github.com/mem0ai/memory-benchmarks)),
@@ -360,7 +360,7 @@ has no such number; it hands the agent the retrieved notes and the agent's own m
 | Runtime | Node 22.16+, 2 direct deps, no native modules | Node 20+, plus Bun and uv (installed for you) and Chroma | Python, ONNX embeddings | Node, a JSON file |
 | Model calls to capture or summarize | none (optional local model, off by default) | yes, it compresses captured activity with a model ([users report the cost](https://github.com/thedotmack/claude-mem/issues/3848)) | optional local LLM for quality scoring | none |
 | Token cost of a lookup, measured | yes, p50 per question: top-5 index rows 165-180 tokens vs 203-16,268 for the five full notes, plus one full note once the agent opens it ([table](./docs/BENCHMARK.md#results-2026-11-06-monomem-120)) | "~10x savings" claimed, not measured | not published | not published |
-| Tool schema the model reads every turn (default tools), estimated tokens | 4,829 (ten tools; measured by `tools/list` length / 4) | unverified | unverified | about 2,766 (measured once in our round-2 teardown; no committed script) |
+| Tool schema the model reads every turn (default tools), estimated tokens | 4,829 (ten tools; measured by `tools/list` length / 4) | unverified | unverified | unverified (an earlier, unscripted measurement of about 2,766 has not been reproduced) |
 | Web dashboard | yes (sessions, quality, meter) | yes (viewer) | yes | no |
 
 Checked against each project's README on 2026-11-06; tell us if one is out of date and we will fix it.
@@ -485,7 +485,7 @@ and no judge (does the right conversation come back?). Monomem 1.2.0, keyword se
 | Dataset | Search | Recall@5 | Recall@10 | Search time (p50) | Top 5 as index rows |
 |---|---|---|---|---|---|
 | LongMemEval-S, 470 questions, by session | keyword (default) | 97.7 % | 98.7 % | 2.9 ms | 180 tokens |
-| LoCoMo-10, 1,982 questions, by session | keyword (default) | 89.4 % | 95.3 % | 1.4 ms | 165 tokens |
+| LoCoMo-10, 1,982 questions, by session | keyword (default) | 89.4 % (1.2.0; 89.5 with 1.3.0 repair off, 89.6 on) | 95.3 % | 1.4 ms | 165 tokens |
 | LoCoMo-10, 1,982 questions, by turn | keyword (default) | 59.2 % | 66.5 % | 1.8 ms | 168 tokens |
 
 1.1.1 scored 95.1 / 89.3 / 45.2 on the same three runs. "Top 5 as index rows" is what an agent pays (p50, about 4

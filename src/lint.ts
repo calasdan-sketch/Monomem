@@ -173,35 +173,23 @@ const INJECTION_PATTERNS: Array<[string, RegExp]> = [
     /!\[[^\]\n]{0,200}\]\(\s*<?https?:\/\/(?!(?:img\.shields\.io|badgen\.net|badge\.fury\.io|codecov\.io)[/:])[^\s)?#]{1,300}\?[^\s)]{0,2000}=/i,
   ],
   [
-    // Paraphrases of "ignore your instructions" that the verb+noun rules above miss.
+    // Paraphrases of "ignore your instructions". Not when the instructions are somewhere else ("... in the old README",
+    // "... of the log output"): that is a note about a document, not an order to the agent.
     "instruction override",
-    /\b(?:pay\s+no\s+(?:attention|heed)\s+to|(?:do\s+not|don'?t|never)\s+(?:listen\s+to|follow|obey|heed|comply\s+with))\s+(?:(?:any|all|the|your|my|these|those|of)\s+)*(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|prompts?|directions?|rules|guidelines|messages|constraints)\b/i,
+    /\b(?:neglect|dismiss|discard)\s+(?:(?:all|any|of|the|your|my|these|those|every|each)\s+)*(?:previous|prior|earlier|preceding|original)\s+(?:instructions?|directives|guidelines)\b(?!\s+(?:in|of|from|on|at|for|within|inside)\b)|(?:pay\s+no\s+(?:attention|heed)\s+to|(?:do\s+not|don'?t|never)\s+(?:listen\s+to|follow|obey|heed|comply\s+with))\s+(?:(?:any|all|the|your|my|these|those|of)\s+)*(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|prompts?|directions?|rules|guidelines|constraints)\b(?!\s+(?:in|of|from|on|at|for|within|inside|under|when|while)\b)/i,
+  ],
+  [
+    // "Forget everything you have been told" -- but not "forget everything above this line when reading the log".
+    "instruction override",
+    /\b(?:forget|ignore|disregard)\s+(?:everything|anything|all)\s+(?:(?:that\s+)?you(?:'ve|\s+have)?\s+(?:read|seen|learned|heard|been\s+(?:told|given))|above\b(?!\s+(?:this|that|the|these|those)\b)|i\s+(?:said|told))/i,
   ],
   [
     "instruction override",
-    /\b(?:forget|ignore|disregard|erase|drop)\s+(?:everything|anything|all)\s+(?:(?:that\s+)?(?:you(?:'ve|\s+have)?\s+(?:read|seen|learned|heard|been\s+(?:told|given))|(?:was|were)\s+(?:said|written))|above|before|so\s+far|i\s+(?:said|told))\b/i,
-  ],
-  [
-    "instruction override",
-    /\byour\s+(?:real|true|actual|new|updated|secret|hidden)\s+(?:instructions?|task|purpose|goal|mission|orders?|objective)\s+(?:is|are|:)/i,
+    /\byour\s+(?:real|true|actual|secret|hidden)\s+(?:instructions?|orders?)\s+(?:is|are|:)/i,
   ],
   [
     "instruction override",
     /\b(?:all\s+)?(?:previous|prior|earlier|above|preceding)\s+(?:instructions?|rules|guidelines|directions)\s+(?:are|were|is)\s+(?:now\s+)?(?:void|null|cancel(?:l)?ed|revoked|invalid|overridden|rescinded)\b/i,
-  ],
-  [
-    // An instruction to fetch-and-run: an imperative (run / execute / paste ...) or a silence cue, then a download
-    // piped into a shell or interpreter, or a decode-and-run. A bare install line in a README note is not flagged.
-    "pipe-to-shell instruction",
-    /\b(?:run|execute|exec|invoke|paste|launch|start|issue|type|use)\b[^\n]{0,60}?\b(?:curl|wget|fetch|iwr|invoke-webrequest|irm|invoke-restmethod)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k|a)?sh|python3?|node|perl|ruby|iex|invoke-expression|powershell|pwsh)\b/i,
-  ],
-  [
-    "pipe-to-shell instruction",
-    /\b(?:silently|quietly|secretly|in\s+the\s+background|without\s+(?:asking|confirmation|review))\b[^\n]{0,80}?\b(?:curl|wget|iwr|irm)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k|a)?sh|python3?|node|iex)\b/i,
-  ],
-  [
-    "pipe-to-shell instruction",
-    /\b(?:run|execute|invoke|paste)\b[^\n]{0,40}?(?:\b(?:ba|z)?sh\s+-c\s+["']?\$\(\s*(?:curl|wget)|\b(?:eval|source)\s+["']?\$\(\s*(?:curl|wget)|\b(?:iex|invoke-expression)\s*\(?\s*\(?\s*(?:iwr|irm|invoke-webrequest|invoke-restmethod|new-object\s+net\.webclient)|\bbase64\s+(?:-d|--decode)\b[^\n|]{0,80}\|\s*(?:ba|z)?sh\b|\b(?:ba|z)?sh\s+<\(\s*(?:curl|wget))/i,
   ],
   [
     // Raw agent tool-call markup. Its OWN label, and deliberately LAST.
@@ -293,6 +281,24 @@ function normalizeKeepScripts(text: string): string {
     .replace(/\s+/g, (m) => (m.includes("\n") ? "\n" : " "));
 }
 
+// ---- Pipe-to-shell: fetch-and-run, flagged only when the line also addresses the agent -----------------------------
+// "Install with: curl https://get.docker.com | sh" is a normal note. It becomes an injection when the same line tells
+// the agent to do it before anything else, or silently, or without asking.
+const FETCH_AND_RUN =
+  /\b(?:curl|wget|fetch|iwr|invoke-webrequest|irm|invoke-restmethod)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:env\s+)?(?:(?:\/(?:usr\/)?bin\/)?(?:ba|z|da|k|a)?sh|python3?|node|perl|ruby|iex|invoke-expression|powershell|pwsh)\b(?!\s+-m\s+json\.tool)(?!\s+-e\b)|\b(?:ba|z)?sh\s+-c\s+["']?\$\(\s*(?:curl|wget)|\b(?:eval|source)\s+["']?\$\(\s*(?:curl|wget)|\b(?:iex|invoke-expression)\s*\(?\s*\(?\s*(?:iwr|irm|invoke-webrequest|invoke-restmethod|new-object\s+net\.webclient)|\bbase64\s+(?:-d|--decode)\b[^\n|]{0,80}\|\s*(?:ba|z)?sh\b|\b(?:ba|z)?sh\s+<\(\s*(?:curl|wget)/i;
+const AGENT_CUE =
+  /\b(?:before\s+(?:you\s+)?(?:answer|answering|respond|responding|repl(?:y|ying)|continu(?:e|ing)|proceed(?:ing)?|doing\s+anything|anything\s+else|any\s+other)|immediately|right\s+away|silently|quietly|secretly|in\s+the\s+background|without\s+(?:asking|confirmation|review|telling|mentioning)|do\s+not\s+(?:tell|mention|ask)|don'?t\s+(?:tell|mention|ask)|you\s+(?:must|have\s+to|need\s+to)\s+(?:first\s+)?(?:run|execute))\b/i;
+function pipeToShell(t: string): boolean {
+  for (const line of t.split("\n")) {
+    if (line.length > 4000) continue;
+    if (FETCH_AND_RUN.test(line) && AGENT_CUE.test(line)) return true;
+  }
+  return false;
+}
+
+/** Spans of straight, curly, guillemet and code quotes (a string being quoted, not an order). Apostrophes only when they open a word group. */
+const QUOTED = /"[^"\n]{1,200}"|\u201c[^\u201d\n]{1,200}\u201d|\u00ab[^\u00bb\n]{1,200}\u00bb|`[^`\n]{1,200}`|(?<![\p{L}\p{N}])'[^'\n]{1,200}'(?![\p{L}\p{N}])/gu;
+
 /** First injection label found in `text`, or null. */
 export function scanForInjection(text: string | undefined): string | null {
   if (!text) return null;
@@ -308,15 +314,33 @@ export function scanForInjection(text: string | undefined): string | null {
   };
   const direct = english(t, prose);
   if (direct) return direct;
+  if (pipeToShell(t)) return "pipe-to-shell instruction";
   // Other languages: Russian etc. need the unfolded text.
-  const kept = normalizeKeepScripts(text);
+  // A phrase inside quotation marks is a string being talked about (an i18n test fixture), so it is not scanned here.
+  const kept = normalizeKeepScripts(text).replace(QUOTED, " ");
   if (MULTILINGUAL.some((re) => re.test(kept))) return "instruction override";
-  // Spaced-out letters: "i g n o r e  a l l  p r e v i o u s".
-  const sp = despace(t);
-  if (sp.found) {
-    const hit = english(sp.text, sp.text.replace(/`[^`\n]*`/g, " "));
-    if (hit) return hit;
-    if (COMPACT_OVERRIDE.test(t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ""))) return "instruction override";
+  // Spaced-out letters: "i g n o r e  a l l  p r e v i o u s". Only the spaced span and 60 characters around it are
+  // joined and re-read, so "Version 1.2.3 released. Do not override existing rules" is not turned into a match.
+  const runs = [...t.matchAll(SPACED_RUN)];
+  if (runs.length) {
+    const groups: Array<{ start: number; end: number; letters: string }> = [];
+    for (const m of runs) {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      const last = groups[groups.length - 1];
+      const letters = m[0].replace(/[ \t.*_\-]/g, "");
+      if (last && /^\s*$/.test(t.slice(last.end, start))) {
+        last.end = end;
+        last.letters += letters;
+      } else groups.push({ start, end, letters });
+    }
+    for (const g of groups) {
+      const seg = t.slice(Math.max(0, g.start - 60), Math.min(t.length, g.end + 60));
+      const joined = despace(seg).text;
+      const hit = english(joined, joined.replace(/`[^`\n]*`/g, " "));
+      if (hit) return hit;
+      if (COMPACT_OVERRIDE.test(g.letters.toLowerCase())) return "instruction override";
+    }
   }
   // Leetspeak: "1gn0r3 4ll pr3v10us 1nstruct10ns".
   if (LEET_SIGNAL.test(t)) {

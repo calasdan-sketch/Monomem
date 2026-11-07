@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { Store } from "../store.js";
 import { LIMITS } from "../security.js";
 import { repairEnabled, runSearch } from "../search-service.js";
-import { planRepair } from "../repair.js";
+import { rememberedTerms } from "../repair.js";
 import { extractKeywords } from "../keywords.js";
 import { estTokens, selectPassages } from "../passages.js";
 import { CACHE_DIR, SOURCES, fetchOnce } from "./retrieval.js";
@@ -113,7 +113,7 @@ export async function runRecall(file = defaultRecallFile()): Promise<RecallRepor
           const wholeText = whole.join("\n");
           const arms: Array<[string, string, number]> = [["whole", wholeText, estTokens(wholeText.length)]];
           for (const b of BUDGETS_RECALL) {
-            const extraTerms = repairEnabled() ? (planRepair(store, extractKeywords(x.query), { abbreviations: true })?.terms ?? []) : [];
+            const extraTerms = repairEnabled() ? rememberedTerms(store, extractKeywords(x.query)) : [];
             const sel = selectPassages(hits.map((h) => ({ id: h.id, title: h.title, body: h.body })), x.query, { maxTokens: b, extraTerms });
             const txt = sel.picked.map((p) => p.text).join("\n");
             arms.push([`passages@${b}`, txt, sel.tokens]);
