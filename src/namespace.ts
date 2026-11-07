@@ -47,6 +47,8 @@ export interface ServerNamespaceOpts {
    * surface and must not depend on the ambient environment.
    */
   tools?: "all" | readonly string[];
+  /** "compact" serves shorter tool descriptions (same tools and parameters); overrides MONOMEM_SCHEMA. */
+  schema?: "compact" | "full";
 }
 
 const SPACES_ENV = "MONOMEM_SPACES";

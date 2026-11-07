@@ -4,6 +4,55 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - Unreleased
+
+A bigger store no longer slows the first write, the session start or a missed search; a damaged file can be salvaged; the passage settings
+were re-checked on data they were not tuned on. Round 3 of a review by five specialists (a heavy daily user, a concurrency engineer, a red team, a
+product/DX lead, an evaluation scientist): what each found and the 28 ideas scored are in [docs/plans/round3-experts-and-ideas.md](https://github.com/calasdan-sketch/monomem/blob/main/docs/plans/round3-experts-and-ideas.md).
+Nothing to migrate. The first open of an existing store builds one index (about a second at 100,000 notes); older versions ignore it.
+
+### Added
+
+- **`monomem bench --scale [--notes N]`**: write latency with similar-note links, keyword search latency, three commands in a new process, disk and
+  memory on a synthetic store (default 20,000 notes), plus how closely the large-store link search agrees with the exhaustive one. 100,000 notes:
+  write p50 16.4 ms (p95 41.6), search p50 2.5 ms, first `remember` 0.22 s, `recall` 0.82 s. See [docs/BENCHMARK.md](./docs/BENCHMARK.md#scale-140).
+- **Repeat-write hint.** Saving a NEW note now also returns `similar` (up to three live notes of the same namespace scoring 0.4 or higher; id, title, score)
+  and `similar_hint`, in `state_write`, `POST /notes` and `monomem remember`. Nothing is blocked. On rule-made copies of 36 notes it names the original for
+  100 % (partial copy) and 97.2 % (every number changed), with 0 false alarms on the 36 distinct notes; real rewordings are harder (upper bound).
+  `MONOMEM_OVERLAP_HINT=off` disables it. Adds nothing to the tool schema.
+- **`monomem recover [--from damaged.db] [--out new.db]`** copies every readable note (and its earlier versions) into a new database; the damaged file is opened read-only
+  and never changed, and the output is never an existing file. A 4,000-note file cut at 50 %: 49.1 % of notes back; at 90 %: 90.5 %; 8 KB zeroed: 99.7 %; first 16 bytes overwritten: 100 %. Any command that fails on a damaged file now says to run it.
+- **`monomem doctor --deep`**: the file's structure (`integrity_check`), the search index against the notes, and similar-note links that point at a missing note.
+- **`monomem bench --passages --sweep`**: the held-out check of the passage settings (see Changed).
+- **`monomem import --from mcp-memory --path memory.json`**: brings in the official MCP memory server's knowledge graph (one note per entity: observations, then relations).
+- The injection linter decodes character references and escapes before scanning (`&#105;gnore ...`, `\u0069gnore ...`), found by the red team. Base64 and URL-encoding remain unread.
+
+### Changed
+
+- **Similar-note links in a big namespace come from the full-text index.** Above 2,000 live notes in one namespace (`MONOMEM_EDGE_EXACT_MAX_NOTES`, `0` = always) a new or edited note's links are found by
+  asking the index for the notes holding its 24 most telling words and scoring 48 candidates, instead of scoring every note that shares a word from an in-memory index of the whole namespace.
+  The write no longer slows as the store grows, the first write no longer stalls (100,000 notes: 8.6 s to 0.2 s), and the process holds no per-note word index. The price, measured: 91.9 % of
+  the links the exhaustive scan finds (98.7 % of each note's best three) on 3,000 clustered notes. Below 2,000 notes nothing changes. `rebuild-edges` is unchanged.
+- **Newest-notes reads use an index** (`idx_notes_ns_updated`, created on first open, not a schema version): a page of the newest notes went from 260 ms to 6 ms at 100,000 notes. The session-start pack no longer counts rows it does not need
+  (`list` takes `withTotal: false`). `recall` at 100,000 notes: 1.6 s to 0.7 to 0.8 s.
+- **Query repair narrows above 2,000 notes** (`MONOMEM_REPAIR_FULL_MAX_NOTES`): a typo must keep its first two letters, the `connection reset` to `ECONNRESET` scan is skipped, CJK words get 4 scans instead of 12.
+  A missed search at 100,000 notes: 350 ms to about 2 ms. Search results on small stores, and LongMemEval-S R@5 (97.7) and LoCoMo turn R@5 (59.2), are unchanged.
+- **Passage defaults re-tuned on held-out data**: `rankPrior` 0.25 to 0.5, `k1` 1.2 to 1.6, `roleBoost` 0 to 0.6, `window` 0 to 400. Tuned on the dev half (228 questions) of LongMemEval-S and judged on the untouched test half
+  (242): evidence at 500 tokens 80.2 % to 85.5 % (bootstrap 95 % interval for the gain +2.5 to +8.3 points); +10.4, +7.0 and +4.9 at 250, 1,000 and 2,000 tokens. On the dev half the same search gained 8.8, so 1.3.0's
+  "tuned on the same data" figures were optimistic by that measure. On the coding-agent set, the 150-token budget lost one query of 34 (91.2 % to 88.2 %); 300 and 600 are unchanged.
+- The CLI explains a damaged database ("... run `monomem recover`") instead of printing only SQLite's message.
+
+### Fixed
+
+- `docs/configuration.md` did not list `MONOMEM_SCHEMA` (the docs test failed on the 1.3.0 commit); it and the three new settings are listed.
+
+### Not done
+
+- Competing tools were not run at 100,000 notes, so every comparison of scale is Monomem against its own earlier version.
+- The scale benchmark is one synthetic distribution on one machine; recall at that size has no gold labels. `recall` still scans for task and handoff tags (about 75 ms each at 100,000 notes) and `monomem quality` takes 17 s there.
+- The repeat-write hint is tested on rule-made copies, not human or model rewordings, and does not decide anything: replacing a note stays a two-step confirm.
+- Semantic mode was not re-run (no embedding server). `recover` does not read a write-ahead log left by a crash of a file that was open.
+
 ## [1.3.0] - Unreleased
 
 Cheaper lookups and fewer missed searches, with benchmarks anyone can re-run. Nothing to migrate: the database and its index

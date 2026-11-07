@@ -299,9 +299,24 @@ function pipeToShell(t: string): boolean {
 /** Spans of straight, curly, guillemet and code quotes (a string being quoted, not an order). Apostrophes only when they open a word group. */
 const QUOTED = /"[^"\n]{1,200}"|\u201c[^\u201d\n]{1,200}\u201d|\u00ab[^\u00bb\n]{1,200}\u00bb|`[^`\n]{1,200}`|(?<![\p{L}\p{N}])'[^'\n]{1,200}'(?![\p{L}\p{N}])/gu;
 
-/** First injection label found in `text`, or null. */
+/** Text written as character references or escapes (`&#105;gnore`, `&#x69;`, `\\u0069gnore`, `\\x69`), decoded. */
+export function decodeEscapes(text: string): string {
+  const cp = (n: number): string => (Number.isInteger(n) && n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : "");
+  return text
+    .replace(/&#(\d{1,10});?/g, (_, d: string) => cp(Number(d)))
+    .replace(/&#x([0-9a-f]{1,6});?/gi, (_, h: string) => cp(parseInt(h, 16)))
+    .replace(/\\u\{?([0-9a-f]{4,6})\}?/gi, (_, h: string) => cp(parseInt(h, 16)))
+    .replace(/\\x([0-9a-f]{2})/gi, (_, h: string) => cp(parseInt(h, 16)));
+}
+
+/** First injection label found in `text` (also as it reads once character references and escapes are decoded), or null. */
 export function scanForInjection(text: string | undefined): string | null {
   if (!text) return null;
+  const decoded = text.length <= 200_000 && /&#|\\[ux]/i.test(text) ? decodeEscapes(text) : text;
+  return scanOne(text) ?? (decoded !== text ? scanOne(decoded) : null);
+}
+
+function scanOne(text: string): string | null {
   const t = normalizeForScan(text);
   // Chat-template tokens inside inline code are quoted, not a prompt
   // (`<|im_start|>` in a doc); only the marker rule skips code spans.

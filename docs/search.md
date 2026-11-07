@@ -61,6 +61,12 @@ index is normal in a question and repairing it lowered LoCoMo recall. `MONOMEM_R
 whole index, but the repaired query is filtered by the same namespace, trust and time rules as any search, so it can only
 return what the caller may read. Numbers: [BENCHMARK.md](./BENCHMARK.md#coding-agent-recall-and-passages-130).
 
+**On a big store (1.4.0).** Repair reads the index's vocabulary, which costs time in proportion to the index: about 50 ms for a missed
+query at 5,000 notes and 350 ms at 100,000. Above 2,000 notes (`MONOMEM_REPAIR_FULL_MAX_NOTES`) it narrows: a misspelt word must keep its
+first two letters (it was one), the abbreviation step (`connection reset` finds `ECONNRESET`) is skipped, and CJK words get 4
+vocabulary scans per query instead of 12. A missed query then costs about a millisecond more than with repair off (20,000 notes:
+1.4 ms against 1.1 ms; 113 ms with the full scan).
+
 ## Passages: the paragraph, not the whole note
 
 `state_search` returns whole notes, and a long note costs its full length in the agent's context even when one paragraph answers

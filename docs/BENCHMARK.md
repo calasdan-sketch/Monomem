@@ -50,7 +50,7 @@ Five suites, written as plain JSON files in [`bench/scenarios/`](https://github.
 - **Not retrieval quality.** Search here is keyword search with made-up unique words. There are no embeddings,
   no paraphrases, no relevance judgements. For that, see [Retrieval: LongMemEval-S and LoCoMo](#retrieval-longmemeval-s-and-locomo)
   below and the retrieval evaluation set in `evals/`.
-- **Not speed, scale or concurrency.** Each scenario is a handful of calls on an empty store.
+- **Not speed, scale or concurrency.** Each scenario is a handful of calls on an empty store. For scale see [Scale (1.4.0)](#scale-140): a separate benchmark.
 - **Not proof of safety.** "0 leaks" means none of the probes written here leaked. It is a regression gate, not
   an audit.
 - **A deployed server.** It runs one process on the loopback interface. TLS, proxies and tunnels are not involved.
@@ -443,7 +443,7 @@ Reading it plainly: at 2,000 tokens (about 8 times fewer than the whole notes) t
 questions instead of 97.0 %, and at 500 tokens (about 33 times fewer) for 80.9 %. Passages are a trade, not a free win: the
 passage ranker is plain BM25 over turns and loses to reading the whole session when the evidence turn shares few words with
 the question (the same weakness that holds LoCoMo turn recall to 59 %). The budget, passage size (900 characters),
-BM25 length normalisation (b = 1), and the per-note and neighbour rules were tuned on this same dataset, no held-out split.
+BM25 length normalisation (b = 1), and the per-note and neighbour rules were tuned on this same dataset, no held-out split (1.3.0; 1.4.0 re-tuned four of them with one: see [Held-out passage settings](#held-out-passage-settings-140)).
 Where a `memory_index` first, then `memory_get` flow suits the agent better (about 3,400 tokens for 97 %), that remains the
 other option.
 
@@ -460,6 +460,95 @@ Keyword search, same machine, `MONOMEM_REPAIR=off` vs on (the benchmark keeps th
 Repair does not change recall on these sets (differences are 0.1 or less, two questions at most), which is the aim: they hold
 well-formed questions. It costs about 0.2 to 0.4 ms at the median. A first version that also repaired long questions lowered
 LoCoMo turn R@5 to 58.7 and was cut back to queries of 4 words or fewer.
+
+### Scale (1.4.0)
+
+```
+monomem bench --scale [--notes 100000] [--json]     # default 20,000 notes; the 100,000 run takes about 8 minutes
+```
+
+A synthetic store (clustered topics with a Zipf-shaped vocabulary, a fixed seed, so another machine builds the same notes). The bulk of
+it goes in without similarity links, as a restore would; the last 300 notes are ordinary writes with links, at full size. Then 200
+keyword searches (3 to 5 words taken from a stored note), and three commands in a **new process** against the finished file. Same machine for every row.
+
+| 1.4.0 | 20,000 notes (40 MB) | 100,000 notes (192 MB) |
+|---|---|---|
+| write with similar-note links, p50 / p95 | 12.7 / 26.1 ms | 16.4 / 41.6 ms |
+| keyword search, p50 / p95 | 1.4 / 14.1 ms | 2.5 / 61.0 ms |
+| new process: `search` / `remember` / `recall` | 101 / 140 / 383 ms | 125 / 223 / 821 ms |
+| peak memory of the whole run (includes a second 3,000-note store) | 262 MB | 266 MB |
+
+Before, measured the same way on the same machine (1.3.0 code, 20,000 notes, same notes): write p50 17.8 / p95 27.1 ms with **one write of 1,257 ms** (the
+first, which built an in-memory word index of the whole namespace) and 407 MB peak memory; keyword search p50 116 / p95 151 ms (query repair). The
+steady-state write is a modest gain at 20,000 notes; what changed is that the cost no longer grows with the store. On an older 100,000-note store with a different random
+vocabulary (so not the same table): the first `remember` in a new process took **8.6 s** and the
+session-start `recall` 1.6 s (over its 0.8 s budget); now 0.17 s and 0.7 s. A missed search there cost 350 ms and now about 2 ms. And writing 5,000 notes with links on 1.3.0 slowed from 4.5 ms
+to 17 ms a note, linearly.
+
+What changed, and what it costs: above 2,000 live notes in one namespace (`MONOMEM_EDGE_EXACT_MAX_NOTES`) a new note's similar-note links are found by asking
+the full-text index for notes holding its 24 most telling words, then scoring 48 candidates, instead of scoring every note that shares a word. The last row of
+the report measures the price: on 3,000 clustered notes it finds **91.9 % of the links the exhaustive scan finds, and 98.7 % of each note's three best**. A note whose only
+shared words are very common ones can be missed. `monomem rebuild-edges` still scores every pair. "Newest notes first" reads a new index
+(`idx_notes_ns_updated`, built at the first open of a store that lacks it; older versions ignore it), and
+query repair narrows its vocabulary scans above 2,000 notes ([search.md](./search.md#query-repair)).
+
+With at-rest encryption the bodies are not in the full-text index ([encryption-retention.md](./encryption-retention.md)), so the large-store link search finds its candidates by title and tags only (it still scores them on the full text); this was not measured.
+
+Limits: one synthetic distribution, one machine, one run each (no repeats, so no confidence interval); search times are for queries that mostly
+need the "some of the words" step. Recall at this size was not measured (no gold labels), only speed. Two things still scale with the store: `recall` (three
+tag lookups of about 75 ms each at 100,000 notes) and `monomem quality` (17 s). Competing tools were not run at this size; their scale behaviour is unverified.
+
+### Held-out passage settings (1.4.0)
+
+```
+monomem bench --passages --sweep [--budget 500] [--json]      # needs the cached LongMemEval-S download
+```
+
+1.3.0 chose its passage settings on all 470 questions and reported them on the same 470. This splits the questions in two by a fixed hash of
+the question id (228 dev, 242 test), searches the settings on **dev only** (a coordinate search over eight settings, two passes, maximising evidence
+coverage at 500 tokens), and then scores the 1.3.0 settings and the dev-tuned ones on **test**, which no choice ever saw. The interval is a bootstrap over test questions (1,000 resamples).
+
+| Evidence handed over (test half, 242 questions) | 1.3.0 settings | dev-tuned (1.4.0 defaults) | difference, 95 % interval |
+|---|---|---|---|
+| budget 250 tokens (not tuned for) | 70.2 % | 80.6 % | +10.4 (6.2 to 14.5) |
+| budget **500 tokens (tuned at)** | 80.2 % | 85.5 % | +5.3 (2.5 to 8.3) |
+| budget 1,000 (not tuned for) | 83.5 % | 90.5 % | +7.0 (3.7 to 10.7) |
+| budget 2,000 (not tuned for) | 87.2 % | 92.1 % | +4.9 (2.1 to 8.3) |
+
+On the dev half the same search gained 8.8 points (81.6 to 90.4), against 5.3 on test: the usual optimism of tuning on the data you report, now measured. The search changed
+four settings: `rankPrior` 0.25 to 0.5, BM25 `k1` 1.2 to 1.6, `roleBoost` 0 to 0.6 (a chat turn from the user counts 1.6 times), `window` 0 to 400 (a passage over 500 characters is cut to the 400-character
+stretch holding most query words). They are the new defaults in `PASSAGE_DEFAULTS`. Whole top-5 notes hold evidence for 96.3 % of the test questions, so passages are still a trade.
+Caveats: LongMemEval is chat; `roleBoost` does nothing for notes that are not `user:` turns, and on the coding-agent set the 150-token budget lost one of 34 queries (91.2 % to 88.2 %; 300 and 600 tokens unchanged at 94.1 %).
+The earlier statements elsewhere in this file that the passage settings had no held-out split describe 1.3.0; the table above is the held-out check. The retrieval ranking of `state_search`
+(R@5 97.7, LoCoMo 89.5 to 89.6 and 59.2) was still tuned on those same datasets with no held-out split.
+
+### Repeat-write hint (1.4.0)
+
+After a **new** note is saved, the result names up to three existing notes of the same namespace whose similarity score is 0.4 or higher (`similar`, `similar_hint`; also in `POST /notes` and
+`monomem remember`). Nothing is blocked or merged; `MONOMEM_OVERLAP_HINT=off` turns it off. Measured by `monomem bench --recall` on the 36 coding-agent notes, with copies made by rule:
+
+| Write | Named the original |
+|---|---|
+| partial copy (two thirds of the sentences, shuffled, new title), 36 | 100 % |
+| corrected copy (every number changed), 36 | 97.2 % |
+| the 36 distinct notes themselves (a false alarm is a hint naming any earlier note) | 0 % |
+
+The threshold sweep is flat from 0.3 to 0.7 on this set; 0.4 was chosen because short restatements score lower (a seven-word note against a copy that changes one word and a number scored 0.43, since the words two notes do not share weigh more in a small store). **Upper bound, not a forecast:** rule-made copies share most of their words; a real rewording by another model shares fewer, and distinct notes on one topic share more than these 36 do.
+
+### Recovering a damaged file (1.4.0)
+
+`monomem recover [--from damaged.db] [--out new.db]` copies the notes it can still read into a new database; the damaged file is opened read-only. On a 4,000-note file:
+
+| Damage | Notes recovered |
+|---|---|
+| file cut at 50 % | 1,963 (49.1 %) |
+| file cut at 90 % | 3,621 (90.5 %) |
+| 8 KB zeroed in the middle | 3,987 (99.7 %) |
+| first 16 bytes overwritten | 4,000 (100 %) |
+
+What survives is what is on intact pages, so the share depends on where the damage is (a 600-note file in `npm test` returned 31 % after a 50 % cut). Similar-note links, the change feed and trust settings are not copied
+(`rebuild-edges` makes the links again). Encrypted bodies are copied as they are and open only with the original `.key`. `monomem doctor --deep` finds the damage first.
+Not tested: damage inside the write-ahead log of a file that was open at the time.
 
 ### Tool schema size
 

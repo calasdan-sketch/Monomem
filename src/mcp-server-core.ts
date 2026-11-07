@@ -22,6 +22,7 @@ import {
   type NoteRecord,
 } from "./store.js";
 import type { LintFinding } from "./lint.js";
+import { installCompactSchema, schemaCompactEnabled } from "./schema-compact.js";
 import {
   putTask,
   listTasks,
@@ -42,6 +43,7 @@ import { waitForChanges, parseWait, WAIT_MAX_SECONDS, WAIT_RECOMMENDED_SECONDS }
 import { type Scope, PACKAGE_VERSION } from "./config.js";
 export { PACKAGE_VERSION };
 import { scopeAllows, UNTRUSTED_BANNER, provenanceBanner, audit, LIMITS } from "./security.js";
+import { overlapFor } from "./overlap.js";
 import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, SEARCH_MODES, type SearchOpts, type RelevantOpts, type ExplainedHit } from "./search-service.js";
 import {
   type ServerNamespaceOpts,
@@ -515,7 +517,7 @@ export function createMcpServer(
           { lintWarnings: warnings }
         );
         await maybeEmbed(store, created);
-        return untrustedResult(withWarnings({ note: created }, warnings));
+        return untrustedResult({ ...withWarnings({ note: created }, warnings), ...(overlapFor(store, created) ?? {}) });
       } catch (e) {
         if (e instanceof QuarantinedError) return quarantinedResult(e);
         return errorFor(e);
@@ -2114,5 +2116,6 @@ export function createMcpServer(
     }
   );
 
+  if (opts.schema === "compact" || (opts.schema === undefined && schemaCompactEnabled())) installCompactSchema(server);
   return server;
 }

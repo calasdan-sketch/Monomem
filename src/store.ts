@@ -1037,6 +1037,23 @@ export function edgeIndexLimits(): { idleMs: number; maxNotes: number } {
   };
 }
 
+/**
+ * Above this many live notes in ONE namespace, similarity edges are found through the full-text index instead of the
+ * in-memory term index (see Store.planEdgesIndexed): a write then costs about the same at 5,000 notes and at 500,000,
+ * and the process does not hold every note's words in memory. Below it the exhaustive in-memory scoring is used, as before.
+ * MONOMEM_EDGE_EXACT_MAX_NOTES (default 2,000; 0 = always use the index).
+ */
+export function edgeExactMaxNotes(): number {
+  const v = process.env.MONOMEM_EDGE_EXACT_MAX_NOTES;
+  const n = Number(v);
+  return v !== undefined && v.trim() !== "" && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 2000;
+}
+
+/** Candidates the indexed edge path scores per write, and the rarest query words it asks the index for. */
+export const EDGE_INDEXED_CANDIDATES = 48;
+const EDGE_INDEXED_TERMS = 24;
+const EDGE_INDEXED_BODY_CHARS = 20_000;
+
 /** One directed similarity edge endpoint: a similar note + the pair's score. */
 export interface NeighborEntry {
   id: number;
@@ -1569,6 +1586,14 @@ export class Store {
       }
     } catch {
       /* read-only file: no writer can store a capture event either */
+    }
+    try {
+      // 1.4.0: "newest notes of a namespace" (every list, the session-start pack, the dashboard) sorted the whole
+      // namespace for each call: 260 ms at 100,000 notes. An index in sort order stops at the page. Not a schema
+      // version: an older build ignores it. A process that never migrates (the capture hooks) leaves it to the next writer.
+      if (!this.noMigrate) this.db.exec("CREATE INDEX IF NOT EXISTS idx_notes_ns_updated ON notes(namespace, updated_at DESC, id DESC)");
+    } catch {
+      /* read-only file, or a busy database: the next writer builds it */
     }
   }
 
@@ -4297,6 +4322,15 @@ export class Store {
     }
   }
 
+  private indexNames: Set<string> | undefined;
+  /** True when this database has the named index (read once per connection; an index built later is picked up on reopen). */
+  private hasIndex(name: string): boolean {
+    this.indexNames ??= new Set(
+      (this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as Array<{ name: string }>).map((r) => r.name)
+    );
+    return this.indexNames.has(name);
+  }
+
   /**
    * Newest-first page of notes. `namespace` restricts to one namespace;
    * `namespaces` (used by server-side namespace resolution to list every
@@ -4325,6 +4359,8 @@ export class Store {
       withTagPrefix?: string;
       /** v16: newest-created first or oldest-created first, instead of last-updated first (timelines). */
       order?: "created_desc" | "created_asc";
+      /** false: skip the COUNT of all matching rows (a full index scan on a big store) and return the page size as `total`. */
+      withTotal?: boolean;
     } & RangeOpts = {}
   ): {
     notes: NoteRecord[];
@@ -4344,6 +4380,18 @@ export class Store {
 
     let rows: NoteRow[];
     let total: number;
+    // A page of "the newest notes" read the whole namespace and sorted it (260 ms at 100,000 notes) because the planner
+    // preferred the kind index. Reading in index order stops at the page. Not for a rare kind or observation type, where the
+    // kind index is the faster way to find the few rows.
+    const rare = (opts.kinds?.length === 1 && opts.kinds[0] !== "note") || (opts.obsTypes?.length ?? 0) > 0;
+    const hint =
+      opts.order === undefined && !rare
+        ? opts.namespace && !opts.namespaces && this.hasIndex("idx_notes_ns_updated")
+          ? " INDEXED BY idx_notes_ns_updated"
+          : !opts.namespace && !opts.namespaces && this.hasIndex("idx_notes_updated")
+            ? " INDEXED BY idx_notes_updated"
+            : ""
+        : "";
 
     if (opts.namespaces) {
       if (opts.namespaces.length === 0) return { notes: [], total: 0 };
@@ -4353,7 +4401,7 @@ export class Store {
           `SELECT * FROM notes WHERE ${inList}${archSql}${range.sql}${tagF.sql} ORDER BY ${orderSql} LIMIT ? OFFSET ?`
         )
         .all(...opts.namespaces, ...extra, limit, offset) as unknown as NoteRow[];
-      total = (
+      total = opts.withTotal === false ? -1 : (
         this.db
           .prepare(`SELECT COUNT(*) as c FROM notes WHERE ${inList}${archSql}${range.sql}${tagF.sql}`)
           .get(...opts.namespaces, ...extra) as { c: number }
@@ -4361,10 +4409,10 @@ export class Store {
     } else if (opts.namespace) {
       rows = this.db
         .prepare(
-          `SELECT * FROM notes WHERE namespace = ?${archSql}${range.sql}${tagF.sql} ORDER BY ${orderSql} LIMIT ? OFFSET ?`
+          `SELECT * FROM notes${hint} WHERE namespace = ?${archSql}${range.sql}${tagF.sql} ORDER BY ${orderSql} LIMIT ? OFFSET ?`
         )
         .all(opts.namespace, ...extra, limit, offset) as unknown as NoteRow[];
-      total = (
+      total = opts.withTotal === false ? -1 : (
         this.db
           .prepare(`SELECT COUNT(*) as c FROM notes WHERE namespace = ?${archSql}${range.sql}${tagF.sql}`)
           .get(opts.namespace, ...extra) as { c: number }
@@ -4372,14 +4420,15 @@ export class Store {
     } else {
       rows = this.db
         .prepare(
-          `SELECT * FROM notes WHERE 1 = 1${archSql}${range.sql}${tagF.sql} ORDER BY ${orderSql} LIMIT ? OFFSET ?`
+          `SELECT * FROM notes${hint} WHERE 1 = 1${archSql}${range.sql}${tagF.sql} ORDER BY ${orderSql} LIMIT ? OFFSET ?`
         )
         .all(...extra, limit, offset) as unknown as NoteRow[];
-      total = (
+      total = opts.withTotal === false ? -1 : (
         this.db.prepare(`SELECT COUNT(*) as c FROM notes WHERE 1 = 1${archSql}${range.sql}${tagF.sql}`).get(...extra) as { c: number }
       ).c;
     }
 
+    if (total < 0) total = offset + rows.length;
     const out = rows.filter(exact).map((r) => this.rec(r));
     return { notes: opts.includeDistrusted ? this.markDistrusted(out) : out, total };
   }
@@ -4417,6 +4466,36 @@ export class Store {
       this.vocabOk = false;
     }
     return this.vocabOk;
+  }
+
+  /**
+   * `monomem doctor --deep`: a full consistency check, slower than opening the file (seconds on a big store). The file's own
+   * structure, the full-text index against the notes it indexes, and similarity links that point at a note that is gone.
+   * Read-only; each answer is "ok" or what is wrong.
+   */
+  deepCheck(): { integrity: string; fullText: string; orphanLinks: number; notes: number } {
+    const rows = this.db.prepare("PRAGMA integrity_check(10)").all() as Array<{ integrity_check: string }>;
+    const integrity = rows.map((r) => r.integrity_check).join("; ") || "ok";
+    let fullText = "ok";
+    try {
+      this.db.exec("INSERT INTO notes_fts(notes_fts, rank) VALUES('integrity-check', 1)");
+    } catch (e) {
+      fullText = (e as Error).message || "inconsistent";
+    }
+    const orphanLinks = Number(
+      (this.db.prepare("SELECT COUNT(*) AS c FROM note_edges WHERE note_id NOT IN (SELECT id FROM notes) OR neighbor_id NOT IN (SELECT id FROM notes)").get() as { c: number }).c
+    );
+    return { integrity, fullText, orphanLinks, notes: this.countAll() };
+  }
+
+  /** An upper bound on the number of notes (the highest id): O(1), for deciding how much work an optional step may do. */
+  approxNotes(): number {
+    try {
+      const r = this.db.prepare("SELECT MAX(id) AS m FROM notes").get() as { m: number | null };
+      return Number(r.m ?? 0);
+    } catch {
+      return 0;
+    }
   }
 
   /** True when some indexed term starts with `prefix` (lower-case, as the index folds it). */
@@ -4968,6 +5047,15 @@ export class Store {
       for (let i = 0; i < ids.length; i += IMPORT_LINK_BATCH) {
         const batch = ids.slice(i, i + IMPORT_LINK_BATCH);
         this.transaction(() => {
+          if (this.useIndexedEdges(ns)) {
+            for (const id of batch) {
+              const n = this.read(id);
+              if (!n || n.namespace !== ns || n.archived_at) continue; // deleted (or moved) since it was imported
+              const mine = termFreq(tokenize(`${n.title} ${n.body}`));
+              this.applyEdgePairs(id, this.planEdgesIndexed(ns, mine, new Set([id]), threshold));
+            }
+            return;
+          }
           const idx = this.edgeIndex(ns);
           for (const id of batch) {
             const tf = idx.tf.get(id);
@@ -5107,7 +5195,126 @@ export class Store {
     // edge index. Same TF construction as precomputeTfMaps, so scores are
     // bit-identical to the brute-force scan.
     const mine = termFreq(tokenize(`${title} ${body}`));
+    if (this.useIndexedEdges(namespace)) return { pairs: this.planEdgesIndexed(namespace, mine, excludeIds, threshold) };
     return { pairs: this.scoreAgainstIndex(this.edgeIndex(namespace), mine, excludeIds, threshold) };
+  }
+
+  /** Cached live-note count per namespace (refreshed every few seconds). */
+  private nsCounts = new Map<string, { n: number; at: number; mark: number }>();
+  private liveCount(namespace: string): number {
+    const now = Date.now();
+    const mark = this.approxNotes();
+    const hit = this.nsCounts.get(namespace);
+    // Valid for 5 s on a big store; any new note refreshes it on a small one (where a COUNT is free and idf depends on it).
+    if (hit && now - hit.at < 5000 && Math.abs(mark - hit.mark) <= (mark < 5000 ? 0 : mark * 0.01)) return hit.n;
+    const n = Number(
+      (this.db.prepare("SELECT COUNT(*) AS c FROM notes WHERE namespace = ? AND archived_at IS NULL").get(namespace) as { c: number }).c
+    );
+    this.nsCounts.set(namespace, { n, at: now, mark });
+    return n;
+  }
+  private useIndexedEdges(namespace: string): boolean {
+    return this.liveCount(namespace) > edgeExactMaxNotes();
+  }
+
+  /** Document frequency of a word in the full-text index (all namespaces; an estimate for ranking, cached for a minute). */
+  private dfCache = new Map<string, number>();
+  private dfCacheAt = 0;
+  private dfCacheSize = 0;
+  /** Drop the cached counts when they may be out of date. Called once per linked note, not per word. */
+  private freshenDf(): void {
+    const now = Date.now();
+    // Counts drift slowly on a big store; on a small one every note matters. Refresh after 60 s, on any change below
+    // 5,000 notes, or once the store has grown by 2% since the counts were read.
+    const size = this.approxNotes();
+    if (now - this.dfCacheAt > 60_000 || this.dfCache.size > 100_000 || Math.abs(size - this.dfCacheSize) > (size < 5000 ? 0 : this.dfCacheSize * 0.02)) {
+      this.dfCache.clear();
+      this.dfCacheAt = now;
+      this.dfCacheSize = size;
+    }
+  }
+  private wordDocs(term: string): number {
+    let d = this.dfCache.get(term);
+    if (d === undefined) {
+      d = 0;
+      if (this.vocabReady()) {
+        try {
+          const r = this.db.prepare("SELECT doc FROM temp.notes_vocab WHERE term = ?").get(term) as { doc: number } | undefined;
+          d = r ? Number(r.doc) : 0;
+        } catch {
+          d = 0;
+        }
+      }
+      this.dfCache.set(term, d);
+    }
+    return d;
+  }
+
+  /**
+   * Edge candidates for one note in a LARGE namespace, from the full-text index: ask it for the notes holding the
+   * target's rarest words (BM25, EDGE_INDEXED_CANDIDATES of them), then score only those with the same TF-IDF cosine and
+   * minimum-support rule as scoreAgainstIndex. Word rarity comes from the index's own document counts, so the scores are
+   * close to, not bit-identical with, the exhaustive path (a similar note sharing only common words can be missed).
+   * Cost is bounded by the candidate count, not the namespace size, and nothing is cached per note.
+   */
+  private planEdgesIndexed(
+    namespace: string,
+    mine: Map<string, number>,
+    excludeIds: ReadonlySet<number>,
+    threshold: number
+  ): Array<{ neighborId: number; score: number }> {
+    if (mine.size === 0) return [];
+    this.freshenDf();
+    const N = Math.max(2, this.liveCount(namespace));
+    const dfOf = (t: string): number => Math.min(this.wordDocs(t), N);
+    // Ask the index for the words that tell this note apart: highest count x rarity, skipping words nearly every note has.
+    const self = excludeIds.size > 0 ? 1 : 0; // the note being linked is already in the index
+    const rare = [...mine]
+      .filter(([t]) => t.length >= 3 && /^[a-z0-9]+$/.test(t))
+      .map(([t, f]) => ({ t, d: dfOf(t) - self, s: f * idfFromCount(dfOf(t), N) }))
+      .filter((x) => x.d > 0 && x.d <= Math.max(50, N * 0.25))
+      .sort((a, b) => b.s - a.s || (a.t < b.t ? -1 : 1))
+      .slice(0, EDGE_INDEXED_TERMS)
+      .map((x) => [x.t, x.d] as const);
+    if (rare.length < MIN_SHARED_TOKENS_FOR_EDGE) return [];
+    const hits = this.searchRanked("x", {
+      namespace,
+      limit: EDGE_INDEXED_CANDIDATES + excludeIds.size,
+      matchExpr: rare.map(([t]) => `"${t}"`).join(" OR "),
+      includeDistrusted: true,
+    });
+    const weight = new Map<string, number>();
+    const w = (t: string): number => {
+      let x = weight.get(t);
+      if (x === undefined) {
+        x = idfFromCount(dfOf(t), N);
+        weight.set(t, x);
+      }
+      return x;
+    };
+    let na = 0;
+    for (const [t, ta] of mine) na += (ta * w(t)) ** 2;
+    const pairs: Array<{ neighborId: number; score: number }> = [];
+    for (const h of hits) {
+      if (excludeIds.has(h.note.id)) continue;
+      const tf = termFreq(tokenize(`${h.note.title} ${h.note.body.slice(0, EDGE_INDEXED_BODY_CHARS)}`));
+      let dot = 0;
+      let shared = 0;
+      for (const [t, ta] of mine) {
+        const tb = tf.get(t);
+        if (tb === undefined) continue;
+        shared++;
+        dot += ta * w(t) * tb * w(t);
+      }
+      if (shared < MIN_SHARED_TOKENS_FOR_EDGE) continue;
+      let nb = 0;
+      for (const [t, tb] of tf) nb += (tb * w(t)) ** 2;
+      if (na === 0 || nb === 0) continue;
+      const score = Math.min(1, Math.max(0, dot / (Math.sqrt(na) * Math.sqrt(nb))));
+      if (score + 1e-9 >= threshold) pairs.push({ neighborId: h.note.id, score });
+    }
+    pairs.sort((a, b) => a.neighborId - b.neighborId);
+    return pairs;
   }
 
   /** SQLite's data_version: moves whenever ANOTHER connection commits. O(1). */
@@ -5330,6 +5537,34 @@ export class Store {
   ): void {
     const { pairs } = this.planEdges(namespace, title, body, threshold, new Set([id]));
     this.applyEdgePairs(id, pairs);
+  }
+
+  /**
+   * Live notes of the same namespace that cover much the same ground as note `id` (similarity edge score at or above
+   * `min`), best first. For the "you may be repeating yourself" hint on a fresh write: ordinary notes only (not captured
+   * rows, tasks or handoffs), none from a distrusted writer, none already replaced.
+   */
+  similarNotes(id: number, min: number, limit = 3): NeighborEntry[] {
+    const ns = (this.db.prepare("SELECT namespace FROM notes WHERE id = ?").get(id) as { namespace: string } | undefined)?.namespace;
+    if (ns === undefined) return [];
+    const dis = this.distrustFragment(
+      { ns: "n.namespace", writer: "n.written_by", attWriter: "n.attested_writer", attBy: "n.attested_by", merged: "n.merged_from_writers" },
+      [ns]
+    );
+    const rows = this.db
+      .prepare(
+        `SELECT e.neighbor_id AS id, n.title AS title, e.score AS score
+         FROM note_edges e
+         JOIN notes n ON n.id = e.neighbor_id
+         WHERE e.note_id = ? AND e.score >= ?
+           AND n.archived_at IS NULL AND n.superseded_by IS NULL AND n.kind = 'note'
+           AND instr(n.tags, '"task"') = 0 AND instr(n.tags, '"handoff"') = 0
+           AND n.namespace = ?${dis.sql}
+         ORDER BY e.score DESC, e.neighbor_id ASC
+         LIMIT ?`
+      )
+      .all(id, min, ns, ...dis.params, clampInt(limit, 3, 1, 10)) as Array<{ id: number; title: string; score: number }>;
+    return rows.map((r) => ({ id: r.id, title: r.title, score: Math.round(r.score * 100) / 100 }));
   }
 
   /**

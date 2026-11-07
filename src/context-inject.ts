@@ -138,10 +138,10 @@ export function projectProfile(store: Store, opts: InjectOptions, latestSummary:
   };
   const base = { namespace: ns, kinds: NOTE_KINDS, withoutTags: [TASK_TAG, HANDOFF_TAG, NEVER_SHOW_TAG], ...wf };
   const titles = (notes: NoteRecord[]): string => notes.map((n) => one(n.title).replace(/^Decision:\s*/i, "").slice(0, 90)).join("; ");
-  const decisions = store.list({ ...base, obsTypes: ["decision"], limit: 3 }).notes;
-  const conventions = store.list({ ...base, withTags: ["convention"], limit: 3 }).notes;
+  const decisions = store.list({ ...base, obsTypes: ["decision"], limit: 3, withTotal: false }).notes;
+  const conventions = store.list({ ...base, withTags: ["convention"], limit: 3, withTotal: false }).notes;
   // Key files: note_files frequency over the rows this reader may see (the store's read filters pick them).
-  const ids = store.list({ ...base, limit: 500 }).notes.map((n) => n.id);
+  const ids = store.list({ ...base, limit: 500, withTotal: false }).notes.map((n) => n.id);
   const files = ids.length
     ? (store
         .captureDb()
@@ -182,8 +182,8 @@ export async function rankContext(
     if (!why.has(id)) why.set(id, new Set());
     why.get(id)!.add(s);
   };
-  const recent = store.list({ ...base, limit: POOL });
-  const latestSummary = store.list({ ...base, kinds: ["summary"] as const, limit: 1 }).notes[0] ?? null;
+  const recent = store.list({ ...base, limit: POOL, withTotal: false });
+  const latestSummary = store.list({ ...base, kinds: ["summary"] as const, limit: 1, withTotal: false }).notes[0] ?? null;
   const signals = opts.signals ?? (await gitSignals(opts.cwd ?? process.cwd()));
   const db = store.captureDb();
   const recentFiles = store.recentFilePaths(ns, 30);

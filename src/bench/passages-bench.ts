@@ -166,6 +166,7 @@ function modeRow(a: Acc, n: number): ModeRow {
 export interface LmeReport {
   dataset: string;
   questions: number;
+  split?: "dev" | "test" | "all";
   /** Questions whose gold session is in the top 5 notes (session recall@5, the existing headline). */
   sessionHit5Pct: number;
   wholeNotes: ArmSummary;
@@ -179,7 +180,14 @@ interface Span {
   end: number;
 }
 
-export async function runPassagesLme(o: { data?: string; limit?: number; tune?: { rankPrior?: number; maxPerNote?: number; context?: number; k1?: number; b?: number } } = {}): Promise<LmeReport> {
+/** Deterministic dev/test split by question id (FNV-1a, low bit): tune on "dev", report "test" untouched. */
+export function splitOf(id: string): "dev" | "test" {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 0x01000193) >>> 0;
+  return (h >>> 7) & 1 ? "test" : "dev";
+}
+
+export async function runPassagesLme(o: { data?: string; limit?: number; split?: "dev" | "test" | "all"; tune?: { rankPrior?: number; maxPerNote?: number; context?: number; k1?: number; b?: number; coveragePower?: number; roleBoost?: number; window?: number } } = {}): Promise<LmeReport> {
   const file = o.data ?? (await fetchOnce(SOURCES.longmemeval.url, join(CACHE_DIR, SOURCES.longmemeval.file)));
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
   const raw = (Array.isArray(parsed) ? parsed : []) as Array<Record<string, unknown>>;
@@ -194,6 +202,7 @@ export async function runPassagesLme(o: { data?: string; limit?: number; tune?: 
     const id = str(q.question_id);
     const goldSessions = new Set(arr(q.answer_session_ids).map(str).filter(Boolean));
     if (!id || id.endsWith("_abs") || goldSessions.size === 0 || !str(q.question)) continue;
+    if (o.split && o.split !== "all" && splitOf(id) !== o.split) continue;
     const dir = join(BENCH_HOME, `p${nq}`);
     const store = new Store(join(dir, "state.db"));
     try {
@@ -259,6 +268,7 @@ export async function runPassagesLme(o: { data?: string; limit?: number; tune?: 
   return {
     dataset: "LongMemEval-S (cleaned), evidence turns (has_answer)",
     questions: nq,
+    split: o.split ?? "all",
     sessionHit5Pct: nq ? Math.round((1000 * sessHit) / nq) / 10 : 0,
     wholeNotes: summ(whole, nq),
     passages,
@@ -284,10 +294,56 @@ export function renderRecall(r: RecallReport): string {
 }
 
 export function renderLme(r: LmeReport): string {
-  const L = [`${r.dataset}: ${r.questions} questions; gold session in top 5: ${r.sessionHit5Pct}%`];
+  const L = [`${r.dataset}${r.split && r.split !== "all" ? ` [${r.split} half]` : ""}: ${r.questions} questions; gold session in top 5: ${r.sessionHit5Pct}%`];
   L.push(armLine("whole top-5 notes", r.wholeNotes));
   for (const [k, v] of Object.entries(r.passages)) L.push(armLine(k, v));
   L.push("evidence = at least one gold turn handed over; gold-turn share = mean fraction of the gold turns handed over; tokens ~ chars / 4");
+  return L.join("\n");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// tool schema size (`--schema`)
+
+export interface SchemaReport {
+  node: string;
+  rows: Array<{ tools: string; count: number; fullTokens: number; compactTokens: number; savedPct: number }>;
+}
+
+/** Estimated tokens of a tools/list answer (JSON length / 4), full vs compact, for the default tools and for all of them. */
+export async function runSchemaSize(): Promise<SchemaReport> {
+  const { createMcpServer } = await import("../mcp-server-core.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const dir = join(BENCH_HOME, "schema");
+  const store = new Store(join(dir, "state.db"));
+  const measure = async (tools: "all" | undefined, schema: "compact" | "full"): Promise<{ n: number; tokens: number }> => {
+    const server = createMcpServer(store, "admin", { ...(tools ? { tools } : { tools: undefined }), schema });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await server.connect(b);
+    const client = new Client({ name: "schema-bench", version: "1" });
+    await client.connect(a);
+    const r = await client.listTools();
+    await client.close();
+    return { n: r.tools.length, tokens: Math.round(JSON.stringify(r).length / 4) };
+  };
+  try {
+    const rows: SchemaReport["rows"] = [];
+    for (const [label, t] of [["default (core)", undefined], ["all", "all"]] as const) {
+      const full = await measure(t, "full");
+      const compact = await measure(t, "compact");
+      rows.push({ tools: label, count: full.n, fullTokens: full.tokens, compactTokens: compact.tokens, savedPct: Math.round((1000 * (full.tokens - compact.tokens)) / full.tokens) / 10 });
+    }
+    return { node: process.version, rows };
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export function renderSchema(r: SchemaReport): string {
+  const L = ["Tool schema the model reads every turn (tools/list JSON length / 4, estimated tokens)"];
+  for (const x of r.rows) L.push(`  ${x.tools.padEnd(15)} ${String(x.count).padStart(2)} tools   full ${String(x.fullTokens).padStart(6)}   compact ${String(x.compactTokens).padStart(6)}   saved ${x.savedPct}%`);
+  L.push("compact = MONOMEM_SCHEMA=compact: same tools, parameters and types, shorter descriptions");
   return L.join("\n");
 }
 
@@ -296,23 +352,51 @@ export async function passagesMain(argv: string[], out: (s: string) => void = co
     const json = argv.includes("--json");
     let limit: number | undefined;
     let data: string | undefined;
-    let tune: { rankPrior?: number; maxPerNote?: number; context?: number; k1?: number; b?: number } | undefined;
+    let scaleNotes: number | undefined;
+    let sweepBudget: number | undefined;
+    let split: "dev" | "test" | "all" | undefined;
+    let tune: { rankPrior?: number; maxPerNote?: number; context?: number; k1?: number; b?: number; coveragePower?: number; roleBoost?: number; window?: number } | undefined;
     for (let i = 0; i < argv.length; i++) {
       if (argv[i] === "--limit") {
         limit = Number(argv[++i]);
         if (!Number.isInteger(limit) || limit < 1) throw new Error("--limit must be a whole number above 0");
       } else if (argv[i] === "--tune") {
         tune = JSON.parse(argv[++i] ?? "{}"); // for tuning runs: {"rankPrior":0.5,"maxPerNote":4,"context":1}
+      } else if (argv[i] === "--split") {
+        const v = argv[++i];
+        if (v !== "dev" && v !== "test" && v !== "all") throw new Error("--split must be dev, test or all");
+        split = v;
       } else if (argv[i] === "--data") {
         data = resolve(argv[++i] ?? "");
-      } else if (!["--json", "--recall", "--passages", "--"].includes(argv[i])) throw new Error(`unknown option ${argv[i]}`);
+      } else if (argv[i] === "--budget") {
+        sweepBudget = Number(argv[++i]);
+        if (!Number.isInteger(sweepBudget) || sweepBudget < 50) throw new Error("--budget must be a whole number of tokens, 50 or more");
+      } else if (argv[i] === "--notes") {
+        scaleNotes = Number(argv[++i]);
+        if (!Number.isInteger(scaleNotes) || scaleNotes < 1000) throw new Error("--notes must be a whole number of at least 1000");
+      } else if (!["--json", "--recall", "--passages", "--schema", "--scale", "--sweep", "--"].includes(argv[i])) throw new Error(`unknown option ${argv[i]}`);
     }
     if (argv.includes("--recall")) {
       const r = await runRecall();
-      out(json ? JSON.stringify(r, null, 2) : renderRecall(r));
+      const { runOverlap, renderOverlap } = await import("./overlap-bench.js");
+      const ov = runOverlap();
+      out(json ? JSON.stringify({ ...r, overlap: ov }, null, 2) : renderRecall(r) + "\n\n" + renderOverlap(ov));
     }
-    if (argv.includes("--passages")) {
-      const r = await runPassagesLme({ data, limit, tune });
+    if (argv.includes("--schema")) {
+      const r = await runSchemaSize();
+      out(json ? JSON.stringify(r, null, 2) : renderSchema(r));
+    }
+    if (argv.includes("--scale")) {
+      const { runScale, renderScale } = await import("./scale-bench.js");
+      const r = await runScale({ notes: scaleNotes });
+      out(json ? JSON.stringify(r, null, 2) : renderScale(r));
+    }
+    if (argv.includes("--passages") && argv.includes("--sweep")) {
+      const { runPassagesSweep, renderSweep } = await import("./passages-sweep.js");
+      const r = await runPassagesSweep({ data, limit, budget: sweepBudget });
+      out(json ? JSON.stringify(r, null, 2) : renderSweep(r));
+    } else if (argv.includes("--passages")) {
+      const r = await runPassagesLme({ data, limit, tune, split });
       out(json ? JSON.stringify(r, null, 2) : renderLme(r));
     }
     return 0;

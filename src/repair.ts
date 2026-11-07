@@ -31,6 +31,18 @@ const quotePrefix = (t: string): string => `${quote(t)}*`;
 const fold = (s: string): string => s.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase();
 const likeEscape = (s: string): string => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
+/**
+ * Above this many notes (highest id, so a deleted-heavy store counts as big), the vocabulary scans are narrowed: a typo
+ * must keep its first TWO letters, and the abbreviation scan is skipped. Reading the vocabulary costs time in proportion
+ * to the index (about 350 ms for three misspelt words at 100,000 notes, 50 ms at 5,000); this keeps a miss at a few milliseconds there.
+ * MONOMEM_REPAIR_FULL_MAX_NOTES (default 2,000).
+ */
+export function repairFullMaxNotes(): number {
+  const v = process.env.MONOMEM_REPAIR_FULL_MAX_NOTES;
+  const n = Number(v);
+  return v !== undefined && v.trim() !== "" && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 2_000;
+}
+
 const MAX_TYPO_CANDIDATES = 2;
 const MAX_CJK_TERMS_PER_GRAM = 8;
 const MAX_CJK_TERMS = 40;
@@ -39,6 +51,7 @@ const MAX_JOIN_PAIRS = 8;
 const MAX_REPAIR_WORD = 40;
 /** Vocabulary scans for CJK words, in total for one query. */
 const MAX_CJK_SCANS = 12;
+const MAX_CJK_SCANS_BIG = 4;
 
 /** Optimal-string-alignment distance (insert, delete, substitute, adjacent swap), giving up above `max`. */
 export function editDistance(a: string, b: string, max: number): number {
@@ -139,8 +152,9 @@ function wordUnit(store: Store, kw: string, notes: string[]): Unit {
   // Typo: same first letter, one edit away (two for long words).
   const maxD = f.length >= 9 ? 2 : f.length >= 5 ? 1 : 0;
   if (maxD > 0 && !prefixHit) {
+    const big = store.approxNotes() > repairFullMaxNotes();
     const cands = store
-      .vocabTerms({ startsWith: f[0], minLen: f.length - maxD, maxLen: f.length + maxD, limit: 3000 })
+      .vocabTerms({ startsWith: big ? f.slice(0, 2) : f[0], minLen: f.length - maxD, maxLen: f.length + maxD, limit: 3000 })
       .map((c) => ({ ...c, d: editDistance(f, c.term, maxD) }))
       .filter((c) => c.d <= maxD && c.term !== f)
       .sort((x, y) => x.d - y.d || y.doc - x.doc)
@@ -179,7 +193,7 @@ export const MAX_REPAIR_QUERY_WORDS = 4;
 
 function planRepairInner(store: Store, keywords: string[], o: { abbreviations?: boolean }): RepairPlan | null {
   const short = keywords.length <= MAX_REPAIR_QUERY_WORDS;
-  const cjkBudget = { scans: MAX_CJK_SCANS };
+  const cjkBudget = { scans: store.approxNotes() > repairFullMaxNotes() ? MAX_CJK_SCANS_BIG : MAX_CJK_SCANS };
   const notes: string[] = [];
   const units: Unit[] = keywords.map((kw) =>
     hasCjk(kw) ? cjkUnit(store, kw, notes, cjkBudget) : short ? wordUnit(store, kw, notes) : { expr: quotePrefix(kw), repaired: false, kw, alts: [] }
@@ -208,7 +222,7 @@ function planRepairInner(store: Store, keywords: string[], o: { abbreviations?: 
         alts.push(quotePrefix(joined));
         terms.add(joined);
         notes.push(`${a.kw} ${b.kw} -> ${joined}`);
-      } else if (o.abbreviations && keywords.length <= 4) {
+      } else if (o.abbreviations && keywords.length <= 4 && store.approxNotes() <= repairFullMaxNotes()) {
         // "connection reset" -> "econnreset": an indexed term holding the start of the first word, then of the second.
         const like = `%${likeEscape(fa.slice(0, 4))}%${likeEscape(fb.slice(0, Math.min(5, fb.length)))}%`;
         for (const t of store.vocabTerms({ like, minLen: 6, maxLen: 24, limit: 2 })) {

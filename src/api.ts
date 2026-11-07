@@ -72,6 +72,7 @@ import { PayloadTooLargeError, readBody, normalizeTokens, IMPORT_BODY_BYTES } fr
 const IMPORT_EDGE_DEFER_THRESHOLD = 200;
 import { DASHBOARD_HTML, DASHBOARD_JS } from "./dashboard.js";
 import { shapeWithPassages } from "./passages.js";
+import { overlapFor } from "./overlap.js";
 import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, type ExplainedHit } from "./search-service.js";
 import {
   type ServerNamespaceOpts,
@@ -525,7 +526,7 @@ export function createApiServer(
           const warnings: LintFinding[] = [];
           const note = store.create(parsed, { lintWarnings: warnings });
           await maybeEmbed(store, note);
-          sendJson(res, 201, warnings.length ? { note, warnings } : { note });
+          sendJson(res, 201, { note, ...(warnings.length ? { warnings } : {}), ...(overlapFor(store, note) ?? {}) });
         } catch (e) {
           sendError(res, e);
         }

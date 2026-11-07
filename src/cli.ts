@@ -120,7 +120,7 @@ function usage(): void {
       "            Import what Claude Code already remembers: CLAUDE.md files (user, this folder or --project) and auto memory",
       "            (~/.claude/projects/*/memory). Cut into separate notes at headings, tagged with their source file and project; running",
       "            it again adds only what is new. Anything that looks like a secret is skipped and never shown. Local only.",
-      "  import --from claude-mem|mem0|basic-memory [--path p] [--dry-run] [--yes] [--namespace ns]",
+      "  import --from claude-mem|mem0|basic-memory|mcp-memory [--path p] [--dry-run] [--yes] [--namespace ns]",
       "            Import another memory tool's notes: claude-mem's database (~/.claude-mem/claude-mem.db, opened read only;",
       "            observations and session summaries keep their type, files, project and dates), a mem0 JSON export (--path),",
       "            or a basic-memory folder (~/basic-memory). Same rules as --claude: secrets skipped, re-runs add only what is new.",
@@ -161,6 +161,8 @@ function usage(): void {
       "            the old note is kept, marked replaced, and can be brought back. From a script it only previews and prints a",
       "            one-time code: run again with --confirm-token <code> (same --title/--body) to go ahead.",
       "  supersede undo <id>",
+      "  doctor [--deep]   --deep also checks the file, the search index and the links (seconds on a big store)",
+      "  recover [--from damaged.db] [--out new.db]   copy the readable notes of a damaged database into a new file",
       "            Bring a replaced note back exactly as it was (recorded).",
       "  history <id> [--json] [--include-distrusted] | history restore <id> <version> [--if-rev n] | history purge <id> [--yes]",
       "            A note's earlier versions: list them, put one back (as a new version, nothing is overwritten), or forget them.",
@@ -168,7 +170,7 @@ function usage(): void {
       "            Run the provenance benchmark on a throwaway store: stale memory, contradiction recovery,",
       "            permission isolation, provenance retention. Offline, deterministic, exits 1 on a failure.",
       "            Your own data is never touched. See docs/BENCHMARK.md.",
-      "  bench --recall | --passages [--limit n] [--data file] [--json]",
+      "  bench --recall | --passages | --schema [--split dev|test] [--limit n] [--data file] [--json]",
       "            Coding-agent recall set (offline, committed) / LongMemEval evidence turns: evidence coverage vs tokens,",
       "            whole notes vs passages, query repair on vs off. No LLM.",
       "  bench --longmemeval | --locomo [--data file] [--limit n] [--mode keyword|hybrid] [--granularity session|turn] [--json]",
@@ -268,9 +270,21 @@ async function doctor(): Promise<void> {
     distrustCount = s.distrustRules().length;
     const { meterStats, meterLine } = await import("./meter.js");
     const footprint = meterLine(meterStats(s));
+    const deepRes = process.argv.includes("--deep") ? s.deepCheck() : null;
     s.close();
     ok(`database OK at ${DB_PATH} (${r.total} notes)`);
     ok(footprint);
+    if (deepRes) {
+      if (deepRes.integrity === "ok") ok("deep check: the file's structure is sound");
+      else {
+        dbProblem = true;
+        warn(`deep check: the file is damaged (${deepRes.integrity}). Copy what is readable into a new database:  monomem recover`);
+      }
+      if (deepRes.fullText === "ok") ok("deep check: the search index matches the notes");
+      else warn(`deep check: the search index does not match the notes (${deepRes.fullText}). A clean copy rebuilds it:  monomem recover`);
+      if (deepRes.orphanLinks === 0) ok("deep check: every similar-note link points at a note");
+      else warn(`deep check: ${deepRes.orphanLinks} similar-note link(s) point at a missing note. Fix:  monomem rebuild-edges`);
+    }
     // Migration v4 adds the similarity-edge table but does not score
     // existing notes: a store upgraded from 1.0.0 has notes and no edges
     // until a one-time rebuild.
@@ -283,6 +297,7 @@ async function doctor(): Promise<void> {
   } catch (e) {
     dbProblem = true;
     warn("database problem: " + (e as Error).message);
+    if (isCorruption(e)) warn("the file looks damaged. Copy what is readable into a new database:  monomem recover   (your file is not changed)");
   }
 
   // Pre-upgrade copies (`<db>.pre-v*-backup`) hold the notes as they were before an upgrade, outside
@@ -784,10 +799,17 @@ async function rememberCmd(): Promise<void> {
       { lintWarnings: warnings }
     );
     await maybeEmbed(store, note);
-    if (flags.json) console.log(JSON.stringify({ note: { id: note.id, title: note.title, namespace: note.namespace }, ...(warnings.length ? { warnings } : {}) }));
+    const { overlapFor } = await import("./overlap.js");
+    const overlap = overlapFor(store, note);
+    if (flags.json) console.log(JSON.stringify({ note: { id: note.id, title: note.title, namespace: note.namespace }, ...(warnings.length ? { warnings } : {}), ...(overlap ? { similar: overlap.similar, similar_hint: overlap.similar_hint } : {}) }));
     else {
       console.log(`Saved note #${note.id} in "${note.namespace}": ${note.title}`);
       for (const w of warnings) console.log(`  warning: ${w.label} in ${w.field}`);
+      if (overlap) {
+        console.log("  Looks like a note you already have:");
+        for (const s of overlap.similar) console.log(`    #${s.id} ${s.title} (${Math.round(s.score * 100)}% alike)`);
+        console.log(`  If #${note.id} replaces #${overlap.similar[0].id}:  monomem supersede --old ${overlap.similar[0].id} --new-id ${note.id}   (previews first, nothing is hidden until you confirm)`);
+      }
       console.log(`  Find it again:  monomem search "${title.split(/\s+/).slice(0, 3).join(" ").replace(/["\\$`]/g, "")}"`);
     }
   } catch (e) {
@@ -1109,6 +1131,37 @@ function parseFlags(
 const str = (v: string | true | undefined): string | undefined => (typeof v === "string" ? v : undefined);
 
 // `monomem backup [--out dir]`: hot copy via VACUUM INTO (see backup.ts).
+// `monomem recover [--from damaged.db] [--out new.db]`: copy the readable notes of a damaged database into a new file.
+async function recoverCmd(): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { recoverDatabase } = await import("./recover.js");
+  const { dirname, join, resolve } = await import("node:path");
+  const { flags } = parseFlags(process.argv.slice(3), { values: ["from", "out"], bools: ["json"] });
+  const from = resolve(str(flags.from) ?? DB_PATH);
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T", "-");
+  // Next to the damaged file by default, so a copied .key file (encrypted stores) is found by the new one too.
+  const out = resolve(str(flags.out) ?? join(dirname(from), `state.recovered-${stamp}.db`));
+  try {
+    const r = recoverDatabase(from, out);
+    if (flags.json) {
+      console.log(JSON.stringify(r));
+    } else {
+      console.log(`Recovered ${r.notesRecovered} note(s)${r.highestId ? ` of about ${r.highestId}` : ""} from ${from}`);
+      if (r.idsUnreadable) console.log(`  ${r.idsUnreadable} id(s) could not be read (some may have been deleted before the damage).`);
+      if (r.historyRecovered) console.log(`  ${r.historyRecovered} earlier version(s) kept.`);
+      if (r.encryptedRows) console.log(`  ${r.encryptedRows} note(s) are encrypted: they open only with the original .key file.`);
+      for (const n of r.notes) console.log(`  note: ${n}`);
+      console.log(`New database: ${out}`);
+      console.log("  The damaged file was not changed. To switch: stop monomem, move the damaged state.db aside, rename the new file to state.db,");
+      console.log("  then run  monomem rebuild-edges  (similar-note links are not copied) and  monomem doctor.");
+    }
+    if (r.notesRecovered === 0) process.exitCode = 2;
+  } catch (e) {
+    console.error(`recover: ${(e as Error).message}`);
+    process.exitCode = 1;
+  }
+}
+
 async function backupCmd(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
@@ -2420,6 +2473,9 @@ async function main(): Promise<void> {
     case "backup":
       await backupCmd();
       break;
+    case "recover":
+      await recoverCmd();
+      break;
     case "runner-status":
       await runnerStatusCmd();
       break;
@@ -2465,7 +2521,7 @@ async function main(): Promise<void> {
       break;
     case "bench": {
       const args = process.argv.slice(3);
-      if (args.includes("--recall") || args.includes("--passages")) {
+      if (args.includes("--recall") || args.includes("--passages") || args.includes("--schema") || args.includes("--scale")) {
         const { passagesMain } = await import("./bench/passages-bench.js");
         process.exitCode = await passagesMain(args);
         break;
@@ -2492,7 +2548,13 @@ async function main(): Promise<void> {
   }
 }
 
+/** SQLite's "this file is damaged" errors (not a busy or locked database). */
+function isCorruption(e: unknown): boolean {
+  return /malformed|not a database|file is encrypted|database corruption|SQLITE_CORRUPT|SQLITE_NOTADB/i.test((e as Error)?.message ?? "");
+}
+
 main().catch((e) => {
   console.error((e as Error).message);
+  if (isCorruption(e)) console.error("This database file looks damaged. Copy what is readable into a new file with:  monomem recover   (your file is not changed)");
   process.exit(1);
 });

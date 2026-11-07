@@ -133,8 +133,9 @@ describe("B: one gate for reading a note", () => {
       const n = t.split("\n").filter((l) => /includeDistrusted: ?true/.test(l) && !/\? \{ includeDistrusted: true \} : \{\}/.test(l) && !/^\s*\/\//.test(l)).length;
       if (n) optIn[f] = n;
     }
-    // backup.ts only counts the notes of the COPY it just made.
-    assert.deepEqual(sql.sort(), ["backup.ts"], "SQL on the notes table belongs in store.ts, behind the gate");
+    // backup.ts only counts the notes of the COPY it just made. recover.ts reads a damaged FILE (never the live store, which
+    // is what the trust gate guards) and writes a NEW one; nothing it reads is returned to a caller, only counted.
+    assert.deepEqual(sql.sort(), ["backup.ts", "recover.ts"], "SQL on the notes table belongs in store.ts, behind the gate");
     assert.deepEqual(optIn, INTERNAL_OPT_IN, "an unconditional includeDistrusted: true was added or removed: review it, then update INTERNAL_OPT_IN");
   });
 

@@ -48,8 +48,8 @@ back, runs `monomem doctor` and tells you how to check it inside Claude Code (ty
 are. Step by step, with troubleshooting: [docs/live-claude-code.md](./docs/live-claude-code.md).
 
 Already have notes in Claude Code? `monomem import --claude --dry-run` shows what could be brought in from your `CLAUDE.md` files and
-Claude Code's auto memory (secrets are skipped, nothing leaves your computer). Coming from claude-mem, mem0 or basic-memory?
-`monomem import --from claude-mem --dry-run` (or `mem0 --path export.json`, `basic-memory`); see [docs/switching.md](./docs/switching.md)
+Claude Code's auto memory (secrets are skipped, nothing leaves your computer). Coming from claude-mem, mem0, basic-memory or the official MCP memory server?
+`monomem import --from claude-mem --dry-run` (or `mem0 --path export.json`, `basic-memory`, `mcp-memory --path memory.json`); see [docs/switching.md](./docs/switching.md)
 for the import and a clean uninstall of the old tool.
 
 The manual way, if you prefer:
@@ -326,12 +326,12 @@ are different metrics and are never mixed below.
 
 | | LongMemEval-S R@5 | LoCoMo-10 R@5 | Search used | Source |
 |---|---|---|---|---|
-| **Monomem 1.3.0** | **97.7** session (470 q) | 89.6 session (89.5 with repair off), **59.2** turn (1,982 q) | keyword BM25, no embeddings | [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo), rerun with `monomem bench` |
+| **Monomem 1.4.0** | **97.7** session (470 q, re-run for 1.4.0) | 89.6 session (89.5 with repair off; 1.3.0 run, not repeated), **59.2** turn (1,982 q, re-run for 1.4.0) | keyword BM25, no embeddings | [docs/BENCHMARK.md](./docs/BENCHMARK.md#retrieval-longmemeval-s-and-locomo), rerun with `monomem bench` |
 | mcp-memory-service 10.34 | 86.0 session, 80.4 turn | 49.7 (granularity not stated) | all-MiniLM-L6-v2 embeddings | [their BENCHMARKS.md](https://github.com/doobidoo/mcp-memory-service/blob/main/docs/BENCHMARKS.md) |
 | MemPalace | 96.6 raw semantic (500 q); 98.4 hybrid, tuned on 50 and scored on 450 | 60.3 session R@10 raw | embeddings (ChromaDB) | [their README](https://github.com/MemPalace/mempalace) |
 
 Question sets differ slightly (Monomem leaves out LongMemEval's 30 abstention questions, which have no gold session),
-so read these as close, not exact. Monomem's ranking (1.2.0; 1.3.0 leaves these numbers unchanged) was tuned on these same two datasets with no held-out
+so read these as close, not exact. Monomem's ranking (1.2.0; 1.3.0 and 1.4.0 leave these numbers unchanged) was tuned on these same two datasets with no held-out
 split ([how](./docs/BENCHMARK.md#results-2026-11-06-monomem-120)).
 
 **What 1.3.0 adds, measured here** (committed benchmarks, re-run with `npm run bench:recall` (offline) and `npm run bench:passages` (needs the cached ~277 MB LongMemEval download);
@@ -348,6 +348,23 @@ Passages are a trade, not a free win: on long conversations they hand over about
 whole note would have contained. The coding-agent set is synthetic and written by this project. Query repair leaves
 LongMemEval-S and LoCoMo recall within 0.1 (R@5 97.7 off and on; LoCoMo turn 59.3 off, 59.2 on). The default tool schema grew from about 4,709 to 4,829
 estimated tokens for the two new parameters.
+
+**What 1.4.0 adds, measured here** (`monomem bench --scale`, `--passages --sweep`, `--recall`; [details and limits](./docs/BENCHMARK.md#scale-140)). All Monomem rows below are
+this repository's own runs on one machine; **no other tool was run at this size, so their rows are unverified, not zero.**
+
+| | 1.3.0 | 1.4.0 |
+|---|---|---|
+| First `monomem remember` in a new process, 100,000-note store | 8.6 s | 0.17 to 0.22 s |
+| Session-start `recall`, 100,000-note store | 1.6 s (over its 0.8 s budget) | 0.7 to 0.8 s |
+| Write with similar-note links, 20,000 notes: p50, slowest single write, peak memory | 17.8 ms, 1,257 ms, 407 MB | 12.7 ms, not recorded (p95 26.1 ms), 262 MB |
+| Write at 100,000 notes, p50 / p95 | not run (grew linearly with size) | 16.4 / 41.6 ms |
+| A search that finds nothing, 100,000 notes | 350 ms (query repair) | about 2 ms |
+| Passage evidence at 500 tokens, held-out half of LongMemEval-S | 80.2 % | 85.5 % (+5.3, 95 % interval +2.5 to +8.3) |
+| Names the earlier note when a new note restates it (rule-made copies, 36 notes) | no | 100 % partial copies, 97.2 % corrected copies, 0 % false alarms |
+| A truncated or header-damaged database | "database disk image is malformed" | `monomem recover`: 49 % to 100 % of notes back, by damage type |
+
+The price of the large-store link search: above 2,000 notes in a namespace it finds 91.9 % of the links the exhaustive scan finds (98.7 % of each note's best three);
+query repair narrows (a typo must keep its first two letters) above 2,000 notes. Both are settings, documented in [configuration.md](./docs/configuration.md). Scale numbers other tools publish, if any, are not compared here: we have not run them.
 
 **End-to-end QA accuracy** is what Mem0 ([LongMemEval 94.4, LoCoMo 92.5](https://github.com/mem0ai/memory-benchmarks)),
 Zep ([DMR 94.8](https://huggingface.co/papers/2501.13956)) and Supermemory publish. Monomem does not call a model, so it
@@ -388,7 +405,7 @@ shipped in the npm package** — build it from the repo.
 
 | Tool | Scope | |
 |---|---|---|
-| `state_write` / `state_read` / `state_delete` | write / read / admin | Write with compare-and-swap (`if_rev`) and provenance (`source`); read; forget. `state_delete` archives (restorable); a permanent delete is for a person, in the dashboard or with `monomem delete <id>` |
+| `state_write` / `state_read` / `state_delete` | write / read / admin | Write with compare-and-swap (`if_rev`) and provenance (`source`); a new note that restates an older one comes back with `similar` (the older notes' ids and titles) so the agent can update in place; read; forget. `state_delete` archives (restorable); a permanent delete is for a person, in the dashboard or with `monomem delete <id>` |
 | `state_search` / `state_relevant` / `state_list` | read | keyword, semantic or hybrid search; vague-message recall; listing |
 | `memory_since` | read | change feed (`wait_seconds` = live wait) |
 | `task_put` / `task_list` / `task_get` | write / read / read | shared task board across devices and models; `client_key` makes a create retry-safe |
@@ -410,10 +427,11 @@ REST mirrors them (`/notes`, `/search`, `/relevant`, `/changes`, `/tasks`, `/han
 ## CLI
 
 ```
-monomem start | mcp | doctor | init
+monomem start | mcp | doctor [--deep] | init
+monomem recover [--from damaged.db] [--out new.db]   # copy the readable notes of a damaged database into a new file
 monomem setup [--dry-run] [--yes] [--only claude-code,claude-desktop,cursor,codex,gemini,muse,vscode,zed] [--hook] [--undo]   # connect your apps; safe, backed up, undoable
 monomem import --claude [--dry-run] [--update] [--project <folder>]   # bring in CLAUDE.md files and Claude Code auto memory
-monomem import --from claude-mem|mem0|basic-memory [--path p] [--dry-run]   # switch from another memory tool (docs/switching.md)
+monomem import --from claude-mem|mem0|basic-memory|mcp-memory [--path p] [--dry-run]   # switch from another memory tool (docs/switching.md)
 monomem sync --git ~/my-private-memory-repo [--encrypt]   # keep your computers in step through YOUR private git repository
 monomem changes --since last --consumer laptop
 monomem runner-status                           # is each PC's runner listening? commands waiting?
@@ -430,7 +448,7 @@ monomem quality [--json]     monomem decay [--dry-run]     monomem archive <id> 
 monomem consolidate | rebuild-edges | reindex | relevant "…" | recall
 monomem remember "text" [--title T] [--tags a,b] [--namespace ns]     # or: echo text | monomem remember -
 monomem search "words" [--limit 5] [--passages [--max-tokens N]] [--namespace ns] [--json]
-monomem bench --recall | --passages                  # tokens vs evidence, offline (docs/BENCHMARK.md)
+monomem bench --recall | --passages [--sweep] | --scale [--notes N]   # tokens vs evidence; held-out settings; big-store speed (docs/BENCHMARK.md)
 monomem bench [--json] [--suite stale|contradiction|isolation|provenance] [--strict-gaps]   # provenance benchmark (docs/BENCHMARK.md)
 ```
 

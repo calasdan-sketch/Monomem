@@ -30,6 +30,23 @@ const MIN_PASSAGE_CHARS = 40;
 export const DEFAULT_PASSAGE_TOKENS = 1500;
 export const MAX_PASSAGE_TOKENS = 20_000;
 const MAX_PER_NOTE = 8;
+
+/**
+ * The settings passage selection uses unless a caller overrides them. 1.4.0 changed four of them (rankPrior 0.25 -> 0.5,
+ * k1 1.2 -> 1.6, roleBoost 0 -> 0.6, window 0 -> 400) after a search on the DEV half of LongMemEval-S that was judged
+ * on the untouched TEST half: evidence coverage at 500 tokens 80.2% -> 85.5% there (bootstrap 95% interval for the
+ * difference +2.5 to +8.3 points). `monomem bench --passages --sweep` re-runs it. See docs/BENCHMARK.md.
+ */
+export const PASSAGE_DEFAULTS = {
+  rankPrior: 0.5,
+  k1: 1.6,
+  b: 1,
+  context: 1,
+  maxPerNote: MAX_PER_NOTE,
+  roleBoost: 0.6,
+  coveragePower: 0,
+  window: 400,
+} as const;
 const MAX_BODY_SCAN = 120_000; // characters of one note body examined
 /** Only this many notes are searched for passages; later ones contribute their opening only (bounded work at limit=200). */
 const MAX_PASSAGE_NOTES = 25;
@@ -132,6 +149,46 @@ export function queryTerms(query: string): string[] {
   return [...out];
 }
 
+/** Cut `c` to the `win`-character window (snapped to word edges) that holds the most query-term matches. */
+function trimToWindow(c: { start: number; end: number; text: string }, terms: string[], win: number): void {
+  const lower = c.text.toLowerCase();
+  const hits: number[] = [];
+  for (const t of terms) {
+    let i = lower.indexOf(t);
+    let guard = 0;
+    while (i >= 0 && guard++ < 50) {
+      hits.push(i);
+      i = lower.indexOf(t, i + t.length);
+    }
+  }
+  if (!hits.length) return;
+  hits.sort((a, b) => a - b);
+  let best = 0;
+  let bestN = 0;
+  for (let i = 0; i < hits.length; i++) {
+    let n = 0;
+    for (let j = i; j < hits.length && hits[j] < hits[i] + win; j++) n++;
+    if (n > bestN) {
+      bestN = n;
+      best = hits[i];
+    }
+  }
+  let from = Math.max(0, best - Math.floor(win * 0.15));
+  let to = Math.min(c.text.length, from + win);
+  from = Math.max(0, to - win);
+  if (from > 0) {
+    const sp = c.text.indexOf(" ", from);
+    if (sp > 0 && sp < from + 30) from = sp + 1;
+  }
+  if (to < c.text.length) {
+    const sp = c.text.lastIndexOf(" ", to);
+    if (sp > to - 30 && sp > from) to = sp;
+  }
+  c.start += from;
+  c.end = c.start + (to - from);
+  c.text = c.text.slice(from, to);
+}
+
 export interface PassageNote {
   id: number;
   title: string;
@@ -150,6 +207,12 @@ export interface PassageOpts {
    * answers is often the one after the one that matches ("Symptom: ECONNRESET ..." then "Fix: ..."). Default 1.
    */
   context?: number;
+  /** Share of the query's rarity-weighted terms a passage must cover to keep its full score: score *= coverage ** coveragePower. Default 0 (off). */
+  coveragePower?: number;
+  /** A chat turn from the user counts (1 + roleBoost) times: people state their own facts in their own turns. Default 0 (off). */
+  roleBoost?: number;
+  /** Cut a passage longer than this many characters to the window holding the most query terms (0 = never cut). Default 0. */
+  window?: number;
   /** BM25 saturation and length normalisation. */
   k1?: number;
   b?: number;
@@ -169,8 +232,8 @@ export interface PassageResult {
  */
 export function selectPassages(notes: PassageNote[], query: string, opts: PassageOpts = {}): PassageResult {
   const budget = Math.min(Math.max(Math.floor(opts.maxTokens ?? DEFAULT_PASSAGE_TOKENS), 20), MAX_PASSAGE_TOKENS);
-  const prior = opts.rankPrior ?? 0.25;
-  const perNote = Math.max(1, opts.maxPerNote ?? MAX_PER_NOTE);
+  const prior = opts.rankPrior ?? PASSAGE_DEFAULTS.rankPrior;
+  const perNote = Math.max(1, opts.maxPerNote ?? PASSAGE_DEFAULTS.maxPerNote);
   const terms = [...new Set([...queryTerms(query), ...(opts.extraTerms ?? []).map((t) => t.toLowerCase())])];
 
   interface Cand extends ScoredPassage {
@@ -205,19 +268,32 @@ export function selectPassages(notes: PassageNote[], query: string, opts: Passag
       return tf;
     });
     const avg = cands.reduce((a, c) => a + c.ws.length, 0) / N || 1;
-    const k1 = opts.k1 ?? 1.2;
-    const b = opts.b ?? 1;
+    const k1 = opts.k1 ?? PASSAGE_DEFAULTS.k1;
+    const b = opts.b ?? PASSAGE_DEFAULTS.b;
+    const cp = opts.coveragePower ?? PASSAGE_DEFAULTS.coveragePower;
+    const rb = opts.roleBoost ?? PASSAGE_DEFAULTS.roleBoost;
+    const idfOf = (t: string): number => {
+      const d = df.get(t) ?? 0;
+      return Math.log(1 + (N - d + 0.5) / (d + 0.5));
+    };
+    let idfTotal = 0;
+    for (const t of terms) idfTotal += idfOf(t);
     cands.forEach((c, i) => {
       let s = 0;
+      let seen = 0;
       for (const [t, f] of tfs[i]) {
-        const d = df.get(t) ?? 0;
-        const idf = Math.log(1 + (N - d + 0.5) / (d + 0.5));
+        const idf = idfOf(t);
+        seen += idf;
         s += (idf * (f * (k1 + 1))) / (f + k1 * (1 - b + (b * c.ws.length) / avg));
       }
+      if (cp > 0 && idfTotal > 0) s *= Math.pow(Math.min(1, seen / idfTotal), cp);
+      if (rb > 0 && /^user[ \t]*:/i.test(c.text)) s *= 1 + rb;
       c.score = s * (1 + prior / (1 + c.rank));
     });
   }
 
+  const win = Math.max(0, Math.floor(opts.window ?? PASSAGE_DEFAULTS.window));
+  if (win >= 120) for (const c of cands) if (c.score > 0 && c.text.length > win * 1.25) trimToWindow(c, terms, win);
   const order = cands
     .filter((c) => c.score > 0)
     .sort((a, b) => b.score - a.score || a.rank - b.rank || a.start - b.start);
@@ -246,7 +322,7 @@ export function selectPassages(notes: PassageNote[], query: string, opts: Passag
     tokens += t;
   }
   // Context: the next passage of the best picks (the previous one when it is the last of its note).
-  const ctx = Math.max(0, Math.floor(opts.context ?? 1));
+  const ctx = Math.max(0, Math.floor(opts.context ?? PASSAGE_DEFAULTS.context));
   const bestFirst = [...picked];
   for (const c of bestFirst.slice(0, ctx)) {
     if (c.score <= 0) continue;

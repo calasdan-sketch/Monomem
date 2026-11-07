@@ -1,4 +1,4 @@
-# Switching to Monomem from claude-mem, mem0 or basic-memory
+# Switching to Monomem from claude-mem, mem0, basic-memory or the official MCP memory server
 
 `monomem import --from <tool>` copies another memory tool's notes into Monomem. It works the same way as
 `import --claude`:
@@ -75,6 +75,21 @@ monomem import --from mem0 --path mem0.json --namespace personal --dry-run
 Each memory becomes one note. Its `memory` (or `text`) is the body, `created_at` is kept, `metadata.categories` (or
 `categories`) become `category:` tags, and the user or agent id becomes a `mem0-user:` tag. Then remove mem0 from your code or
 MCP configuration. Stop and delete its vector store (Qdrant, Chroma, ...) the way you set it up.
+
+## From the official MCP memory server
+
+The reference server in `modelcontextprotocol/servers` (`@modelcontextprotocol/server-memory`) keeps a knowledge graph in one
+JSON-lines file, `memory.json` (or wherever `MEMORY_FILE_PATH` points). Each line is an `entity` (name, entityType,
+observations) or a `relation` (from, to, relationType).
+
+```sh
+monomem import --from mcp-memory --path /path/to/memory.json --dry-run
+```
+
+Each entity becomes one note titled with its name: the observations as a list, the relations from it underneath
+(`Relations:` then `- owned_by Payments team`), and an `entity-type:` tag. An entity with no observations and no relations is skipped. The
+stable id is a hash of the entity name, so running the import again adds only new entities. Then take the server out of
+your client's configuration; its file is yours to keep.
 
 ## From basic-memory
 
