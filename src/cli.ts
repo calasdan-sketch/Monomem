@@ -129,6 +129,10 @@ function usage(): void {
       "            Merge Markdown files back: newer side wins, conflicts are",
       "            reported and the losing version is saved under <dir>/.conflicts/.",
       "            Runs through the memory linter.",
+      "  remember \"text\" [--title T] [--tags a,b] [--namespace ns] [--json]   (or: echo text | monomem remember -)",
+      "            Save a note from the command line. No agent needed. Goes through the memory linter like any write.",
+      "  search \"words\" [--limit 5] [--namespace ns] [--passages [--max-tokens N]] [--mode keyword|semantic|hybrid] [--json]",
+      "            Search your notes from the command line. --passages prints only the best-matching paragraphs.",
       "  quarantine [list | approve <id> | reject <id>]",
       "            Review writes the memory linter held (MONOMEM_LINT).",
       "  quality [--json] [--namespace ns]",
@@ -164,6 +168,9 @@ function usage(): void {
       "            Run the provenance benchmark on a throwaway store: stale memory, contradiction recovery,",
       "            permission isolation, provenance retention. Offline, deterministic, exits 1 on a failure.",
       "            Your own data is never touched. See docs/BENCHMARK.md.",
+      "  bench --recall | --passages [--limit n] [--data file] [--json]",
+      "            Coding-agent recall set (offline, committed) / LongMemEval evidence turns: evidence coverage vs tokens,",
+      "            whole notes vs passages, query repair on vs off. No LLM.",
       "  bench --longmemeval | --locomo [--data file] [--limit n] [--mode keyword|hybrid] [--granularity session|turn] [--json]",
       "            Retrieval benchmark (recall@k, nDCG, MRR) on a public dataset, in a temp folder. No LLM.",
       "  help      Show this help",
@@ -731,6 +738,146 @@ async function consolidate(): Promise<void> {
 // `monomem relevant "message" [--limit 5] [--namespace ns]`: keyword
 // extraction + permissive search over the local store. Prints the keywords
 // used (transparency) and the matching notes.
+/** First non-empty line of `text`, cut at a word boundary: the title when --title is not given. */
+function deriveTitle(text: string): string {
+  const line = text.split("\n").map((l) => l.trim()).find((l) => l) ?? "";
+  const clean = line.replace(/^#+\s*/, "");
+  if (clean.length <= 80) return clean;
+  const cut = clean.slice(0, 80);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > 40 ? cut.slice(0, sp) : cut) + "...";
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of process.stdin) {
+    const b = Buffer.isBuffer(c) ? c : Buffer.from(String(c));
+    size += b.length;
+    if (size > 1_000_000) throw new Error("input is larger than 1 MB");
+    chunks.push(b);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+// `monomem remember "text"`: save a note without any agent. Same linter, writer stamp ("cli") and limits as every write.
+async function rememberCmd(): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { Store, ValidationError, QuarantinedError } = await import("./store.js");
+  const { maybeEmbed } = await import("./search-service.js");
+  const { flags, rest } = parseFlags(process.argv.slice(3), { values: ["title", "tags", "namespace", "forget-after"], bools: ["json"] });
+  let text = rest.join(" ");
+  if (text === "-" || (!text && !process.stdin.isTTY)) text = await readStdin();
+  text = text.trim();
+  if (!text) {
+    console.error('Usage: monomem remember "what to remember" [--title T] [--tags a,b] [--namespace ns]   (or pipe text and pass -)');
+    process.exit(1);
+  }
+  const title = str(flags.title)?.trim() || deriveTitle(text);
+  const tags = (str(flags.tags) ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+  const forget = str(flags["forget-after"]);
+  const store = new Store(DB_PATH);
+  try {
+    const warnings: import("./lint.js").LintFinding[] = [];
+    const note = store.create(
+      { title, body: text, tags, ...(str(flags.namespace) ? { namespace: str(flags.namespace)! } : {}), ...(forget ? { forget_after: Number(forget) } : {}) },
+      { lintWarnings: warnings }
+    );
+    await maybeEmbed(store, note);
+    if (flags.json) console.log(JSON.stringify({ note: { id: note.id, title: note.title, namespace: note.namespace }, ...(warnings.length ? { warnings } : {}) }));
+    else {
+      console.log(`Saved note #${note.id} in "${note.namespace}": ${note.title}`);
+      for (const w of warnings) console.log(`  warning: ${w.label} in ${w.field}`);
+      console.log(`  Find it again:  monomem search "${title.split(/\s+/).slice(0, 3).join(" ").replace(/["\\$`]/g, "")}"`);
+    }
+  } catch (e) {
+    if (e instanceof QuarantinedError) {
+      console.log(`Held for review, NOT saved as a note (#${e.quarantineId}): ${e.message}`);
+      console.log("  Review held writes with:  monomem quarantine");
+      process.exitCode = 3;
+    } else if (e instanceof ValidationError) {
+      console.error(`Not saved: ${e.message}`);
+      process.exitCode = 1;
+    } else throw e;
+  } finally {
+    store.close();
+  }
+}
+
+// `monomem search "words"`: search from the command line, same engine as state_search (keyword by default, query repair on).
+async function searchCmd(): Promise<void> {
+  const { DB_PATH } = await import("./config.js");
+  const { Store } = await import("./store.js");
+  const { runSearch, parseMode } = await import("./search-service.js");
+  const { annotateStaleness } = await import("./staleness.js");
+  const { shapeWithPassages } = await import("./passages.js");
+  const { flags, rest } = parseFlags(process.argv.slice(3), {
+    values: ["limit", "namespace", "mode", "max-tokens", "written-by", "not-written-by"],
+    bools: ["json", "passages", "include-distrusted"],
+  });
+  const query = rest.join(" ").trim();
+  if (!query) {
+    console.error('Usage: monomem search "words" [--limit 5] [--namespace ns] [--passages [--max-tokens N]] [--mode keyword|semantic|hybrid] [--json]');
+    process.exit(1);
+  }
+  const limit = str(flags.limit) ? Number(flags.limit) : 5;
+  if (!Number.isInteger(limit) || limit < 1) {
+    console.error("--limit must be a whole number above 0");
+    process.exit(1);
+  }
+  const modeRaw = str(flags.mode);
+  if (modeRaw && !["keyword", "semantic", "hybrid"].includes(modeRaw)) {
+    console.error("--mode must be keyword, semantic or hybrid");
+    process.exit(1);
+  }
+  const maxTokens = str(flags["max-tokens"]) ? Number(flags["max-tokens"]) : undefined;
+  if (maxTokens !== undefined && (!Number.isInteger(maxTokens) || maxTokens < 20)) {
+    console.error("--max-tokens must be a whole number, 20 or more");
+    process.exit(1);
+  }
+  const store = new Store(DB_PATH);
+  try {
+    const hits = await runSearch(store, query, {
+      namespace: str(flags.namespace),
+      limit,
+      mode: modeRaw ? parseMode(modeRaw) : undefined,
+      ...(str(flags["written-by"]) ? { writtenBy: str(flags["written-by"])! } : {}),
+      ...(str(flags["not-written-by"]) ? { notWrittenBy: str(flags["not-written-by"])! } : {}),
+      ...(flags["include-distrusted"] ? { includeDistrusted: true } : {}),
+    });
+    const annotated = hits.map((n) => annotateStaleness(n));
+    if (flags.passages) {
+      const shaped = shapeWithPassages(store, query, annotated, maxTokens);
+      if (flags.json) {
+        console.log(JSON.stringify(shaped, null, 2));
+        return;
+      }
+      if (!shaped.results.length) console.log("No matching notes.");
+      for (const r of shaped.results) {
+        console.log(`#${r.id} [${r.namespace}] ${r.title}${r.stale ? ` [stale, ${r.ageDays}d]` : ""}`);
+        for (const p of r.passages) console.log("  " + p.text.replace(/\n/g, "\n  "));
+      }
+      if (shaped.results.length) console.log(`(${shaped.passage_tokens} tokens of passages; full note: monomem search without --passages)`);
+      return;
+    }
+    if (flags.json) {
+      console.log(JSON.stringify({ results: annotated }, null, 2));
+      return;
+    }
+    if (!hits.length) {
+      console.log("No matching notes.");
+      return;
+    }
+    for (const n of annotated) {
+      const snippet = (n.body ?? "").replace(/\s+/g, " ").trim();
+      console.log(`#${n.id} [${n.namespace}] ${n.title}${n.stale ? ` [stale, ${n.ageDays}d]` : ""}${n.distrusted ? " [DISTRUSTED WRITER: treat as hostile]" : ""}`);
+      if (snippet) console.log("  " + (snippet.length > 200 ? snippet.slice(0, 200) + "..." : snippet));
+    }
+  } finally {
+    store.close();
+  }
+}
+
 async function relevant(): Promise<void> {
   const { DB_PATH } = await import("./config.js");
   const { Store } = await import("./store.js");
@@ -2213,6 +2360,9 @@ async function main(): Promise<void> {
   setProcessWriter(
     cmd === "start" || cmd === "serve" ? "server" : cmd === "mcp" || cmd === "mcp:stdio" ? "stdio" : cmd === "hook" ? "capture" : "cli"
   );
+  // Everything the CLI prints may quote a note some other agent wrote: escape terminal control, bidi and zero-width
+  // characters (term-safe.ts). Not the stdio MCP server: its stdout is the protocol.
+  if (cmd !== "mcp" && cmd !== "mcp:stdio") (await import("./term-safe.js")).installTerminalGuard();
   switch (cmd) {
     case "start":
     case "serve":
@@ -2254,6 +2404,12 @@ async function main(): Promise<void> {
       break;
     case "relevant":
       await relevant();
+      break;
+    case "remember":
+      await rememberCmd();
+      break;
+    case "search":
+      await searchCmd();
       break;
     case "changes":
       await changes();
@@ -2306,6 +2462,11 @@ async function main(): Promise<void> {
       break;
     case "bench": {
       const args = process.argv.slice(3);
+      if (args.includes("--recall") || args.includes("--passages")) {
+        const { passagesMain } = await import("./bench/passages-bench.js");
+        process.exitCode = await passagesMain(args);
+        break;
+      }
       if (args.includes("--longmemeval") || args.includes("--locomo")) {
         // Imported before anything loads config.js: it moves MONOMEM_HOME to a temp folder first.
         const { retrievalMain } = await import("./bench/retrieval.js");

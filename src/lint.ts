@@ -173,6 +173,37 @@ const INJECTION_PATTERNS: Array<[string, RegExp]> = [
     /!\[[^\]\n]{0,200}\]\(\s*<?https?:\/\/(?!(?:img\.shields\.io|badgen\.net|badge\.fury\.io|codecov\.io)[/:])[^\s)?#]{1,300}\?[^\s)]{0,2000}=/i,
   ],
   [
+    // Paraphrases of "ignore your instructions" that the verb+noun rules above miss.
+    "instruction override",
+    /\b(?:pay\s+no\s+(?:attention|heed)\s+to|(?:do\s+not|don'?t|never)\s+(?:listen\s+to|follow|obey|heed|comply\s+with))\s+(?:(?:any|all|the|your|my|these|those|of)\s+)*(?:previous|prior|above|earlier|preceding|original|system)\s+(?:instructions?|prompts?|directions?|rules|guidelines|messages|constraints)\b/i,
+  ],
+  [
+    "instruction override",
+    /\b(?:forget|ignore|disregard|erase|drop)\s+(?:everything|anything|all)\s+(?:(?:that\s+)?(?:you(?:'ve|\s+have)?\s+(?:read|seen|learned|heard|been\s+(?:told|given))|(?:was|were)\s+(?:said|written))|above|before|so\s+far|i\s+(?:said|told))\b/i,
+  ],
+  [
+    "instruction override",
+    /\byour\s+(?:real|true|actual|new|updated|secret|hidden)\s+(?:instructions?|task|purpose|goal|mission|orders?|objective)\s+(?:is|are|:)/i,
+  ],
+  [
+    "instruction override",
+    /\b(?:all\s+)?(?:previous|prior|earlier|above|preceding)\s+(?:instructions?|rules|guidelines|directions)\s+(?:are|were|is)\s+(?:now\s+)?(?:void|null|cancel(?:l)?ed|revoked|invalid|overridden|rescinded)\b/i,
+  ],
+  [
+    // An instruction to fetch-and-run: an imperative (run / execute / paste ...) or a silence cue, then a download
+    // piped into a shell or interpreter, or a decode-and-run. A bare install line in a README note is not flagged.
+    "pipe-to-shell instruction",
+    /\b(?:run|execute|exec|invoke|paste|launch|start|issue|type|use)\b[^\n]{0,60}?\b(?:curl|wget|fetch|iwr|invoke-webrequest|irm|invoke-restmethod)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k|a)?sh|python3?|node|perl|ruby|iex|invoke-expression|powershell|pwsh)\b/i,
+  ],
+  [
+    "pipe-to-shell instruction",
+    /\b(?:silently|quietly|secretly|in\s+the\s+background|without\s+(?:asking|confirmation|review))\b[^\n]{0,80}?\b(?:curl|wget|iwr|irm)\b[^\n|]{0,300}\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k|a)?sh|python3?|node|iex)\b/i,
+  ],
+  [
+    "pipe-to-shell instruction",
+    /\b(?:run|execute|invoke|paste)\b[^\n]{0,40}?(?:\b(?:ba|z)?sh\s+-c\s+["']?\$\(\s*(?:curl|wget)|\b(?:eval|source)\s+["']?\$\(\s*(?:curl|wget)|\b(?:iex|invoke-expression)\s*\(?\s*\(?\s*(?:iwr|irm|invoke-webrequest|invoke-restmethod|new-object\s+net\.webclient)|\bbase64\s+(?:-d|--decode)\b[^\n|]{0,80}\|\s*(?:ba|z)?sh\b|\b(?:ba|z)?sh\s+<\(\s*(?:curl|wget))/i,
+  ],
+  [
     // Raw agent tool-call markup. Its OWN label, and deliberately LAST.
     //
     // It used to share the "tool-call coercion" label with the two rules above,
@@ -188,6 +219,80 @@ const INJECTION_PATTERNS: Array<[string, RegExp]> = [
   ],
 ];
 
+// ---- Extra views of the text that obfuscated or non-English instructions hide in ------------------------------
+// The English rules above run on normalizeForScan(). Three more views catch what that form hides. All are
+// best-effort: a determined attacker can paraphrase past any pattern list (README: linting is hygiene, not a boundary).
+
+/** Letters of a "spaced out" word joined: "i g n o r e" -> "ignore". Runs of 3+ single characters only. */
+const SPACED_RUN = /(?<![\p{L}\p{N}])(?:[\p{L}\p{N}][ \t.*_\-]){2,}[\p{L}\p{N}](?![\p{L}\p{N}])/gu;
+function despace(t: string): { text: string; found: boolean } {
+  let found = false;
+  const text = t.replace(SPACED_RUN, (m) => {
+    found = true;
+    return m.replace(/[ \t.*_\-]/g, "");
+  });
+  return { text, found };
+}
+/** Every letter and digit, nothing else: "ignore all previous instructions" in any spacing becomes one run. */
+const COMPACT_OVERRIDE =
+  /(?:ignore|disregard|forget|override|bypass)(?:all|any|of|the|your|my|these|those|every|each)*(?:previous|prior|above|earlier|preceding|original|system|existing)(?:instructions?|prompts?|directions|directives|rules|guidelines|guardrails|messages|context)/;
+
+const LEET: Record<string, string> = { "0": "o", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", $: "s", "8": "b" };
+/** "1gn0r3 4ll pr3v10us" -> "ignore all previous" (and with 1 read as l: "a11" -> "all"). */
+function leet(t: string, one: "i" | "l"): string {
+  return t.replace(/[0134578@$]/g, (c) => (c === "1" ? one : LEET[c]));
+}
+const LEET_SIGNAL = /[a-z][0134578@$]+[a-z]|[0134578@$][a-z]{2}/i;
+
+interface Lang {
+  verbs: string;
+  filler: string;
+  mods: string;
+  nouns: string;
+}
+// Per language: a verb that means ignore/forget, optional determiners, then "previous/original/system" and
+// "instructions/rules" in either order. Both words are required, so ordinary prose about instructions passes.
+const LANGS: Lang[] = [
+  { verbs: "ignora|ignore|ignorar|olvida|olvide|olvidar|omite|descarta|desobedece", filler: "todas|todos|toda|las|los|tus|sus|mis|esas|estas|de", mods: "anteriores|previas|previos|originales|iniciales|del\\s+sistema|de\\s+arriba", nouns: "instrucciones|indicaciones|directrices|reglas|ordenes|órdenes|mensajes|restricciones" },
+  { verbs: "ignore|ignorez|ignorer|oublie|oubliez|oublier|néglige|neglige", filler: "toutes|tous|toute|tes|vos|les|ces|mes|de|des", mods: "précédentes|precedentes|précédents|anciennes|antérieures|anterieures|initiales|originales|du\\s+système|du\\s+systeme", nouns: "instructions|consignes|directives|règles|regles|ordres|messages|restrictions" },
+  { verbs: "ignoriere|ignorieren|ignorier|vergiss|vergessen|missachte|missachten", filler: "alle|alles|die|deine|ihre|diese|jegliche|sämtliche|samtliche", mods: "vorherigen|vorigen|früheren|fruheren|obigen|bisherigen|ursprünglichen|ursprunglichen|oben\\s+genannten", nouns: "anweisungen|anweisung|instruktionen|regeln|richtlinien|befehle|vorgaben" },
+  { verbs: "ignore|ignora|ignorar|esqueça|esqueca|desconsidere|desconsidera", filler: "todas|todos|as|os|suas|seus|essas|estas|de", mods: "anteriores|prévias|previas|originais|do\\s+sistema", nouns: "instruções|instrucoes|regras|diretrizes|ordens|mensagens" },
+  { verbs: "ignora|ignorare|dimentica|dimenticare|trascura", filler: "tutte|tutti|le|i|tue|queste|di", mods: "precedenti|anteriori|originali|del\\s+sistema", nouns: "istruzioni|regole|direttive|indicazioni|messaggi" },
+  { verbs: "negeer|vergeet|negeren", filler: "alle|de|je|uw|deze", mods: "vorige|eerdere|voorgaande|oorspronkelijke", nouns: "instructies|regels|richtlijnen|aanwijzingen" },
+  { verbs: "игнорируй|игнорируйте|забудь|забудьте|пренебреги|отбрось", filler: "все|всё|любые|свои|твои|ваши|эти", mods: "предыдущие|прежние|прошлые|вышеуказанные|изначальные|исходные|системные", nouns: "инструкции|указания|правила|команды|директивы|ограничения|сообщения" },
+];
+const NOT_LETTER_BEFORE = "(?<![\\p{L}\\p{N}])";
+const NOT_LETTER_AFTER = "(?![\\p{L}\\p{N}])";
+const MULTILINGUAL: RegExp[] = [
+  ...LANGS.map(
+    (l) =>
+      new RegExp(
+        `${NOT_LETTER_BEFORE}(?:${l.verbs})\\s+(?:(?:${l.filler})\\s+){0,4}(?:(?:${l.mods})\\s+(?:${l.nouns})|(?:${l.nouns})\\s+(?:${l.mods}))${NOT_LETTER_AFTER}`,
+        "iu"
+      )
+  ),
+  // Turkish
+  /(?<![\p{L}\p{N}])(?:t[üu]m\s+)?[öo]nceki\s+(?:t[üu]m\s+)?(?:talimat|y[öo]nerge|kural|komut)\p{L}*\s+(?:yoksay|unut|g[öo]rmezden\s+gel)/iu,
+  // Chinese (simplified and traditional)
+  /(?:忽略|无视|無視|忘记|忘記|忘掉|不要(?:遵循|理会|理會|遵守)|别理|別理|不理会|不理會|置之不理)[^。\n]{0,6}?(?:之前|以前|先前|上面|以上|前面|上述|原来|原來|原有|所有|全部|任何|系统|系統)[^。\n]{0,6}?(?:指令|指示|提示词|提示詞|提示|说明|說明|规则|規則|命令|约束|約束|限制|设定|設定)/u,
+  // Japanese
+  /(?:以前|これまで|上記|先ほど|前|すべて|全て)[^。\n]{0,8}?(?:指示|命令|ルール|制約|プロンプト|指令)[^。\n]{0,6}?(?:無視|忘れ|従わな|破棄|守らな)/u,
+  /(?:無視|忘れ)[^。\n]{0,4}?(?:以前|これまで|上記|先ほど|すべて|全て)[^。\n]{0,8}?(?:指示|命令|ルール|制約|プロンプト)/u,
+  // Korean
+  /(?:이전|위의|앞의|기존|모든)[^.\n]{0,8}?(?:지시|명령|지침|규칙|프롬프트|제약)[^.\n]{0,8}?(?:무시|잊어|따르지|버려)/u,
+  // Arabic
+  /(?:تجاهل|تجاهلي|انس|انسَ)\s+(?:جميع\s+|كل\s+)?(?:ال)?(?:تعليمات|أوامر|اوامر|قواعد|إرشادات)\s+(?:ال)?(?:سابقة|أعلاه|الأصلية)/u,
+  // Hindi
+  /(?:पिछले|पहले\s+के|ऊपर\s+के)\s+(?:सभी\s+)?(?:निर्देश|आदेश|नियम)\p{L}*\s+(?:को\s+)?(?:अनदेखा|नज़रअंदाज़|नजरअंदाज|भूल)/u,
+];
+/** NFKC, format characters dropped, whitespace squashed -- but NO Cyrillic/Greek-to-Latin folding (that would mangle Russian). */
+function normalizeKeepScripts(text: string): string {
+  return text
+    .normalize("NFKC")
+    .replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]+/gu, "")
+    .replace(/\s+/g, (m) => (m.includes("\n") ? "\n" : " "));
+}
+
 /** First injection label found in `text`, or null. */
 export function scanForInjection(text: string | undefined): string | null {
   if (!text) return null;
@@ -195,8 +300,31 @@ export function scanForInjection(text: string | undefined): string | null {
   // Chat-template tokens inside inline code are quoted, not a prompt
   // (`<|im_start|>` in a doc); only the marker rule skips code spans.
   const prose = t.replace(/`[^`\n]*`/g, " ");
-  for (const [label, re] of INJECTION_PATTERNS) {
-    if (re.test(label === "system-prompt marker" ? prose : t)) return label;
+  const english = (s: string, p: string): string | null => {
+    for (const [label, re] of INJECTION_PATTERNS) {
+      if (re.test(label === "system-prompt marker" ? p : s)) return label;
+    }
+    return null;
+  };
+  const direct = english(t, prose);
+  if (direct) return direct;
+  // Other languages: Russian etc. need the unfolded text.
+  const kept = normalizeKeepScripts(text);
+  if (MULTILINGUAL.some((re) => re.test(kept))) return "instruction override";
+  // Spaced-out letters: "i g n o r e  a l l  p r e v i o u s".
+  const sp = despace(t);
+  if (sp.found) {
+    const hit = english(sp.text, sp.text.replace(/`[^`\n]*`/g, " "));
+    if (hit) return hit;
+    if (COMPACT_OVERRIDE.test(t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ""))) return "instruction override";
+  }
+  // Leetspeak: "1gn0r3 4ll pr3v10us 1nstruct10ns".
+  if (LEET_SIGNAL.test(t)) {
+    for (const one of ["i", "l"] as const) {
+      const lt = leet(t.toLowerCase(), one);
+      const hit = english(lt, lt.replace(/`[^`\n]*`/g, " "));
+      if (hit) return hit;
+    }
   }
   return null;
 }

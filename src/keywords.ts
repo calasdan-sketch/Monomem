@@ -65,6 +65,8 @@ const STOP_WORDS: ReadonlySet<string> = new Set([
 /** Max keywords returned -- keeps the downstream FTS fan-out bounded. */
 export const MAX_KEYWORDS = 20;
 
+const hasCjk = (s: string): boolean => /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/u.test(s);
+
 /**
  * Tokens under the 3-character minimum that still change what a note means,
  * so the short-token drop must not swallow them.
@@ -120,7 +122,8 @@ export function extractKeywords(text: string): string[] {
         // Digit carve-out: "s3"/"ec2" survive the short-token drop. Polarity
         // carve-out: "no" is two letters and reverses a sentence's meaning, so
         // it must not be dropped for being short either.
-        if (part.length < 3 && !/\d/.test(part) && !SHORT_MEANINGFUL.has(part)) continue;
+        // CJK carve-out: two characters can be a whole word ("东京" = Tokyo), and CJK text has no spaces to split on.
+        if (part.length < 3 && !/\d/.test(part) && !SHORT_MEANINGFUL.has(part) && !(part.length === 2 && hasCjk(part))) continue;
         if (STOP_WORDS.has(part)) continue;
         if (bareSeen.has(part)) continue; // hashtag twin already emitted
         bareSeen.add(part);

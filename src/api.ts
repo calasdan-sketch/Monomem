@@ -71,6 +71,7 @@ import { PayloadTooLargeError, readBody, normalizeTokens, IMPORT_BODY_BYTES } fr
  */
 const IMPORT_EDGE_DEFER_THRESHOLD = 200;
 import { DASHBOARD_HTML, DASHBOARD_JS } from "./dashboard.js";
+import { shapeWithPassages } from "./passages.js";
 import { runSearch, runSearchExplained, parseMode, maybeEmbed, runRelevantSearch, roundRobin, type ExplainedHit } from "./search-service.js";
 import {
   type ServerNamespaceOpts,
@@ -941,6 +942,19 @@ export function createApiServer(
         });
         const toResults = (hits: ExplainedHit[]): Record<string, unknown>[] =>
           hits.map((h) => shapeHit(h.note, h.breakdown));
+        // ?passages=1[&max_tokens=N]: the best passages of each hit instead of its whole body (see passages.ts).
+        const passagesOn = flagParam(url, "passages");
+        let passageTokens: number | undefined;
+        try {
+          passageTokens = intParam(url, "max_tokens", 20);
+        } catch (e) {
+          sendError(res, e);
+          return;
+        }
+        const shapeAll = (notes: NoteRecord[]): Record<string, unknown> =>
+          passagesOn
+            ? { ...shapeWithPassages(store, q, notes.map((n) => annotateStaleness(n)), passageTokens) }
+            : { results: notes.map((n) => annotateStaleness(n)) };
         if (nsCtx.active) {
           // Untrusted hint intersected with the readable set, like the MCP
           // state_search tool: fan out over every readable namespace when
@@ -967,7 +981,7 @@ export function createApiServer(
             }
             const results = await runSearch(store, q, { ...searchOpts, namespace: hint });
             sendJson(res, 200, {
-              results: results.map((n) => annotateStaleness(n)),
+              ...shapeAll(results),
               timeRange: timePhrase ? timePhrase.label : null,
               searchedNamespaces: [hint],
             });
@@ -996,7 +1010,7 @@ export function createApiServer(
             lists.push(await runSearch(store, q, { ...searchOpts, namespace: ns }));
           }
           sendJson(res, 200, {
-            results: roundRobin(lists, lim).map((n) => annotateStaleness(n)),
+            ...shapeAll(roundRobin(lists, lim)),
             timeRange: timePhrase ? timePhrase.label : null,
             searchedNamespaces: readable(nsCtx),
           });
@@ -1021,7 +1035,7 @@ export function createApiServer(
         }
         const results = await runSearch(store, q, singleOpts);
         sendJson(res, 200, {
-          results: results.map((n) => annotateStaleness(n)),
+          ...shapeAll(results),
           timeRange: timePhrase ? timePhrase.label : null,
           searchedNamespaces: namespace ? [namespace] : [],
         });

@@ -51,6 +51,7 @@ import {
 import { parseTimePhrase } from "./time-parse.js";
 import { TIME_ZONE } from "./config.js";
 import { annotateStaleness } from "./staleness.js";
+import { shapeWithPassages, MAX_PASSAGE_TOKENS } from "./passages.js";
 import { meterStats } from "./meter.js";
 import {
   findCandidatesGuarded,
@@ -623,11 +624,24 @@ export function createMcpServer(
           .describe(
             "Attach a `breakdown` to each result: the base relevance, access boost and staleness factors that produced its rank. Default false."
           ),
+        passages: z
+          .boolean()
+          .optional()
+          .describe(
+            "Return only the best-matching passages (chat turns or paragraphs) of each result instead of its whole body, within `max_tokens`. Far fewer tokens when a note is long; each result keeps its id, so state_read fetches the full note. Default false."
+          ),
+        max_tokens: z
+          .number()
+          .int()
+          .min(20)
+          .max(MAX_PASSAGE_TOKENS)
+          .optional()
+          .describe("With passages: the token budget for all returned passages together (about 4 characters a token). Default 1500."),
         ...WRITER_FILTER_SHAPE,
         ...SUPERSEDED_SHAPE,
       },
     },
-    async ({ query, namespace, limit, mode, when, explain, written_by, not_written_by, include_distrusted, include_superseded }) => {
+    async ({ query, namespace, limit, mode, when, explain, passages, max_tokens, written_by, not_written_by, include_distrusted, include_superseded }) => {
       try {
         const denied = denyIfUnder("read");
         if (denied) return errorResult(denied);
@@ -645,6 +659,11 @@ export function createMcpServer(
           : undefined;
         const resolvedMode = mode ?? parseMode(undefined);
         const wf = { ...writerFilterArgs(written_by, not_written_by, include_distrusted), ...supersededArg(include_superseded) };
+        // passages: swap each result's body for the best passages, as one object spread into the response.
+        const shaped = (notes: NoteRecord[], extra?: (n: NoteRecord) => object): { results: unknown[]; passage_tokens?: number; max_tokens?: number } => {
+          const annotated = notes.map((n) => ({ ...annotateStaleness(n), ...(extra ? extra(n) : {}) }));
+          return passages === true ? shapeWithPassages(store, query, annotated, max_tokens) : { results: annotated };
+        };
         if (explain === true) {
           // Explained twin of the branches below: same namespace gating, the
           // per-namespace lists merge round-robin, each hit keeps its breakdown.
@@ -661,7 +680,7 @@ export function createMcpServer(
               ? perNs[0].map((h) => h.note)
               : roundRobin(perNs.map((l) => l.map((h) => h.note)), clampInt(limit, 20, 1, 200));
           return untrustedResult({
-            results: merged.map((n) => ({ ...annotateStaleness(n), breakdown: byId.get(n.id) })),
+            ...shaped(merged, (n) => ({ breakdown: byId.get(n.id) })),
             timeRange: timePhrase ? timePhrase.label : null,
             searchedNamespaces: nsActive ? spaces : namespace ? [namespace] : [],
           });
@@ -688,7 +707,7 @@ export function createMcpServer(
               ...wf,
             });
             return untrustedResult({
-              results: results.map((n) => annotateStaleness(n)),
+              ...shaped(results),
               timeRange: timePhrase ? timePhrase.label : null,
               searchedNamespaces: [hint],
             });
@@ -700,7 +719,7 @@ export function createMcpServer(
             ...wf,
           });
           return untrustedResult({
-            results: results.map((n) => annotateStaleness(n)),
+            ...shaped(results),
             timeRange: timePhrase ? timePhrase.label : null,
             searchedNamespaces,
           });
@@ -713,7 +732,7 @@ export function createMcpServer(
           ...wf,
         });
         return untrustedResult({
-          results: results.map((n) => annotateStaleness(n)),
+          ...shaped(results),
           timeRange: timePhrase ? timePhrase.label : null,
           searchedNamespaces: namespace ? [namespace] : [],
         });

@@ -821,7 +821,7 @@ export const MAX_QUERY_TERMS = 64;
  * (IDF-weighted) terms ranks higher; here words also lose a common suffix
  * (queryStem), because this is the looser "some of the words" step.
  */
-function buildMatchQuery(q: string, any = false): string {
+export function buildMatchQuery(q: string, any = false): string {
   const tokens = q
     .slice(0, MAX_QUERY_CHARS)
     .trim()
@@ -4403,6 +4403,76 @@ export class Store {
     return row !== undefined;
   }
 
+  // --- Index vocabulary (query repair, repair.ts) ----------------------------------------------------------
+  // fts5vocab exposes every term in the full-text index with its document count. The view lives in the connection's
+  // temp schema, so it adds nothing to the database file and needs no migration. Best effort: when it cannot be made
+  // (an old SQLite, a locked file) repair is switched off and search behaves exactly as before.
+  private vocabOk: boolean | undefined;
+  private vocabReady(): boolean {
+    if (this.vocabOk !== undefined) return this.vocabOk;
+    try {
+      this.db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS temp.notes_vocab USING fts5vocab(main, notes_fts, 'row')");
+      this.vocabOk = true;
+    } catch {
+      this.vocabOk = false;
+    }
+    return this.vocabOk;
+  }
+
+  /** True when some indexed term starts with `prefix` (lower-case, as the index folds it). */
+  vocabHasPrefix(prefix: string): boolean {
+    if (!prefix || !this.vocabReady()) return true; // unknown vocabulary: assume the word is fine, do not "repair"
+    try {
+      return this.db.prepare("SELECT 1 AS x FROM temp.notes_vocab WHERE term >= ? AND term < ? LIMIT 1").get(prefix, prefix + "\u{10FFFF}") !== undefined;
+    } catch {
+      return true;
+    }
+  }
+
+  /** True when `term` is exactly an indexed term. */
+  vocabHasTerm(term: string): boolean {
+    if (!term || !this.vocabReady()) return false;
+    try {
+      return this.db.prepare("SELECT 1 AS x FROM temp.notes_vocab WHERE term = ? LIMIT 1").get(term) !== undefined;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Indexed terms with their document counts, most documents first. `startsWith` narrows by first character(s) via the
+   * term index; `like` is a SQL LIKE pattern (the caller escapes it); lengths are in characters. Bounded by `limit`.
+   */
+  vocabTerms(o: { startsWith?: string; like?: string; minLen?: number; maxLen?: number; limit: number }): Array<{ term: string; doc: number }> {
+    if (!this.vocabReady()) return [];
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (o.startsWith) {
+      where.push("term >= ? AND term < ?");
+      params.push(o.startsWith, o.startsWith + "\u{10FFFF}");
+    }
+    if (o.like) {
+      where.push("term LIKE ? ESCAPE '\\'");
+      params.push(o.like);
+    }
+    if (o.minLen !== undefined) {
+      where.push("length(term) >= ?");
+      params.push(o.minLen);
+    }
+    if (o.maxLen !== undefined) {
+      where.push("length(term) <= ?");
+      params.push(o.maxLen);
+    }
+    try {
+      const rows = this.db
+        .prepare(`SELECT term, doc FROM temp.notes_vocab${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY doc DESC LIMIT ?`)
+        .all(...params, clampInt(o.limit, 50, 1, 5000)) as Array<{ term: string; doc: number }>;
+      return rows.map((r) => ({ term: String(r.term), doc: Number(r.doc) }));
+    } catch {
+      return [];
+    }
+  }
+
   search(
     query: string,
     opts: { namespace?: string; limit?: number } & RangeOpts = {}
@@ -4419,11 +4489,21 @@ export class Store {
    */
   searchRanked(
     query: string,
-    opts: { namespace?: string; limit?: number; /** Match ANY term (bm25-ranked union) instead of every term. */ any?: boolean } & RangeOpts = {}
+    opts: {
+      namespace?: string;
+      limit?: number;
+      /** Match ANY term (bm25-ranked union) instead of every term. */
+      any?: boolean;
+      /**
+       * A ready-made FTS5 expression (built by repair.ts from quoted vocabulary terms) used instead of `query`'s own
+       * words. Internal: callers must quote every term themselves.
+       */
+      matchExpr?: string;
+    } & RangeOpts = {}
   ): RankedHit[] {
     if (!query || !query.trim()) return [];
     const limit = clampInt(opts.limit, 20, 1, 200);
-    const matchQuery = buildMatchQuery(query, opts.any === true);
+    const matchQuery = opts.matchExpr ?? buildMatchQuery(query, opts.any === true);
     if (!matchQuery) return []; // query was all punctuation/stopwords
     const range = this.rangeFor(opts, opts.namespace ? [opts.namespace] : undefined);
 

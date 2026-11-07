@@ -4,6 +4,54 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - Unreleased
+
+Cheaper lookups and fewer missed searches, with benchmarks anyone can re-run. Nothing to migrate: the database and its index
+are unchanged (query repair reads a temporary view of the index that is never written to the file).
+
+### Added
+
+- **Passages: `state_search { passages: true, max_tokens }`, `GET /search?passages=1&max_tokens=`, `monomem search --passages`.**
+  Each result comes back without its body and with the best-matching chat turns or paragraphs, within a token budget
+  (default 1,500). On LongMemEval-S the top 5 cost 16,258 tokens as whole notes (p50); passages hand over 487 tokens at a
+  500 budget (an evidence turn present for 80.9 % of questions, against 97.0 % for the whole notes) and 1,982 at 2,000 (88.7 %). A trade, not a
+  free win: see [docs/BENCHMARK.md](./docs/BENCHMARK.md#coding-agent-recall-and-passages-130). Off by default; results are
+  chosen from notes the search already returned, so permissions and trust rules are unchanged. Adds about 120 tokens to the default tool
+  schema (4,709 to 4,829 estimated).
+- **Two committed offline benchmarks:** `npm run bench:recall` (36 synthetic coding-agent notes, 34 queries, no download) and
+  `npm run bench:passages` (LongMemEval evidence turns). Both report evidence coverage against tokens; `--json` prints everything.
+- **Query repair** for keyword search (`MONOMEM_REPAIR=off` disables): a short query word that matches nothing is replaced by the
+  closest indexed word (`postgress` finds `Postgres`), split (`ratelimit` finds `rate-limit`), joined (`rate limit` finds
+  `RateLimiter`) or read as an abbreviation when nothing else matched (`connection reset` finds `ECONNRESET`); a CJK query word
+  is matched inside indexed runs of CJK text (`东京` finds `我们决定去东京旅行`). On the coding-agent set the right note is in the
+  top 5 for 94.1 % of queries, up from 82.4 %. LongMemEval-S and LoCoMo recall is unchanged (R@5 97.7, 59.2 to 59.3 on turns), at about 0.2 to 0.4 ms per
+  search. Applies to queries of 4 words or fewer, plus CJK words in any query.
+- **`monomem remember "text"` and `monomem search "words"`**: save and find notes from a terminal with no agent. Same linter,
+  `cli` writer stamp and limits as every write. `remember` exits 1 when a secret blocks it and 3 when the linter holds it for review.
+- **The injection linter reads more:** paraphrases ("pay no attention to the previous instructions", "your real instructions
+  are ..."), "ignore the previous instructions" in Spanish, French, German, Portuguese, Italian, Dutch, Russian, Turkish, Chinese,
+  Japanese, Korean, Arabic and Hindi, spaced-out (`i g n o r e`) and leetspeak (`1gn0r3 4ll`) text, and instructions to fetch and run
+  code (`run: curl ... | sh`, `bash -c "$(curl ...)"`, `base64 -d | sh`) under a new label, "pipe-to-shell instruction". A plain install line
+  in a note ("Install with: curl ... | sh") is not flagged. Linting is still not a guarantee (README, docs/memory-linter.md).
+
+### Changed
+
+- **The CLI escapes terminal control, bidi and zero-width characters in everything it prints** (ANSI escapes, carriage returns,
+  right-to-left overrides, zero-width characters, tag characters), as visible `\uXXXX` text. The escape is a JSON escape, so `--json` output stays valid
+  and decodes to the original text. A single zero-width joiner between two letters or emoji is kept (Persian, Indic scripts, emoji sequences). The
+  stdio MCP server is not touched: its stdout is the protocol. Note bodies are still stored unmodified.
+- **Two-character CJK words are now search keywords** (they were dropped as too short), for `state_relevant` and the fallback step.
+
+### Fixed (found in the 1.3.0 review)
+
+- A 4,000-character single-word query could make the repair step quadratic (and run out of memory in the test run); words longer than 40
+  characters are no longer repaired. Passage selection is bounded for a 200-note result with huge bodies.
+
+### Not done
+
+- Semantic mode was not re-run for passages or repair (no embedding server). Passages use BM25 only.
+- The recall set is synthetic and small; the LongMemEval passage numbers were tuned on the same data (no held-out split).
+
 ## [1.2.0] - Unreleased
 
 Better search, measured. A whole question now finds the right memory more often, and the benchmark shows what a

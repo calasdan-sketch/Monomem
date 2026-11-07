@@ -1,6 +1,6 @@
 {
   "name": "monomem",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Shared memory for AI coding agents. Server-stamped writer on every note, injection-linted writes, undo for replacements and edits. Self-hosted, MIT.",
   "license": "MIT",
   "author": "Calas Automations Inc.",
@@ -43,6 +43,8 @@
     "mcp:http": "node dist/src/mcp-http.js",
     "doctor": "node dist/src/cli.js doctor",
     "bench": "npm run build && node dist/src/cli.js bench",
+    "bench:recall": "npm run build && node dist/src/cli.js bench --recall",
+    "bench:passages": "npm run build && node dist/src/cli.js bench --passages",
     "cli": "node dist/src/cli.js",
     "test": "npm run build && node --test --import ./dist/test/setup-env.js \"dist/test/*.test.js\"",
     "prepublishOnly": "npm run build",
@@ -67,6 +69,7 @@
     "CHANGELOG.md",
     "docs/*.md",
     "bench/scenarios/*.json",
+    "bench/recall/*.json",
     "!docs/RUNNER.md"
   ],
   "dependencies": {

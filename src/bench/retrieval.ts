@@ -15,7 +15,7 @@ import { maybeEmbed, runRelevantSearch, runSearch } from "../search-service.js";
 import { toRows } from "../progressive.js";
 import { aggregate, dedupe, percentile, scoreQuestion, type MetricRow, type QuestionScore } from "./retrieval-metrics.js";
 
-const SOURCES = {
+export const SOURCES = {
   longmemeval: {
     file: "longmemeval_s_cleaned.json",
     url: "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json",
@@ -24,7 +24,7 @@ const SOURCES = {
 } as const;
 type Dataset = keyof typeof SOURCES;
 type Granularity = "session" | "turn";
-const CACHE_DIR = join(homedir(), ".cache", "monomem-bench");
+export const CACHE_DIR = join(homedir(), ".cache", "monomem-bench");
 const TOP = 50;
 
 interface Doc {
@@ -124,7 +124,7 @@ export function locomoHaystacks(data: unknown, g: Granularity): Haystack[] {
 }
 
 /** Download `url` to `dest` once (streamed, progress on stderr). Returns dest. */
-async function fetchOnce(url: string, dest: string): Promise<string> {
+export async function fetchOnce(url: string, dest: string): Promise<string> {
   if (existsSync(dest)) return dest;
   mkdirSync(CACHE_DIR, { recursive: true });
   const res = await fetch(url);

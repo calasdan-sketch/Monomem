@@ -378,6 +378,94 @@ nDCG@10 87.5, MRR 88.6, search p50 1.7 ms.
   runs. A few LoCoMo evidence entries hold several ids in one string (`"D8:6; D9:17"`) and are split; entries
   that are not of the form `D<n>:<n>` are dropped.
 
+
+## Coding-agent recall and passages (1.3.0)
+
+Two committed, offline, no-model benchmarks for the question "what does it cost, in tokens, to hand an agent the evidence?"
+Anyone can re-run them:
+
+```
+npm run bench:recall          # monomem bench --recall     (no download, about 1 second)
+npm run bench:passages        # monomem bench --passages   (LongMemEval-S, cached by `monomem bench --longmemeval`)
+```
+
+`--json` prints every number. They run on a throwaway store like the other retrieval benchmarks.
+
+**Evidence coverage** means: does the text the agent is handed contain the answer? On the recall set it is a sentence fragment
+that must appear (case-insensitive); on LongMemEval it is the dataset's own `has_answer` turn markers (a gold turn counts as
+handed over when the passage covers at least half of it or 300 characters). Tokens are about 4 characters each. "Whole notes"
+is what `state_search` returns today: the top 5 notes in full.
+
+### Coding-agent recall set (`bench/recall/coding-agent.json`)
+
+36 synthetic notes of the kind a coding agent keeps (decisions, runbooks, gotchas; some multi-paragraph, one in Chinese) and
+34 queries. It was written for this repo from the failure types found when the tool was tested by hand (a typo, `ratelimit` vs
+`rate-limit`, `connection reset` vs `ECONNRESET`, a Chinese word inside a run of text), plus plain lookups and three
+paraphrase queries keyword search cannot answer. It is small, written by the authors of the code it tests, and the notes
+contain the words the queries use: read it as a regression check, not as a measure of real-world accuracy.
+
+| Category (queries) | note in top 5, repair off | note in top 5, repair on | note first, off / on |
+|---|---|---|---|
+| direct lookups (14) | 100.0 | 100.0 | 100.0 / 100.0 |
+| typos (6) | 100.0 | 100.0 | 83.3 / 100.0 |
+| split or joined words (5) | 80.0 | 100.0 | 80.0 / 100.0 |
+| abbreviation, `connection reset` (3) | 66.7 | 100.0 | 66.7 / 66.7 |
+| CJK (3) | 33.3 | 100.0 | 33.3 / 100.0 |
+| paraphrase, no shared words (3) | 33.3 | 33.3 | 33.3 / 33.3 |
+| **all (34)** | **82.4** | **94.1** | **79.4 / 91.2** |
+
+(Only one of the three paraphrase queries is found, through a word it happens to share with the right note. The honest reading
+is that keyword search does not answer paraphrases, with or without repair; semantic mode is for those and was not run here.)
+
+| Evidence handed to the agent | evidence coverage | tokens p50 / p95 / mean |
+|---|---|---|
+| whole top-5 notes | 94.1 % | 336 / 741 / 343 |
+| passages, budget 150 | 91.2 % | 133 / 150 / 118 |
+| passages, budget 300 | 94.1 % | 199 / 291 / 185 |
+
+On this set passages give the same coverage as whole notes with 46 % fewer tokens at the mean (185 vs 343). The notes are short;
+the saving grows with note length.
+
+### LongMemEval-S evidence turns
+
+470 questions, one note per haystack session (about 16,000 tokens for the top 5), keyword search, `has_answer` turns as gold.
+The top 5 contain a session with an evidence turn for 97.0 % of questions.
+
+| Evidence handed to the agent | at least one gold turn | share of gold turns | tokens p50 / p95 |
+|---|---|---|---|
+| whole top-5 sessions (today's `state_search`) | 97.0 % | 92.9 % | 16,258 / 20,042 |
+| passages, budget 250 | 70.6 % | 56.9 % | 239 / 250 |
+| passages, budget 500 | 80.9 % | 68.2 % | 487 / 500 |
+| passages, budget 1,000 | 84.7 % | 75.8 % | 986 / 999 |
+| passages, budget 2,000 | 88.7 % | 80.5 % | 1,982 / 1,998 |
+
+Reading it plainly: at 2,000 tokens (8 times fewer than the whole notes) the agent is handed an evidence turn for 88.7 % of
+questions instead of 97.0 %, and at 500 tokens (32 times fewer) for 80.9 %. Passages are a trade, not a free win: the
+passage ranker is plain BM25 over turns and loses to reading the whole session when the evidence turn shares few words with
+the question (the same weakness that holds LoCoMo turn recall to 59 %). The budget, passage size (900 characters),
+BM25 length normalisation (b = 1), and the per-note and neighbour rules were tuned on this same dataset, no held-out split.
+Where a `memory_index` first, then `memory_get` flow suits the agent better (about 3,400 tokens for 97 %), that remains the
+other option.
+
+### Query repair on the public sets
+
+Keyword search, same machine, `MONOMEM_REPAIR=off` vs on (the benchmark keeps this one variable):
+
+| Run | R@5 off / on | R@10 | nDCG@10 | MRR | search p50 off / on |
+|---|---|---|---|---|---|
+| LongMemEval-S, session (470 q) | 97.7 / 97.7 | 98.7 / 98.7 | 90.9 / 90.8 | 91.7 / 91.6 | 2.8 / 3.2 ms |
+| LoCoMo-10, session (1,982 q) | 89.5 / 89.6 | 95.2 / 95.4 | 78.5 / 78.6 | 76.3 / 76.3 | 1.4 / 1.6 ms |
+| LoCoMo-10, turn | 59.3 / 59.2 | 66.6 / 66.8 | 47.3 / 47.4 | 45.4 / 45.4 | 1.9 / 2.2 ms |
+
+Repair does not change recall on these sets (differences are 0.1 or less, two questions at most), which is the aim: they hold
+well-formed questions. It costs about 0.2 to 0.4 ms at the median. A first version that also repaired long questions lowered
+LoCoMo turn R@5 to 58.7 and was cut back to queries of 4 words or fewer.
+
+### Tool schema size
+
+The default ten tools' schemas are about 4,829 estimated tokens (`tools/list` JSON length divided by 4) in 1.3.0, up from about
+4,709 in 1.2.0: the two `passages` / `max_tokens` parameters on `state_search` cost about 120.
+
 ## Known gaps history
 
 Version numbers below are from before the 2026 rename to Monomem (the product was released as OneMemory 1.x-2.x).

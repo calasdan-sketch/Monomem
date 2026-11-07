@@ -41,6 +41,48 @@ words are searched as typed.
 A query is cut to its first 4,096 characters and 64 words; the API and MCP refuse a
 longer one with an error. Scores on LongMemEval-S and LoCoMo: [BENCHMARK.md](./BENCHMARK.md#retrieval-longmemeval-s-and-locomo).
 
+## Query repair
+
+Keyword search matches words as typed (by prefix), which misses four common ways of searching. Since 1.3.0, when a short
+query (4 words or fewer) leaves room under the limit, Monomem looks at the words the index actually holds (SQLite's `fts5vocab`
+view; no second index, no migration, nothing added to the database file) and adds the closest matches:
+
+| You type | The note says | What happens |
+|---|---|---|
+| `postgress` | `Postgres` | a word that matches nothing is replaced by an indexed word one edit away (two for words of 9+ letters, same first letter) |
+| `ratelimit` | `rate-limit` | split into two indexed words |
+| `rate limit` | `RateLimiter` | two words that an indexed word spells together |
+| `connection reset` | `ECONNRESET` | (only when nothing else matched) an indexed word holding the start of each |
+| `东京` | `我们决定去东京旅行` | the tokenizer keeps a run of Chinese, Japanese or Korean text as one word, so a CJK query word is matched inside the indexed runs that contain it; two-character CJK words are now kept as keywords |
+
+The repaired search runs in addition to the normal one and its hits are merged in; a word that already matches something is never
+replaced, and a longer question (more than 4 words) is not repaired except for CJK words, because one word missing from the
+index is normal in a question and repairing it lowered LoCoMo recall. `MONOMEM_REPAIR=off` turns it off. The vocabulary is the
+whole index, but the repaired query is filtered by the same namespace, trust and time rules as any search, so it can only
+return what the caller may read. Numbers: [BENCHMARK.md](./BENCHMARK.md#coding-agent-recall-and-passages-130).
+
+## Passages: the paragraph, not the whole note
+
+`state_search` returns whole notes, and a long note costs its full length in the agent's context even when one paragraph answers
+the question. With `passages: true` (MCP) or `?passages=1` (REST), and `monomem search --passages`, each result comes back
+without its body and with the best-matching passages instead, within a token budget (`max_tokens`, default 1,500, about 4
+characters a token; `?max_tokens=` on REST):
+
+```
+state_search { query: "what pool mode does pgbouncer use", passages: true, max_tokens: 300 }
+-> results: [{ id: 12, title: "Database: Postgres connection pooling", body_omitted: true, body_chars: 1010,
+               passages: [{ start: 188, end: 420, text: "## Decision\nPgBouncer runs in transaction mode ...", score: 3.1 }] }],
+   passage_tokens: 112
+```
+
+A chat-style body ("user: ...", "assistant: ...") splits at each turn; anything else at blank lines; a block over 900 characters is cut
+at a line or sentence break. Passages are scored with BM25 over the passages of the returned notes (prefix match, so `deploy`
+finds `deployment`; typos and compounds that query repair fixed count too), the best one also brings its next passage when
+there is room, and a note whose passages match nothing still shows its opening. `start`/`end` are character offsets in the
+note body, and the note keeps its `id`, so `state_read` fetches the whole thing. Passages are chosen from the notes the search
+already returned, so permissions, trust and staleness rules are unchanged. It only helps on long notes: on one-line notes there is
+nothing to cut. On REST, `explain=1` returns whole bodies (passages apply to the plain response). It adds about 120 tokens to the tool schema the model reads every turn.
+
 ## Time-aware search
 
 `state_search` takes an optional `when` parameter (and `GET /search` takes

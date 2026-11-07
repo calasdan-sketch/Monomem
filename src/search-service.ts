@@ -13,6 +13,8 @@ import { Store, NoteRecord, clampInt, queryStem } from "./store.js";
 import { embed, embeddingsEnabled, embeddingsConfig, noteEmbeddingText } from "./embeddings.js";
 import { filterByTimeRange } from "./time-parse.js";
 import { extractKeywords } from "./keywords.js";
+import { planRepair, looseExpression, repairEnabled, type RepairPlan } from "./repair.js";
+export { repairEnabled };
 import {
   stalenessConfig,
   stalePenaltyFactor,
@@ -688,10 +690,12 @@ async function runRelevantSearchInner(
   // One FTS5 query: the keywords joined with OR, ranked by bm25 (IDF-weighted, so a note matching more of the
   // rarer keywords ranks higher). Replaced per-keyword queries fused by RRF in 1.2.0: one query instead of up to 20,
   // and better recall on LongMemEval-S and LoCoMo (docs/BENCHMARK.md).
+  const plan = repairEnabled() ? planRepair(store, keywords) : null;
   const hits = store.searchRanked(keywords.join(" "), {
     namespace: opts.namespace,
     limit: perKeyword,
     any: true,
+    ...(plan ? { matchExpr: looseExpression(keywords, plan) } : {}),
     ...(opts.writtenBy !== undefined ? { writtenBy: opts.writtenBy } : {}),
     ...(opts.notWrittenBy !== undefined ? { notWrittenBy: opts.notWrittenBy } : {}),
     ...(opts.includeDistrusted ? { includeDistrusted: true } : {}),
@@ -737,18 +741,30 @@ export function keywordWithFallbackAcross(
   opts: Parameters<Store["searchRanked"]>[1],
   namespaces: Array<string | undefined>
 ): Array<{ note: NoteRecord; score: number }> {
-  const over = (q: string, any: boolean, lim: number): Array<{ note: NoteRecord; score: number }> =>
+  const over = (q: string, any: boolean, lim: number, matchExpr?: string): Array<{ note: NoteRecord; score: number }> =>
     namespaces
-      .flatMap((ns) => store.searchRanked(q, { ...opts, namespace: ns, limit: lim, any }))
+      .flatMap((ns) => store.searchRanked(q, { ...opts, namespace: ns, limit: lim, any, ...(matchExpr ? { matchExpr } : {}) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, lim);
-  const strict = over(query, false, limit);
+  let strict = over(query, false, limit);
   const keywords = extractKeywords(query);
+  // Repair: a word the index has never seen (typo, "ratelimit" vs "rate-limit", CJK run, "connection reset" vs
+  // ECONNRESET) is swapped for the closest indexed words. Only when the normal all-terms search left room, and the
+  // repaired hits are merged into the all-terms list, never substituted for it. Off with MONOMEM_REPAIR=off.
+  let plan: RepairPlan | null = null;
+  if (strict.length < limit && keywords.length > 0 && repairEnabled()) {
+    plan = planRepair(store, keywords, { abbreviations: strict.length === 0 });
+    if (plan?.strictExpr) {
+      const seenStrict = new Set(strict.map((h) => h.note.id));
+      const fixed = over(query, false, limit, plan.strictExpr).filter((h) => !seenStrict.has(h.note.id));
+      if (fixed.length) strict = [...strict, ...fixed].sort((a, b) => b.score - a.score).slice(0, limit);
+    }
+  }
   // One keyword still gets the second step when trimming its suffix widens it ("recommendations" -> recommend*).
-  if (strict.length >= limit || keywords.length === 0 || (keywords.length < 2 && queryStem(keywords[0]) === keywords[0])) return strict;
+  if (strict.length >= limit || keywords.length === 0 || (keywords.length < 2 && queryStem(keywords[0]) === keywords[0] && !plan)) return strict;
   const seen = new Set(strict.map((h) => h.note.id));
   // Ask for enough that the all-terms hits (which also match OR) still leave `limit - strict.length` new ones.
-  const loose = over(keywords.join(" "), true, clampInt(limit + strict.length, limit, 1, 200))
+  const loose = over(keywords.join(" "), true, clampInt(limit + strict.length, limit, 1, 200), plan ? looseExpression(keywords, plan) : undefined)
     .filter((h) => !seen.has(h.note.id))
     .slice(0, limit - strict.length);
   if (!loose.length) return strict;

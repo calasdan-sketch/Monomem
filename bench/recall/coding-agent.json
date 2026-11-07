@@ -1,0 +1,528 @@
+{
+ "name": "coding-agent recall",
+ "about": "Synthetic notes a coding agent would keep (decisions, runbooks, gotchas) and queries it would ask, including typos, split/joined compounds, abbreviations/constants, CJK and paraphrases that keyword search cannot match. 'evidence' is the sentence fragment that must appear in what the agent is handed. Written for this repo; reconstructs the failure types seen in expert testing, not a copy of any external set.",
+ "notes": [
+  {
+   "id": "n01",
+   "title": "Database: Postgres connection pooling",
+   "tags": [
+    "database",
+    "postgres"
+   ],
+   "body": "## Context\nThe API talks to a single Postgres 16 primary with two read replicas. Before March we opened a connection per request and hit the max_connections ceiling during the nightly report job.\n\n## Decision\nPgBouncer runs in transaction mode with a pool size of 20 per service and statement_timeout of 15s. Session-level features (advisory locks, SET LOCAL outside a transaction, LISTEN/NOTIFY) do not work through it, so the report worker connects directly on port 5433.\n\n## Gotchas\nPrepared statements need protocol-level support; we pinned pgbouncer 1.22 for that. Migrations also bypass the pooler. Long transactions in the admin panel were the main cause of pool starvation, so the admin uses its own pool of 5.\n\n## Monitoring\nWatch cl_waiting in SHOW POOLS; alert if it stays above 10 for two minutes. The Grafana board is called db-pools."
+  },
+  {
+   "id": "n02",
+   "title": "API gateway throttling",
+   "tags": [
+    "gateway",
+    "limits"
+   ],
+   "body": "The public gateway sits in front of every customer-facing route. Internal service-to-service calls skip it and use mTLS instead.\n\nThe gateway applies a rate-limit of 100 requests per minute per API token with a burst allowance of 20. Over the limit returns HTTP 429 with a Retry-After header in seconds. Limits are counted in Redis with a sliding window, key prefix rl:token:.\n\nEnterprise customers have an override table (rate_limit_overrides); changing a row takes effect within 30 seconds because the gateway caches it. Never raise the default without asking in #platform first.\n\nUnauthenticated routes (login, password reset) are limited per IP at 20 per minute instead."
+  },
+  {
+   "id": "n03",
+   "title": "Upstream socket errors in workers",
+   "tags": [
+    "incident",
+    "networking"
+   ],
+   "body": "Symptom: background workers intermittently crash with ECONNRESET when calling the billing service, roughly every few hours, always on a reused connection.\n\nRoot cause: the Node http agent kept sockets alive longer than the load balancer's idle timeout. Fix: set keepAliveTimeout to 65 seconds on the server (the ALB idle timeout is 60s) and headersTimeout to 66s, and add one automatic retry for idempotent GETs.\n\nDo not blame the billing service: its logs show nothing because the reset happens at the balancer. Reproduce locally with a 5s idle sleep between two requests on the same agent."
+  },
+  {
+   "id": "n04",
+   "title": "Deploy region and environments",
+   "tags": [
+    "infra",
+    "deploy"
+   ],
+   "body": "Production runs in ca-central-1 (Montreal) because customer data must stay in Canada. Staging mirrors it in ca-central-1 with smaller instances; preview environments use us-east-1 since they hold no customer data.\n\nDisaster recovery copies go to ca-west-1 nightly. Failover is manual and documented in the DR runbook; the last drill took 47 minutes.\n\nDNS is managed in Route 53; TTL is 60s for api and 300s for everything else."
+  },
+  {
+   "id": "n05",
+   "title": "Authentication tokens",
+   "tags": [
+    "auth",
+    "security"
+   ],
+   "body": "Access tokens are JWTs signed with RS256. They expire after 15 minutes. Refresh tokens last 30 days and rotate on every use; reuse of an old refresh token revokes the whole family.\n\nThe JWKS endpoint is cached for 10 minutes by clients, so key rotation needs a 15 minute overlap where both keys are published.\n\nSession cookies for the admin panel are separate: httpOnly, SameSite=Lax, 8 hour absolute lifetime."
+  },
+  {
+   "id": "n06",
+   "title": "Flaky checkout test",
+   "tags": [
+    "testing",
+    "ci"
+   ],
+   "body": "checkout.spec.ts fails about one run in ten on CI but never locally. The cause is a date assertion that crosses midnight in the runner's timezone.\n\nWorkaround: the CI job now exports TZ=UTC and the test freezes time with vi.setSystemTime. Do not add retries to hide it; that is how it lived for two months.\n\nIf it still flakes, check that the Stripe mock has not been left in live mode."
+  },
+  {
+   "id": "n07",
+   "title": "Database migration runbook",
+   "tags": [
+    "database",
+    "runbook"
+   ],
+   "body": "Always run npm run migrate -- --dry-run first and paste the plan into the PR. Never edit a migration that has been applied anywhere; add a new one instead.\n\nOrder of operations for a column rename: add the new column, dual-write for one release, backfill in batches of 10k with a 200ms sleep, switch reads, drop the old column a release later.\n\nLarge index builds must use CREATE INDEX CONCURRENTLY and run outside a transaction, so they live in the .nontx.sql migrations folder."
+  },
+  {
+   "id": "n08",
+   "title": "Feature flags",
+   "tags": [
+    "conventions",
+    "flags"
+   ],
+   "body": "Flags are named ff_<area>_<name> in snake case, for example ff_checkout_express_pay. Flags default to off and are evaluated server side only.\n\nEvery flag gets an owner and a removal date in the flags registry; anything older than 90 days after full rollout is deleted by the cleanup bot's PR."
+  },
+  {
+   "id": "n09",
+   "title": "Redis cache TTLs",
+   "tags": [
+    "cache",
+    "redis"
+   ],
+   "body": "Sessions: 24 hours sliding. Product catalog: 5 minutes. Pricing rules: 60 seconds, because finance edits them often. User profile: 15 minutes with explicit invalidation on update.\n\nCache keys are prefixed with the service name and a schema version (cat:v3:) so a deploy that changes the shape cannot read old entries."
+  },
+  {
+   "id": "n10",
+   "title": "Stripe webhooks",
+   "tags": [
+    "payments",
+    "stripe"
+   ],
+   "body": "Verify the signature against the raw request body, not the parsed JSON; the Express json middleware must be skipped for /webhooks/stripe.\n\nEvents can arrive twice and out of order. We store each event id with an idempotency record for 72 hours and ignore duplicates. Handlers must be safe to run twice.\n\nFailed deliveries are retried by Stripe for up to three days, so a deploy bug that rejects events can be recovered by replaying from the dashboard."
+  },
+  {
+   "id": "n11",
+   "title": "Docker base image",
+   "tags": [
+    "docker",
+    "build"
+   ],
+   "body": "Services build from node:22-slim, not alpine. Alpine's musl libc broke the sharp image library and caused a segfault in the thumbnail worker.\n\nMulti-stage build: deps stage with npm ci, build stage, runtime stage running as the node user with a read-only root filesystem."
+  },
+  {
+   "id": "n12",
+   "title": "Logging conventions",
+   "tags": [
+    "logging",
+    "observability"
+   ],
+   "body": "We use pino with JSON output. The authorization header, cookies and any field named password or token are redacted by the shared logger config; do not log request bodies.\n\nEvery log line carries request_id and tenant_id. Log levels: info for business events, warn for recoverable errors, error only when a human should look."
+  },
+  {
+   "id": "n13",
+   "title": "Code style",
+   "tags": [
+    "conventions"
+   ],
+   "body": "TypeScript strict mode is on. No default exports; named exports only so renames are safe. Prefer unknown over any and narrow it.\n\nPrettier decides formatting; ESLint is for correctness rules only. Imports are sorted automatically on save."
+  },
+  {
+   "id": "n14",
+   "title": "Websocket server memory growth",
+   "tags": [
+    "incident",
+    "performance"
+   ],
+   "body": "The realtime service grew about 40MB an hour until it was restarted. Heap snapshots showed thousands of retained listener closures.\n\nCause: a per-connection message handler was registered on the shared event bus and never removed on disconnect. Fix: create an AbortController per socket and pass its signal to every addEventListener and subscription.\n\nAdded a soak test that opens and closes 10k sockets and asserts heap growth under 5MB."
+  },
+  {
+   "id": "n15",
+   "title": "Kubernetes autoscaling",
+   "tags": [
+    "kubernetes",
+    "infra"
+   ],
+   "body": "The API deployment uses a HorizontalPodAutoscaler with min 3 and max 12 replicas targeting 65 percent CPU. Scale-down stabilization is 5 minutes to avoid flapping.\n\nReadiness and liveness use separate health-check endpoints: /ready checks the database, /live only checks the event loop. Mixing them caused a restart storm when the database failed over.\n\nPod disruption budget keeps at least 2 pods up during node drains."
+  },
+  {
+   "id": "n16",
+   "title": "S3 uploads",
+   "tags": [
+    "storage",
+    "aws"
+   ],
+   "body": "Browsers upload directly to S3 with presigned URLs that expire after 10 minutes. Maximum object size is 25MB, enforced in the signed policy, not just in the UI.\n\nUploaded files land in a quarantine prefix; a Lambda scans them for malware and moves clean files to the public prefix."
+  },
+  {
+   "id": "n17",
+   "title": "GraphQL N+1 queries",
+   "tags": [
+    "graphql",
+    "performance"
+   ],
+   "body": "The orders.items field fired one query per order. Fixed with dataloader batching keyed by order id; the loader is created per request so cache never leaks between users.\n\nCheck new resolvers with the query-count assertion helper in tests: a list of 50 orders must not exceed 3 queries."
+  },
+  {
+   "id": "n18",
+   "title": "Product search index",
+   "tags": [
+    "search",
+    "elasticsearch"
+   ],
+   "body": "Elasticsearch serves product search through the alias products_v3. To change mappings, build products_v4, reindex with scripts/reindex.ts, then swap the alias atomically.\n\nSynonyms live in a file mounted into the cluster; updating it requires closing and reopening the index."
+  },
+  {
+   "id": "n19",
+   "title": "Transactional email",
+   "tags": [
+    "email"
+   ],
+   "body": "Email goes through SendGrid. Template ids are in config/email.ts. Hard bounces and spam complaints arrive by webhook and add the address to the suppression table; never send to a suppressed address.\n\nPassword reset links are valid for 30 minutes and single use."
+  },
+  {
+   "id": "n20",
+   "title": "Frontend stack",
+   "tags": [
+    "frontend"
+   ],
+   "body": "React 19 with Vite. Client state uses Zustand; server state uses TanStack Query. We removed Redux in January and do not want it back.\n\nComponents live in src/ui with a story each; visual regression runs in CI on Chromatic."
+  },
+  {
+   "id": "n21",
+   "title": "Mobile releases",
+   "tags": [
+    "mobile"
+   ],
+   "body": "React Native app. Bump the build number with fastlane bump_build before every TestFlight upload; Apple rejects a duplicate build number with an unhelpful error.\n\nAndroid releases go through the internal track first for 48 hours."
+  },
+  {
+   "id": "n22",
+   "title": "Incident: expired certificate",
+   "tags": [
+    "incident",
+    "tls"
+   ],
+   "body": "On 2026-03-14 the internal gateway served an expired TLS certificate for 38 minutes and all service-to-service calls failed.\n\nRoot cause: the renewal job ran but cert-manager could not write the secret because of a namespace quota. Fix: quota raised, and an alert now fires when any certificate has under 14 days left.\n\nFollow-up: add a synthetic probe that validates the chain from outside the cluster."
+  },
+  {
+   "id": "n23",
+   "title": "Performance targets",
+   "tags": [
+    "performance",
+    "database"
+   ],
+   "body": "p95 API latency target is 250ms, p99 under 800ms. The orders listing was the worst offender until we added a composite index on (customer_id, created_at).\n\nUse EXPLAIN (ANALYZE, BUFFERS) in staging before shipping any query that touches orders or events; tables there are large enough to show real plans."
+  },
+  {
+   "id": "n24",
+   "title": "Secrets management",
+   "tags": [
+    "security",
+    "vault"
+   ],
+   "body": "Secrets live in Vault under secret/data/app/<env>. Never commit a .env with real values; .env.example documents names only.\n\nRotation: database credentials rotate every 30 days via the Vault database engine; the app reads leases and reconnects on expiry."
+  },
+  {
+   "id": "n25",
+   "title": "Release process",
+   "tags": [
+    "release",
+    "ci"
+   ],
+   "body": "Tag vX.Y.Z on main. GitHub Actions builds, runs the full suite, publishes images, and drafts release notes from conventional commits.\n\nHotfixes branch from the tag, not from main, and are merged back the same day."
+  },
+  {
+   "id": "n26",
+   "title": "Local testing setup",
+   "tags": [
+    "testing",
+    "dev"
+   ],
+   "body": "Integration tests need the database: run docker compose up -d db before npm run test:int. Without it every test fails with ECONNREFUSED on port 5432, which looks like a code bug but is not.\n\nUnit tests need nothing and run in under 20 seconds with vitest."
+  },
+  {
+   "id": "n27",
+   "title": "Time handling",
+   "tags": [
+    "conventions"
+   ],
+   "body": "Store everything in UTC as timestamptz. Convert to the user's zone only at the edge, in the UI. Never store local times; the one bug we had here took a week to find.\n\nUse the Temporal polyfill for date maths, not hand-rolled millisecond arithmetic."
+  },
+  {
+   "id": "n28",
+   "title": "数据库迁移与备份",
+   "tags": [
+    "database",
+    "backup"
+   ],
+   "body": "数据库迁移前必须备份，并在预发布环境演练一次。\n\n东京区域的备份保留30天，大阪区域保留14天。恢复演练每季度进行一次。"
+  },
+  {
+   "id": "n29",
+   "title": "CORS configuration",
+   "tags": [
+    "security",
+    "api"
+   ],
+   "body": "Allowed origins come from the ALLOWED_ORIGINS environment variable, comma separated. Wildcards are not allowed in production; credentials mode requires an exact match.\n\nPreflight responses are cached for 10 minutes."
+  },
+  {
+   "id": "n30",
+   "title": "Job queue",
+   "tags": [
+    "queue"
+   ],
+   "body": "BullMQ with concurrency 5 per worker. Jobs retry 3 times with exponential backoff and then move to the dead-letter queue, which pages nobody but is reviewed every morning.\n\nHandlers must be idempotent; a job can run twice after a worker crash."
+  },
+  {
+   "id": "n31",
+   "title": "Dependency policy",
+   "tags": [
+    "conventions",
+    "security"
+   ],
+   "body": "Pin exact versions. Renovate opens grouped PRs weekly; security updates open immediately. A major upgrade needs its own PR and a note in the changelog.\n\nLockfile changes without a package.json change are rejected by CI."
+  },
+  {
+   "id": "n32",
+   "title": "API versioning",
+   "tags": [
+    "api"
+   ],
+   "body": "Public routes live under /v2. The /v1 routes are deprecated and will be removed on 2026-09-30; they return a Sunset header now.\n\nBreaking changes need a new version; adding optional fields does not."
+  },
+  {
+   "id": "n33",
+   "title": "New developer onboarding",
+   "tags": [
+    "dev",
+    "onboarding"
+   ],
+   "body": "Clone, install Node 22 via nvm, run make dev. It starts the database, Redis and the API with hot reload on port 3000.\n\nIf node_modules is owned by root after a Docker run, fix it with sudo chown -R $USER node_modules."
+  },
+  {
+   "id": "n34",
+   "title": "Observability",
+   "tags": [
+    "observability",
+    "grafana"
+   ],
+   "body": "Grafana dashboard api-latency shows p50/p95/p99 per route. The alert fires when 5xx responses exceed 2 percent over 5 minutes and pages the on-call.\n\nTraces are sampled at 10 percent; errors are always kept."
+  },
+  {
+   "id": "n35",
+   "title": "Data protection",
+   "tags": [
+    "compliance"
+   ],
+   "body": "PII columns (email, phone, address) are encrypted at rest with field-level keys. Data retention is 13 months after account closure, then a job hard-deletes the rows.\n\nExports for data-subject requests are generated by the privacy worker and expire after 7 days."
+  },
+  {
+   "id": "n36",
+   "title": "Terraform workflow",
+   "tags": [
+    "infra",
+    "terraform"
+   ],
+   "body": "State is stored in the S3 bucket tfstate-prod with locking in DynamoDB. Never run apply from a laptop; CI runs plan on every PR and apply on merge.\n\nModule versions are pinned. Drift detection runs nightly and posts to #infra."
+  }
+ ],
+ "queries": [
+  {
+   "category": "direct",
+   "query": "what pool mode does pgbouncer use",
+   "expect": "n01",
+   "evidence": "transaction mode"
+  },
+  {
+   "category": "direct",
+   "query": "how many requests per minute does the gateway allow",
+   "expect": "n02",
+   "evidence": "100 requests per minute"
+  },
+  {
+   "category": "direct",
+   "query": "which region do we deploy production to",
+   "expect": "n04",
+   "evidence": "ca-central-1"
+  },
+  {
+   "category": "direct",
+   "query": "how long do access tokens last",
+   "expect": "n05",
+   "evidence": "15 minutes"
+  },
+  {
+   "category": "direct",
+   "query": "how do I run the migration safely",
+   "expect": "n07",
+   "evidence": "--dry-run"
+  },
+  {
+   "category": "direct",
+   "query": "what is the feature flag naming convention",
+   "expect": "n08",
+   "evidence": "ff_<area>_<name>"
+  },
+  {
+   "category": "direct",
+   "query": "how long are stripe idempotency records kept",
+   "expect": "n10",
+   "evidence": "72 hours"
+  },
+  {
+   "category": "direct",
+   "query": "which logger do we use and what gets redacted",
+   "expect": "n12",
+   "evidence": "authorization header"
+  },
+  {
+   "category": "direct",
+   "query": "what is the maximum replica count for autoscaling",
+   "expect": "n15",
+   "evidence": "max 12"
+  },
+  {
+   "category": "direct",
+   "query": "presigned url expiry for uploads",
+   "expect": "n16",
+   "evidence": "10 minutes"
+  },
+  {
+   "category": "direct",
+   "query": "where are secrets stored",
+   "expect": "n24",
+   "evidence": "secret/data/app"
+  },
+  {
+   "category": "direct",
+   "query": "what p95 latency target do we have",
+   "expect": "n23",
+   "evidence": "p95 API latency target is 250ms"
+  },
+  {
+   "category": "direct",
+   "query": "why did the alpine image break thumbnails",
+   "expect": "n11",
+   "evidence": "musl"
+  },
+  {
+   "category": "direct",
+   "query": "what caused the websocket memory leak",
+   "expect": "n14",
+   "evidence": "never removed on disconnect"
+  },
+  {
+   "category": "typo",
+   "query": "postgress pool mode",
+   "expect": "n01",
+   "evidence": "transaction mode"
+  },
+  {
+   "category": "typo",
+   "query": "kubernates autoscaling replicas",
+   "expect": "n15",
+   "evidence": "max 12"
+  },
+  {
+   "category": "typo",
+   "query": "dataloder orders items",
+   "expect": "n17",
+   "evidence": "dataloader batching"
+  },
+  {
+   "category": "typo",
+   "query": "elasticsearh alias reindex",
+   "expect": "n18",
+   "evidence": "products_v3"
+  },
+  {
+   "category": "typo",
+   "query": "idempotancy records webhook",
+   "expect": "n10",
+   "evidence": "72 hours"
+  },
+  {
+   "category": "typo",
+   "query": "websocet memory leak",
+   "expect": "n14",
+   "evidence": "AbortController"
+  },
+  {
+   "category": "compound",
+   "query": "ratelimit",
+   "expect": "n02",
+   "evidence": "rate-limit"
+  },
+  {
+   "category": "compound",
+   "query": "ratelimit burst",
+   "expect": "n02",
+   "evidence": "burst allowance of 20"
+  },
+  {
+   "category": "compound",
+   "query": "deadletter queue",
+   "expect": "n30",
+   "evidence": "dead-letter queue"
+  },
+  {
+   "category": "compound",
+   "query": "healthcheck endpoints",
+   "expect": "n15",
+   "evidence": "health-check"
+  },
+  {
+   "category": "compound",
+   "query": "keep alive timeout",
+   "expect": "n03",
+   "evidence": "keepAliveTimeout"
+  },
+  {
+   "category": "abbreviation",
+   "query": "connection reset upstream",
+   "expect": "n03",
+   "evidence": "ECONNRESET"
+  },
+  {
+   "category": "abbreviation",
+   "query": "connection reset",
+   "expect": "n03",
+   "evidence": "keepAliveTimeout to 65 seconds"
+  },
+  {
+   "category": "abbreviation",
+   "query": "connection refused",
+   "expect": "n26",
+   "evidence": "docker compose up -d db"
+  },
+  {
+   "category": "cjk",
+   "query": "东京",
+   "expect": "n28",
+   "evidence": "东京区域的备份保留30天"
+  },
+  {
+   "category": "cjk",
+   "query": "数据库备份",
+   "expect": "n28",
+   "evidence": "数据库迁移前必须备份"
+  },
+  {
+   "category": "cjk",
+   "query": "备份保留",
+   "expect": "n28",
+   "evidence": "东京区域的备份保留30天"
+  },
+  {
+   "category": "paraphrase",
+   "query": "how do we stop abusive clients hammering the API",
+   "expect": "n02",
+   "evidence": "rate-limit"
+  },
+  {
+   "category": "paraphrase",
+   "query": "what happens when the machine runs out of heap",
+   "expect": "n14",
+   "evidence": "heap"
+  },
+  {
+   "category": "paraphrase",
+   "query": "how do we avoid shipping a bad database change",
+   "expect": "n07",
+   "evidence": "--dry-run"
+  }
+ ]
+}
